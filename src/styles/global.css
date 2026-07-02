@@ -1,0 +1,276 @@
+/* Fix right-side whitespace in ProLayout */
+.ant-pro-layout {
+  max-width: 100% !important;
+}
+
+/* 数据大屏全屏投屏模式：全屏 fixed 覆盖整个视口，不隐藏 ProLayout 内部节点
+   —— 避免 display:none 父级后 HMR / 内部 iframe 出现跨域加载错误 */
+body[data-dashboard-fullscreen='true'] {
+  overflow: hidden !important;
+}
+
+.ant-pro-layout-content {
+  max-width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.ant-layout-content {
+  max-width: 100% !important;
+}
+
+/* Remove outer white wrapper spacing */
+.ant-pro-layout-content-wrapper {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Remove any body/html margins causing whitespace */
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  max-width: 100vw;
+}
+
+/* Ensure all containers use full width */
+.ant-pro-layout-container {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.ant-layout {
+  max-width: 100% !important;
+}
+
+/* Remove extra padding from ProLayout main content area */
+.ant-pro-layout-main {
+  padding: 0 !important;
+}
+
+/* ============================================================
+   首页 Tab 区域贯通为 100% 高度
+   - Tabs 自身：flex 列布局
+   - content-holder / content：flex 1 撑开
+   - 仅对"激活"tabpane 设 100% 高度（隐藏的不设，避免换 tab 时整个 Card 高度跳变）
+   ============================================================ */
+.ant-tabs.home-tab-fill {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.ant-tabs.home-tab-fill > .ant-tabs-nav {
+  flex: 0 0 auto;
+}
+
+.ant-tabs.home-tab-fill > .ant-tabs-content-holder {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ant-tabs.home-tab-fill > .ant-tabs-content-holder > .ant-tabs-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+}
+
+/* 仅激活的 tabpane 占满高度 */
+.ant-tabs.home-tab-fill > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane.ant-tabs-tabpane-active {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 隐藏 tabpane 不要把内容撑高影响布局 */
+.ant-tabs.home-tab-fill > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-hidden {
+  display: none !important;
+}
+
+/* ============================================================
+   接入中心智能化升级 — §3.1.1 Agent 机器人动画
+   (写在 global.css 是为了让 keyframes 在所有页面生效,
+    SVG 元素类名以 agent-robot-* 前缀, 与组件严格对齐)
+   ============================================================ */
+
+/* 整体呼吸：scale + translateY */
+@keyframes agent-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-1px) scale(1.015); }
+}
+.agent-robot-breathe {
+  animation: agent-breathe 2.4s ease-in-out infinite;
+  transform-origin: 50% 50%;
+}
+
+/* 胸前灯带呼吸 */
+@keyframes agent-belt-pulse {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1;   }
+}
+.agent-robot-belt {
+  animation: agent-belt-pulse 1.6s ease-in-out infinite;
+}
+
+/* 思考态：天线转动 */
+@keyframes agent-antenna-spin {
+  0%   { transform: rotate(0deg);   }
+  100% { transform: rotate(360deg); }
+}
+.agent-robot-antenna-spin {
+  animation: agent-antenna-spin 1.2s linear infinite;
+}
+
+/* 待机态：天线轻微摆动 */
+@keyframes agent-antenna-wiggle {
+  0%, 100% { transform: rotate(-6deg); }
+  50%      { transform: rotate(6deg);  }
+}
+.agent-robot-antenna {
+  animation: agent-antenna-wiggle 2.6s ease-in-out infinite;
+}
+
+/* 思考态：眼睛 loading 闪烁 */
+@keyframes agent-eye-blink {
+  0%, 100% { opacity: 1;   }
+  50%      { opacity: 0.3; }
+}
+.agent-robot-eye {
+  animation: agent-eye-blink 0.8s ease-in-out infinite;
+}
+
+/* hover 招手 */
+@keyframes agent-arm-wave {
+  0%, 100% { transform: rotate(0deg);  }
+  50%      { transform: rotate(-12deg); }
+}
+.agent-robot-wave {
+  animation: agent-arm-wave 0.9s ease-in-out infinite;
+}
+
+/* 新消息 bounce */
+@keyframes agent-bounce {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+.agent-robot-bounce {
+  animation: agent-bounce 0.6s ease-in-out 2;
+}
+
+/* prefers-reduced-motion 一键降级 */
+@media (prefers-reduced-motion: reduce) {
+  .agent-robot-breathe,
+  .agent-robot-belt,
+  .agent-robot-antenna,
+  .agent-robot-antenna-spin,
+  .agent-robot-eye,
+  .agent-robot-wave,
+  .agent-robot-bounce,
+  .agent-welcome-bubble,
+  .agent-chat-dropping {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   §3.1.2 AI 预填字段标识 + 高亮
+   ============================================================ */
+.ai-prefill-highlight {
+  background: linear-gradient(180deg, #F0F8FF 0%, #E6F4FF 100%);
+  border-color: #91CAFF !important;
+  transition: background 0.2s;
+}
+.ai-prefill-highlight.ai-prefill-low {
+  background: linear-gradient(180deg, #FFF7E6 0%, #FFE7BA 100%);
+  border-color: #FFA940 !important;
+}
+/* 采纳瞬间闪烁高亮 (1.2s 后自动停止) */
+.ai-prefill-ack-flash {
+  animation: aiPrefillAckFlash 1.2s ease-out;
+}
+@keyframes aiPrefillAckFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(82, 196, 26, 0.7); background: #F6FFED; }
+  40%  { box-shadow: 0 0 0 6px rgba(82, 196, 26, 0.35); background: #F6FFED; }
+  100% { box-shadow: 0 0 0 0 rgba(82, 196, 26, 0); background: transparent; }
+}
+/* 「✓ 已采纳」绿色对勾淡入 */
+@keyframes aiPrefillAckFadeIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ============================================================
+   §3.1.1 机器人旁 page-level 欢迎气泡
+   ============================================================ */
+@keyframes agent-welcome-pop {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.92); }
+  100% { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+.agent-welcome-bubble {
+  /* 跟随 AgentAssistant 浮窗入口位置: 走内联 style 的 left/top (相对视口), 不可固定 right/bottom
+     默认位置 (未传内联) 兜底为右下角, 跟 V2.x 之前版本视觉一致
+     V2.1 改造: 去掉 min-width:280px 强制, 让宽度贴内容自适应;
+       简单文案场景气泡不再撑出大量空白, 长文案/带 chip/miniList 场景仍由 max-width:360px 限制 */
+  position: fixed;
+  right: 110px;
+  bottom: 28px;
+  z-index: 1002;
+  max-width: 360px;
+  background: #FFFFFF;
+  border: 1px solid #91CAFF;
+  box-shadow: 0 8px 24px rgba(22, 119, 255, 0.18);
+  border-radius: 12px;
+  padding: 10px 14px 12px;
+  color: #1F1F1F;
+  font-size: 13px;
+  line-height: 1.6;
+  animation: agent-welcome-pop 280ms ease-out;
+  cursor: pointer;
+}
+.agent-welcome-bubble::after {
+  content: '';
+  position: absolute;
+  right: -6px;
+  bottom: 12px;
+  width: 12px;
+  height: 12px;
+  background: #FFFFFF;
+  border-top: 1px solid #91CAFF;
+  border-right: 1px solid #91CAFF;
+  transform: rotate(45deg);
+  box-shadow: 2px -2px 4px rgba(22, 119, 255, 0.06);
+}
+.agent-welcome-bubble-close {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 11px;
+  color: #999;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 2px;
+}
+
+/* ============================================================
+   §3.1.1 对话窗口拖拽高亮
+   ============================================================ */
+.agent-chat-dropzone {
+  border: 2px dashed #1677FF !important;
+  background: #F0F8FF !important;
+  transition: background 150ms ease-out;
+}
+@keyframes agent-drop-flash {
+  0%, 100% { box-shadow: inset 0 0 0 0 rgba(22, 119, 255, 0); }
+  50%      { box-shadow: inset 0 0 0 4px rgba(22, 119, 255, 0.18); }
+}
+.agent-chat-dropping {
+  animation: agent-drop-flash 0.9s ease-in-out infinite;
+}

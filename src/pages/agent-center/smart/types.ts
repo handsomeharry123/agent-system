@@ -1,0 +1,273 @@
+/**
+ * 接入中心智能化升级 - 共享类型
+ *
+ * §3.1.1 Agent 对话入口 / §3.1.2 新建注册页(智能填写) 共用
+ */
+import type { AccessMode } from '../types';
+
+// ──────────────────────────────────────────────────────────────────────
+// §3.1.1 Agent 对话
+// ──────────────────────────────────────────────────────────────────────
+
+export type AgentMessageType =
+  | 'text' // 普通文本
+  | 'file-detect' // 文件识别完成
+  | 'image-detect' // 图片识别完成
+  | 'link-detect' // 链接抓取完成
+  | 'detecting' // 识别中
+  | 'prefill' // 预填确认
+  | 'autofix-req' // 自动纠错请求
+  | 'autofix-done' // 自动纠错完成
+  | 'error' // 错误
+  // §4.2.1 智能预审 - 在 Agent 气泡/对话窗口集中呈现
+  | 'pre-audit-summary' // 5 维计数 + 严重度筛选
+  | 'pre-audit-issue' // 单条预审问题
+  | 'pre-audit-test' // 联通测试 5 阶段
+  | 'pre-audit-verdict' // 预审结论
+  | 'historical-plan' // §3.3.2 历史方案复用（按匹配度推荐 + 复用此方案）
+  // §3.4.1.2 注册信息详情页：进度+核心指标 由 Agent 对话窗口呈现, 详情页本身不再嵌入卡片
+  | 'insight-detail';
+
+export interface DetectedField {
+  fieldKey: string; // 对应 RegistrationForm 的字段 key
+  value: string;
+  confidence: number; // 0~1
+  source: string; // '产品说明书.pdf 第 2 页'
+}
+
+export interface AgentMessage {
+  id: string;
+  role: 'user' | 'agent';
+  type: AgentMessageType;
+  content: string;
+  timestamp: string; // ISO 字符串
+  payload?: {
+    fileName?: string;
+    fileSize?: number;
+    detectedFields?: DetectedField[];
+    suggestions?: Array<{
+      fieldKey: string;
+      currentValue: string;
+      suggestedValue: string;
+      reason: string;
+    }>;
+    errorCode?: string;
+    // §4.2.1 智能预审 payload
+    preAuditSummary?: {
+      errors: number;
+      warnings: number;
+      infos: number;
+      total: number;
+    };
+    preAuditIssue?: {
+      id: string;
+      severity: 'error' | 'warning' | 'info';
+      fieldKey: string;
+      title: string;
+      reason: string;
+      /** 'open' | 'adopted' | 'ignored' */
+      status?: 'open' | 'adopted' | 'ignored';
+    };
+    preAuditTest?: {
+      steps: Array<{
+        stage: string;
+        label: string;
+        status: 'pending' | 'running' | 'ok' | 'fail';
+        latencyMs?: number;
+        errorCode?: string;
+        errorReason?: string;
+      }>;
+      /** null 表示测试中 / 失败 / 成功 */
+      result: null | { ok: boolean; message: string };
+      /** 总耗时（成功时） */
+      totalMs?: number;
+    };
+    preAuditVerdict?: {
+      verdict: 'pass' | 'reject' | 'pending';
+      reason: string;
+      fatalCount: number;
+      warningCount: number;
+    };
+    // §3.3.2 历史方案：列表 (由 ConnectivityTester / SmartRegistrationForm 推送)
+    historicalPlans?: HistoricalPlan[];
+    /** 由哪条来源触发（'test-fail' | 'page-init'），用于气泡 header 提示 */
+    historicalPlanSource?: string;
+    // §3.4.1.2 注册信息详情页: 进度 + 核心指标 + 一键直达(对话窗口呈现, 详情页不嵌卡片)
+    insightProgress?: InsightProgress;
+  };
+}
+
+// 机器人状态：用于驱动动画 / 角标
+export type AgentMood =
+  | 'idle' // 待机
+  | 'hover' // hover
+  | 'thinking' // 思考 / 识别中
+  | 'happy' // 成功情绪
+  | 'sad'; // 失败安抚
+
+// ──────────────────────────────────────────────────────────────────────
+// §3.1.2 新建注册页(智能填写)
+// ──────────────────────────────────────────────────────────────────────
+
+/** AI 预填字段的元数据, 驱动 §3.1.2 AI 预填标识规范 */
+export interface AIPrefillMeta {
+  fieldKey: string;
+  confidence: number; // 0~1
+  source: string;
+  // 用户是否已采纳/修改:采纳后清除 AI 预填标识
+  acknowledged: boolean;
+  // 采纳时刻 (ms 时间戳):用于 Badge 显示 5s「✓ 已采纳」绿色对勾, 之后才完全消失
+  acknowledgedAt?: number;
+  // 自动纠错专用:纠错前后的对比值
+  beforeValue?: string;
+  afterValue?: string;
+  fixReason?: string;
+}
+
+export interface MaterialFile {
+  uid: string;
+  name: string;
+  size: number;
+  status: 'uploading' | 'done' | 'error';
+  category: 'product' | 'tech' | 'other'; // 产品说明书 / 技术规格书 / 其他材料
+}
+
+export interface RegistrationDraft {
+  // ① 备案材料
+  materials: MaterialFile[];
+
+  // ② 基本信息
+  name: string;
+  agentCode: string;
+  version: string;
+  department: string;
+  clinicalStage: string;
+  clinicalStageCustom?: string;
+  description: string;
+
+  // 来源与责任信息
+  source?: '自研' | '第三方' | '合作研发';
+  supplier?: string;
+  contactName: string;
+  contactPhone: string;
+
+  // ③ 技术信息
+  accessMode: AccessMode;
+  apiEndpoint?: string;
+  apiKey?: string;
+  platformUrl?: string;
+  platformKey?: string;
+  trackingCode?: string;
+
+  // 状态
+  testStatus: 'pending' | 'passing' | 'failed' | 'none';
+  testResultMessage?: string;
+}
+
+export type AccessType = AccessMode;
+
+// ──────────────────────────────────────────────────────────────────────
+// 工具
+// ──────────────────────────────────────────────────────────────────────
+
+/** 置信度 → 用户感知层级 */
+export const confidenceLevel = (c: number): 'high' | 'medium' | 'low' => {
+  if (c >= 0.9) return 'high';
+  if (c >= 0.7) return 'medium';
+  return 'low';
+};
+
+// ──────────────────────────────────────────────────────────────────────
+// §3.2 填写内容智能审查
+// ──────────────────────────────────────────────────────────────────────
+
+export type ReviewSeverity = 'error' | 'warning' | 'info';
+
+export interface ReviewProblem {
+  id: string;
+  severity: ReviewSeverity;
+  fieldKey?: string;
+  category?: 'materials' | 'basic' | 'tech';
+  title: string;
+  reason: string;
+  impact: string;
+  suggestion?: string; // 可执行建议值
+  /** 是否可自动修复（true 时显示「授权自动修正」入口） */
+  autoFixable?: boolean;
+  /** 自动修复需写入的建议值 */
+  autoFixValue?: string;
+  status: 'open' | 'ignored' | 'fixed' | 'confirmed';
+}
+
+export interface ReviewSummary {
+  /** 总问题数（含 ignored/fixed，但展示时分组） */
+  totalOpen: number;
+  errors: number;
+  warnings: number;
+  infos: number;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// §3.3 智能化连通测试
+// ──────────────────────────────────────────────────────────────────────
+
+export type ConnStage = 'dns' | 'connect' | 'auth' | 'request' | 'response';
+
+export interface ConnStep {
+  stage: ConnStage;
+  label: string;
+  status: 'pending' | 'running' | 'ok' | 'fail';
+  latencyMs?: number;
+  errorCode?: string;
+  errorReason?: string;
+}
+
+export type ConnFailureStage = ConnStage | 'none';
+
+export interface ConnDiagnostics {
+  failureStage: ConnFailureStage;
+  /** 错误代码（模拟：504 / 401 / 403 / 502） */
+  errorCode?: string;
+  /** 错误原因描述 */
+  errorReason?: string;
+  /** 字段层面 hint，例 apiKey / apiEndpoint */
+  hintFieldKey?: string;
+  /** 解决步骤（按编号顺序） */
+  steps: Array<{ idx: number; title: string; detail: string; fieldKey?: string }>;
+}
+
+export interface HistoricalPlan {
+  id: string;
+  agentName: string;
+  /** 'API' | 'SDK' | 'OTel' */
+  mode: string;
+  /** 脱敏后的关键模板信息（接口路径 / 错误码 / 修复要点） */
+  endpointPattern: string;
+  symptom: string;
+  fix: string;
+  /** 0~1 匹配度 */
+  matchScore: number;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// §3.4 接入结果洞察与汇报
+// ──────────────────────────────────────────────────────────────────────
+
+export type ProgressPhase = 'pending' | 'reviewing' | 'success';
+
+export interface InsightProgress {
+  agentName: string;
+  agentCode?: string;
+  /** 当前阶段 */
+  phase: ProgressPhase;
+  /** 服务指标（按接入阶段浮动，演示用） */
+  metrics: Array<{ label: string; value: string; tone?: 'success' | 'warning' | 'info' }>;
+  /** 接入完成时下一步：台账完善、发起评测等 */
+  nextActions: Array<{
+    key: string;
+    label: string;
+    description: string;
+    path?: string;
+    enabled: boolean;
+  }>;
+}

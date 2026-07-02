@@ -1,0 +1,820 @@
+// 统一台账中心 - 台账列表页（V1.8 §2.1，操作列固定 3 按钮）
+//
+// V2.6 接入中心「查看台账」联动：
+//   · URL ?openDetail=1 & search={name} → 自动按名称定位台账智能体并跳到详情
+//   · 命中 → /app/ledger/detail/{id}(保留 search 筛选项,清掉 openDetail)
+//   · 未命中 → 顶部提示「未在台账中找到名称为 XXX 的智能体」并保留 search 预筛
+//
+// 依据《统一台账中心-需求说明文档 V1.8》§2.1：
+//   · 12 列字段：序号 / 智能体编号 / 名称 / 版本 / 所属科室 / 诊疗环节 / 来源 / 供应商 / 功能描述 / 风险分级 / 接入方式 / 运行状态
+//   · 操作列固定 3 按钮：详情 / 风险分级 / 更多
+//     · 更多下拉：编辑、禁用（仅平台管理员）/ 医院资源管理中心 / 准入评测沙盒 / 运行监控中心
+//   · 6 维筛选：所属科室 / 诊疗环节 / 智能体来源 / 风险分级 / 接入方式 / 运行状态
+//   · 智能体来源：自研 / 第三方 / 合作研发（V1.8 命名口径）
+//   · 风险分级 Tag 形态（V1.8 #10）：高度关注 / 中度关注 / 一般关注（不再区分初/复）
+
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import {
+  Card,
+  Table,
+  Button,
+  Space,
+  Input,
+  Select,
+  Tag,
+  Tooltip,
+  Row,
+  Col,
+  Divider,
+  Empty,
+  Alert,
+  Dropdown,
+  message,
+  Typography,
+} from 'antd';
+import type { MenuProps } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import {
+  SearchOutlined,
+  ReloadOutlined,
+  EyeOutlined,
+  SafetyCertificateOutlined,
+  MoreOutlined,
+  ExperimentOutlined,
+  LinkOutlined,
+  AppstoreOutlined,
+  MonitorOutlined,
+  DownOutlined,
+  UpOutlined,
+  DownloadOutlined,
+} from '@ant-design/icons';
+import dayjs from 'dayjs';
+import PageHeader from '../../components/PageHeader';
+import {
+  ledgerAgents,
+  currentUser,
+  SOURCE_COLOR,
+  ENUMS,
+  getVisibleAgents,
+  type LedgerAgent,
+} from '../../mock/ledger';
+
+const { Text } = Typography;
+
+// ============== 通用辅助 ==============
+
+// V1.7 来源口径：自研 / 第三方 / 合作研发
+const SOURCE_DISPLAY: Record<string, string> = {
+  自研: '自研',
+  外采: '第三方',
+  合作开发: '合作研发',
+};
+const SOURCE_COLOR_MAP: Record<string, string> = {
+  自研: 'blue',
+  第三方: 'cyan',
+  合作研发: 'purple',
+};
+
+// V1.7 §2.1 #10 风险分级 Tag：高度(red) / 中度(orange) / 一般(default)；6 枚举含初/复
+const RISK_TAG: Record<string, { color: string; tag: string }> = {
+  高度关注: { color: 'red', tag: '高度关注' },
+  中度关注: { color: 'orange', tag: '中度关注' },
+  一般关注: { color: 'default', tag: '一般关注' },
+};
+
+// ============== 筛选状态 ==============
+
+interface FilterState {
+  search: string;
+  department?: string;
+  diagnosisPhase?: string;
+  sourceType?: string;
+  riskLevel?: string;
+  accessType?: string;
+  runtimeStatus?: string;
+}
+
+const LedgerList = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isPlatformAdmin = currentUser.role === 'platform_admin';
+
+  const [filters, setFilters] = useState<FilterState>({ search: '' });
+  // 筛选区展开/收起：默认收起，只显示一行；展开后展示全部筛选维度
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  // 多选导出台账：已勾选行 id 集合
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+
+  // 从 URL 预筛（总览页 → 列表页的预筛状态）
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const next: FilterState = { search: '' };
+    const search = params.get('search');
+    if (search) next.search = search;
+    const department = params.get('department');
+    if (department) next.department = department;
+    const diagnosisPhase = params.get('diagnosisPhase');
+    if (diagnosisPhase) next.diagnosisPhase = diagnosisPhase;
+    const sourceType = params.get('sourceType');
+    if (sourceType) next.sourceType = sourceType;
+    const riskLevel = params.get('riskLevel');
+    if (riskLevel) next.riskLevel = riskLevel;
+    const accessType = params.get('accessType');
+    if (accessType) next.accessType = accessType;
+    const runtimeStatus = params.get('runtimeStatus');
+    if (runtimeStatus) next.runtimeStatus = runtimeStatus;
+    const lifecycle = params.get('lifecycle');
+    if (lifecycle) {
+      // 来自总览页的"生命周期"参数，列表页无该筛选项，提示但不应用
+      message.info(`按「生命周期=${lifecycle}」预筛（列表页未启用该筛选项）`);
+    }
+    setFilters(next);
+  }, [location.search]);
+
+  // V2.6 接入中心「查看台账」自动打开详情
+  //   · URL 带 ?openDetail=1 & search={name} 时,按名称定位台账智能体并跳详情
+  //   · 命中 → navigate 到 /app/ledger/detail/{id} 并清掉 openDetail 参数(避免回退再触发)
+  //   · 未命中 → message 提示,保留 search 筛选态,让用户手动定位
+  //   · 用 ref 防止同一 URL 重复触发
+  //   · 匹配策略(从强到弱,首个有命中的立即采纳):
+  //     1) 精确相等
+  //     2) 去除「系统/智能/平台/助手」等尾缀后再相等
+  //     3) 名称互为子串(任一方向包含)
+  //     4) 2 字 bigram 相似度(min-归一化):inter ≥ 2 且 ratio ≥ 0.3
+  //        平局时优先「活跃」记录(已上线/试运行/已注册),过滤掉已禁用/已归档
+  //   · 解决接入中心/台账两侧 mock 命名口径不完全一致的问题,
+  //     如「心电图智能辅助诊断」↔「心血管辅助诊断系统」、「肺部 CT 影像分析」↔「胸部 CT 影像分析系统」
+  const autoOpenConsumed = useRef<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const openDetail = params.get('openDetail');
+    const searchName = params.get('search');
+    if (!openDetail || !searchName) return;
+    if (autoOpenConsumed.current === location.search) return;
+
+    // 去除「系统/平台/智能/助手/引擎/服务/机器人」等常见尾缀,让两侧命名口径归一
+    const stripTail = (s: string) =>
+      s.replace(/(系统|平台|智能|助手|引擎|服务|机器人|模块)$/g, '').trim();
+    // 2 字中文片段切分(用于弱匹配关键词命中)
+    const bigrams = (s: string): string[] => {
+      const out: string[] = [];
+      for (let i = 0; i < s.length - 1; i += 1) {
+        const t = s.slice(i, i + 2);
+        if (/[一-鿿]/.test(t)) out.push(t);
+      }
+      return out;
+    };
+    // Jaccard 相似度 = |A∩B| / |A∪B|,对大集合取 min 防「一个长串一个短词」误命中
+    const jaccard = (a: string[], b: string[]): number => {
+      if (a.length === 0 && b.length === 0) return 0;
+      const setA = new Set(a);
+      const setB = new Set(b);
+      let inter = 0;
+      setA.forEach((x) => {
+        if (setB.has(x)) inter += 1;
+      });
+      const union = setA.size + setB.size - inter;
+      return union === 0 ? 0 : inter / union;
+    };
+
+    const all = getVisibleAgents();
+    // 1) 精确相等
+    let matched = all.find((a) => a.name === searchName);
+    // 2) 去除尾缀后再相等
+    if (!matched) {
+      const strippedSearch = stripTail(searchName);
+      matched = all.find((a) => stripTail(a.name) === strippedSearch);
+    }
+    // 3) 名称互为子串(任一方向包含)
+    if (!matched) {
+      matched = all.find(
+        (a) => a.name.includes(searchName) || searchName.includes(a.name),
+      );
+    }
+    // 4) 2 字 bigram 相似度(取「min(|A|, |B|)」归一化,比 Jaccard 更适合「长短名」场景)
+    //    要求:交集数 ≥ 2 且占比 ≥ 0.3
+    //    短名称(< 2 个 bigram)不做,易把"智能"片段硬撞到任意带"智能"的智能体上
+    //    平局规则:同分时优先「活跃」记录(已上线/试运行/已注册),过滤掉已禁用/已归档
+    //    (防同名已下线旧版 V0 等被误命中)
+    if (!matched) {
+      const searchBg = bigrams(searchName);
+      if (searchBg.length >= 2) {
+        const MIN_INTERSECT = 2;
+        const MIN_RATIO = 0.3;
+        // 活跃判定:与「已禁用」「已归档」互斥
+        const isActive = (ls?: string) => {
+          const v = ls || '';
+          return v !== '已禁用' && v !== '已归档';
+        };
+        const scoreOf = (a: LedgerAgent) => {
+          const aBg = bigrams(a.name);
+          const setA = new Set(searchBg);
+          const setB = new Set(aBg);
+          let inter = 0;
+          setA.forEach((x) => {
+            if (setB.has(x)) inter += 1;
+          });
+          // 用较小集合的基数归一化 —— 解决「短名 vs 长名」时 Jaccard 偏低的问题
+          const ratio = inter / Math.min(searchBg.length, aBg.length);
+          return { a, inter, ratio, active: isActive(a.lifecycleStatus) };
+        };
+        const candidates = all
+          .map(scoreOf)
+          .filter((c) => c.inter >= MIN_INTERSECT && c.ratio >= MIN_RATIO)
+          // 排序:活跃优先 > 交集数 > 占比
+          .sort((x, y) => {
+            if (x.active !== y.active) return x.active ? -1 : 1;
+            if (y.inter !== x.inter) return y.inter - x.inter;
+            return y.ratio - x.ratio;
+          });
+        if (candidates.length > 0) matched = candidates[0].a;
+      }
+    }
+
+    if (matched) {
+      autoOpenConsumed.current = location.search;
+      // 跳详情前清掉 openDetail,保留 search 让回退时仍能定位到此行
+      const next = new URLSearchParams(location.search);
+      next.delete('openDetail');
+      const nextSearch = next.toString();
+      navigate(`/app/ledger/detail/${matched.id}${nextSearch ? `?${nextSearch}` : ''}`, {
+        replace: true,
+      });
+    } else if (autoOpenConsumed.current !== `miss:${location.search}`) {
+      // 仅首次提示未命中,避免筛选过程中重复弹
+      autoOpenConsumed.current = `miss:${location.search}`;
+      message.warning(`未在台账中找到名称为「${searchName}」的智能体,请手动定位`);
+    }
+  }, [location.search, navigate]);
+
+  // 可见数据：先按角色过滤
+  const visibleList = useMemo(() => getVisibleAgents(), []);
+
+  // 二次过滤（V1.7 §2.1 筛选查询：6 维 + 关键字）
+  const filtered = useMemo(() => {
+    let data = visibleList;
+    const kw = filters.search.trim().toLowerCase();
+    if (kw) {
+      data = data.filter(
+        (a) =>
+          a.idCode.toLowerCase().includes(kw) ||
+          a.name.toLowerCase().includes(kw) ||
+          a.vendor.toLowerCase().includes(kw),
+      );
+    }
+    if (filters.department) data = data.filter((a) => a.department === filters.department);
+    if (filters.diagnosisPhase)
+      data = data.filter((a) => (a.diagnosisPhase ?? []).includes(filters.diagnosisPhase as any));
+    if (filters.sourceType) {
+      const normalized = SOURCE_DISPLAY[filters.sourceType] ?? filters.sourceType;
+      data = data.filter((a) => SOURCE_DISPLAY[a.sourceType] === normalized);
+    }
+    if (filters.riskLevel) data = data.filter((a) => a.riskLevel === filters.riskLevel);
+    if (filters.accessType) data = data.filter((a) => a.accessType === filters.accessType);
+    if (filters.runtimeStatus)
+      data = data.filter((a) => a.runtimeStatus === filters.runtimeStatus);
+    return data;
+  }, [visibleList, filters]);
+
+  const handleReset = () => {
+    setFilters({ search: '' });
+  };
+
+  const handleViewDetail = (agent: LedgerAgent) => {
+    navigate(`/app/ledger/detail/${agent.id}`);
+  };
+
+  const handleRiskLevel = (agent: LedgerAgent) => {
+    navigate(`/app/ledger/risk/${agent.id}`);
+  };
+
+  // ===== 批量导出台账 =====
+  // - 已勾选 → 仅导出勾选行；未勾选 → 导出当前筛选结果（filtered）
+  // - CSV 字段：12 列（与表格一致，含功能描述 / 风险分级等中文）
+  // - 文件名：台账_导出_YYYYMMDD_HHmmss_共N条.csv；加 BOM 让 Excel 打开 UTF-8 不乱码
+  const escapeCsv = (val: unknown) => {
+    const s = val == null ? '' : String(val);
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+  const handleExport = (onlySelected: boolean) => {
+    const rows: LedgerAgent[] = onlySelected
+      ? filtered.filter((a) => selectedRowKeys.includes(a.id))
+      : filtered;
+    if (rows.length === 0) {
+      message.warning(onlySelected ? '请先勾选要导出的智能体' : '当前筛选结果为空，无可导出数据');
+      return;
+    }
+    const headers = [
+      '序号',
+      '智能体编号',
+      '智能体名称',
+      '版本',
+      '所属科室',
+      '诊疗环节',
+      '智能体来源',
+      '供应商',
+      '功能描述',
+      '风险分级',
+      '接入方式',
+      '运行状态',
+    ];
+    const lines: string[] = [headers.join(',')];
+    rows.forEach((a, i) => {
+      const sourceDisplay = SOURCE_DISPLAY[a.sourceType] ?? a.sourceType;
+      lines.push(
+        [
+          i + 1,
+          a.idCode,
+          a.name,
+          a.version,
+          a.department,
+          (a.diagnosisPhase ?? []).join('/'),
+          sourceDisplay,
+          a.vendor || '自研',
+          a.description ?? '',
+          a.riskLevel,
+          a.accessType,
+          a.runtimeStatus ?? '',
+        ]
+          .map(escapeCsv)
+          .join(','),
+      );
+    });
+    const csv = '﻿' + lines.join('\n');
+    const now = dayjs();
+    const fname = `台账_导出_${now.format('YYYYMMDD_HHmmss')}_共${rows.length}条.csv`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fname;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    message.success(`已导出 ${rows.length} 条台账数据到 ${fname}`);
+  };
+
+  const selectedCount = selectedRowKeys.length;
+  // 筛选条件变化 → 清空已选项（避免错位选中其他筛选结果中的同名 id）
+  useEffect(() => {
+    setSelectedRowKeys([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    filters.search,
+    filters.department,
+    filters.diagnosisPhase,
+    filters.sourceType,
+    filters.riskLevel,
+    filters.accessType,
+    filters.runtimeStatus,
+  ]);
+
+  const exportMenu: MenuProps['items'] = [
+    {
+      key: 'export-selected',
+      label: (
+        <span>
+          导出已选（{selectedCount}）
+          {selectedCount === 0 && (
+            <Text type="secondary" style={{ fontSize: 12, marginLeft: 6 }}>
+              请先勾选
+            </Text>
+          )}
+        </span>
+      ),
+      icon: <DownloadOutlined />,
+      disabled: selectedCount === 0,
+      onClick: () => handleExport(true),
+    },
+    {
+      type: 'divider',
+    },
+    {
+      key: 'export-all',
+      label: `导出当前筛选结果（${filtered.length}）`,
+      icon: <DownloadOutlined />,
+      disabled: filtered.length === 0,
+      onClick: () => handleExport(false),
+    },
+  ];
+
+  // V1.7 §2.1 列表列定义（12 字段）
+  const columns: ColumnsType<LedgerAgent> = [
+    {
+      title: '序号',
+      key: 'idx',
+      width: 60,
+      render: (_, __, index) => index + 1,
+    },
+    {
+      title: '智能体编号',
+      dataIndex: 'idCode',
+      key: 'idCode',
+      width: 200,
+      render: (val: string) => (
+        <Tooltip title={val}>
+          <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{val}</span>
+        </Tooltip>
+      ),
+    },
+    {
+      title: '智能体名称',
+      dataIndex: 'name',
+      key: 'name',
+      width: 200,
+      ellipsis: { showTitle: true },
+      render: (val: string, record) => (
+        <Tooltip title={val}>
+          <a onClick={() => handleViewDetail(record)}>{val}</a>
+        </Tooltip>
+      ),
+    },
+    {
+      title: '智能体版本',
+      dataIndex: 'version',
+      key: 'version',
+      width: 90,
+    },
+    {
+      title: '所属科室',
+      dataIndex: 'department',
+      key: 'department',
+      width: 110,
+      ellipsis: true,
+    },
+    {
+      title: '诊疗环节',
+      dataIndex: 'diagnosisPhase',
+      key: 'diagnosisPhase',
+      width: 160,
+      render: (val: string[] | undefined) => (val && val.length > 0 ? val.join(' / ') : <Text type="secondary">-</Text>),
+    },
+    {
+      title: '智能体来源',
+      dataIndex: 'sourceType',
+      key: 'sourceType',
+      width: 110,
+      render: (val: string) => {
+        const display = SOURCE_DISPLAY[val] ?? val;
+        return <Tag color={SOURCE_COLOR_MAP[display] || SOURCE_COLOR[val] || 'default'}>{display}</Tag>;
+      },
+    },
+    {
+      title: '供应商名称',
+      dataIndex: 'vendor',
+      key: 'vendor',
+      width: 160,
+      ellipsis: { showTitle: true },
+      render: (val: string) => (val ? <Tooltip title={val}><span>{val}</span></Tooltip> : <Text type="secondary">自研</Text>),
+    },
+    {
+      title: '功能描述',
+      dataIndex: 'description',
+      key: 'description',
+      width: 240,
+      render: (val: string | undefined) =>
+        val ? (
+          <Tooltip title={val} placement="topLeft">
+            <span
+              style={{
+                display: 'inline-block',
+                maxWidth: '100%',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                lineHeight: '1.5',
+                verticalAlign: 'bottom',
+              }}
+            >
+              {val}
+            </span>
+          </Tooltip>
+        ) : (
+          <Text type="secondary">-</Text>
+        ),
+    },
+    {
+      title: '风险分级',
+      dataIndex: 'riskLevel',
+      key: 'riskLevel',
+      width: 110,
+      // V1.8 §2.1 #10：仅 高度关注 / 中度关注 / 一般关注 三级，不再区分初/复
+      render: (val: string) => {
+        const meta = RISK_TAG[val];
+        if (!meta) return <Text type="secondary">未分级</Text>;
+        return <Tag color={meta.color}>{meta.tag}</Tag>;
+      },
+    },
+    {
+      title: '接入方式',
+      dataIndex: 'accessType',
+      key: 'accessType',
+      width: 90,
+      render: (val: string) => <Tag>{val}</Tag>,
+    },
+    {
+      title: '运行状态',
+      dataIndex: 'runtimeStatus',
+      key: 'runtimeStatus',
+      width: 90,
+      render: (val: string | undefined) => {
+        // V1.7 §2.2.1 #8：在线/离线/更新/禁用/异常
+        const map: Record<string, { color: string; text: string }> = {
+          在线: { color: 'green', text: '在线' },
+          离线: { color: 'default', text: '离线' },
+          异常: { color: 'red', text: '异常' },
+          禁用: { color: 'default', text: '禁用' },
+          更新: { color: 'gold', text: '更新' },
+        };
+        // 空值兜底为「在线」(产品约定,避免空单元格视觉杂乱,详细台账无运行状态视为在用)
+        const effective = val || '在线';
+        const meta = map[effective] ?? { color: 'default', text: effective };
+        return <Tag color={meta.color}>{meta.text}</Tag>;
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 240,
+      fixed: 'right',
+      render: (_, record) => {
+        // 操作列固定 3 按钮：详情 / 风险分级 / 更多
+        // 更多下拉按角色分发（台账列表 V2.9）：
+        //   · 信息科管理员：查看资源申请 / 创建评测任务 / 查看监控告警
+        //   · 科室管理员：申请资源 / 查看评测结果 / 查看监控告警
+        // 链接携带智能体名称（agentName），目标页据此预筛/预填
+        const encName = encodeURIComponent(record.name);
+        const moreItems: MenuProps['items'] = isPlatformAdmin
+          ? [
+              {
+                key: 'resource',
+                label: '查看资源申请',
+                icon: <AppstoreOutlined />,
+                onClick: () =>
+                  window.open(
+                    `/app/resource-center/applies?tab=all&agentName=${encName}`,
+                    '_blank',
+                  ),
+              },
+              {
+                key: 'create-eval',
+                label: '创建评测任务',
+                icon: <ExperimentOutlined />,
+                onClick: () =>
+                  window.open(
+                    `/app/evaluation/tasks/create?agentName=${encName}&agentCode=${encodeURIComponent(
+                      record.idCode,
+                    )}`,
+                    '_blank',
+                  ),
+              },
+              {
+                key: 'monitor',
+                label: '查看监控告警',
+                icon: <MonitorOutlined />,
+                onClick: () =>
+                  window.open(
+                    `/app/monitoring/alert-events?tab=all&search=${encName}`,
+                    '_blank',
+                  ),
+              },
+            ]
+          : [
+              {
+                key: 'apply-resource',
+                label: '申请资源',
+                icon: <AppstoreOutlined />,
+                onClick: () =>
+                  window.open(
+                    `/app/resource-center/apply-form?agentName=${encName}`,
+                    '_blank',
+                  ),
+              },
+              {
+                key: 'view-eval',
+                label: '查看评测结果',
+                icon: <ExperimentOutlined />,
+                onClick: () =>
+                  window.open(
+                    `/app/evaluation/tasks?tab=all&agentName=${encName}`,
+                    '_blank',
+                  ),
+              },
+              {
+                key: 'monitor',
+                label: '查看监控告警',
+                icon: <MonitorOutlined />,
+                onClick: () =>
+                  window.open(
+                    `/app/monitoring/alert-events?tab=all&search=${encName}`,
+                    '_blank',
+                  ),
+              },
+            ];
+
+        return (
+          <Space size={6} split={<Divider type="vertical" style={{ margin: 0 }} />}>
+            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleViewDetail(record)} style={{ padding: 0 }}>
+              详情
+            </Button>
+            <Button type="link" size="small" icon={<SafetyCertificateOutlined />} onClick={() => handleRiskLevel(record)} style={{ padding: 0 }}>
+              风险分级
+            </Button>
+            <Dropdown menu={{ items: moreItems }} trigger={['click']}>
+              <Button type="link" size="small" icon={<MoreOutlined />} style={{ padding: 0 }}>
+                更多
+              </Button>
+            </Dropdown>
+          </Space>
+        );
+      },
+    },
+  ];
+
+  return (
+    <div style={{ padding: 16, background: '#F5F5F5', minHeight: 'calc(100vh - 64px)' }}>
+      <PageHeader
+        title="台账列表"
+        subTitle={isPlatformAdmin ? '全院智能体台账' : `仅显示 ${currentUser.department} 台账`}
+      />
+
+      <Card
+        bordered={false}
+        bodyStyle={{ padding: 16 }}
+      >
+        {/* V1.7 §2.1 筛选查询：6 维 + 关键字；与重置按钮同一行，超出部分通过展开/收起控制 */}
+        <Row gutter={[12, 12]}>
+          <Col xs={24} sm={12} md={8} lg={6}>
+            <Input
+              placeholder="按编号 / 名称 / 供应商 模糊搜索"
+              prefix={<SearchOutlined style={{ color: '#BFBFBF' }} />}
+              allowClear
+              value={filters.search}
+              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={8} lg={4}>
+            <Select
+              placeholder="所属科室"
+              allowClear
+              showSearch
+              style={{ width: '100%' }}
+              options={ENUMS.department.map((d) => ({ label: d, value: d }))}
+              value={filters.department}
+              onChange={(v) => setFilters((f) => ({ ...f, department: v }))}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={8} lg={4}>
+            <Select
+              placeholder="诊疗环节"
+              allowClear
+              style={{ width: '100%' }}
+              options={ENUMS.diagnosisPhase.map((d) => ({ label: d, value: d }))}
+              value={filters.diagnosisPhase}
+              onChange={(v) => setFilters((f) => ({ ...f, diagnosisPhase: v }))}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={8} lg={4}>
+            <Select
+              placeholder="智能体来源"
+              allowClear
+              style={{ width: '100%' }}
+              options={['自研', '第三方', '合作研发'].map((d) => ({ label: d, value: d }))}
+              value={filters.sourceType}
+              onChange={(v) => setFilters((f) => ({ ...f, sourceType: v }))}
+            />
+          </Col>
+          {filtersExpanded && (
+            <>
+              <Col xs={24} sm={12} md={8} lg={4}>
+                <Select
+                  placeholder="风险分级"
+                  allowClear
+                  style={{ width: '100%' }}
+                  options={['高度关注', '中度关注', '一般关注'].map((d) => ({ label: d, value: d }))}
+                  value={filters.riskLevel}
+                  onChange={(v) => setFilters((f) => ({ ...f, riskLevel: v }))}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={4}>
+                <Select
+                  placeholder="接入方式"
+                  allowClear
+                  style={{ width: '100%' }}
+                  options={ENUMS.accessType.map((d) => ({ label: d, value: d }))}
+                  value={filters.accessType}
+                  onChange={(v) => setFilters((f) => ({ ...f, accessType: v }))}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={4}>
+                <Select
+                  placeholder="运行状态"
+                  allowClear
+                  style={{ width: '100%' }}
+                  options={['在线', '离线', '更新', '禁用', '异常'].map((d) => ({ label: d, value: d }))}
+                  value={filters.runtimeStatus}
+                  onChange={(v) => setFilters((f) => ({ ...f, runtimeStatus: v }))}
+                />
+              </Col>
+            </>
+          )}
+          <Col xs={24} sm={12} md={8} lg={filtersExpanded ? 12 : 6}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <Space size={8}>
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => setFiltersExpanded((v) => !v)}
+                  style={{ padding: 0 }}
+                  icon={filtersExpanded ? <UpOutlined /> : <DownOutlined />}
+                >
+                  {filtersExpanded ? '收起' : '展开'}
+                </Button>
+                <Button icon={<ReloadOutlined />} onClick={handleReset}>
+                  重置
+                </Button>
+              </Space>
+              <Dropdown menu={{ items: exportMenu }} trigger={['click']} disabled={filtered.length === 0}>
+                <Button
+                  type="primary"
+                  icon={<DownloadOutlined />}
+                  disabled={filtered.length === 0}
+                >
+                  导出台账 <DownOutlined style={{ fontSize: 10, marginLeft: 2 }} />
+                </Button>
+              </Dropdown>
+            </div>
+          </Col>
+        </Row>
+
+        {/* 已选/共 N 条 + 清空选择 — 紧贴表格上方 */}
+        <div style={{ marginTop: 12, marginBottom: 8 }}>
+          <Space size={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {selectedCount > 0
+                ? `已选 ${selectedCount} 条`
+                : `共 ${filtered.length} 条`}
+            </Text>
+            {selectedCount > 0 && (
+              <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setSelectedRowKeys([])}>
+                清空选择
+              </Button>
+            )}
+          </Space>
+        </div>
+
+        {visibleList.length === 0 ? (
+          <Alert
+            style={{ marginTop: 16 }}
+            type="warning"
+            showIcon
+            message="暂无智能体数据"
+            description="您当前没有可查看的台账数据，请联系平台管理员确认权限。"
+          />
+        ) : filtered.length === 0 ? (
+          <Empty
+            style={{ marginTop: 32 }}
+            description={
+              <span>
+                暂无匹配的智能体数据
+                <br />
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  试试调整筛选条件或重置
+                </Text>
+              </span>
+            }
+          >
+            <Button type="primary" onClick={handleReset}>
+              重置筛选
+            </Button>
+          </Empty>
+        ) : (
+          <div style={{ marginTop: 16 }}>
+            <Table
+              rowKey="id"
+              columns={columns}
+              dataSource={filtered}
+              size="middle"
+              rowSelection={{
+                selectedRowKeys,
+                onChange: (keys) => setSelectedRowKeys(keys),
+                preserveSelectedRowKeys: false,
+              }}
+              pagination={{
+                pageSize: 10,
+                showSizeChanger: true,
+                showTotal: (total) => `共 ${total} 条`,
+              }}
+              scroll={{ x: 1900 }}
+            />
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+};
+
+export default LedgerList;
