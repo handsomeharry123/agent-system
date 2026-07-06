@@ -3,18 +3,24 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ProLayout } from '@ant-design/pro-layout';
 import { Dropdown, Avatar, Space, message, Typography } from 'antd';
 import {
+  BgColorsOutlined,
+  CheckOutlined,
   LogoutOutlined,
   SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { useAuth } from '../hooks/useAuth';
+import { useTheme } from '../hooks/useTheme';
+import { THEME_LABELS, type ThemeKey } from '../theme/themeConfig';
 import { useDemoSettings } from '../hooks/useDemoSettings';
 import { resolveMenu, masterMenu, isModuleVisible, isSubPageVisible } from '../config/masterMenu';
 import { DemoSettingsPanel } from '../components/DemoFloatButton';
 // V1 智能化升级（§3.1.1）：全局「智能填写助手」悬浮入口 + 对话浮层
 import AgentAssistant from '../pages/agent-center/smart/AgentAssistant';
 import { SmartDraftProvider } from '../pages/agent-center/smart/store.tsx';
+// 统一台账中心智能化升级（PRD §3.1）：台账总览 / 列表页全局气泡欢迎语 + 对话浮层
+import AgentFloatHost from '../components/AgentFloatHost';
 
 const { Text } = Typography;
 
@@ -31,9 +37,19 @@ const BasicLayout = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [demoPanelOpen, setDemoPanelOpen] = useState(false);
   const { currentUser } = useAuth();
+  const { themeKey, setThemeKey } = useTheme();
+  const isTech = themeKey === 'tech';
   const { visibleModules, visibleSubPages, demoRole } = useDemoSettings();
 
   const demoMode = isDemoModeEnabled();
+
+  // 主题风格标记同步到 <body>：驱动 global.css 的科技风网格 + 光晕背景层
+  useEffect(() => {
+    document.body.setAttribute('data-app-theme', themeKey);
+    return () => {
+      document.body.removeAttribute('data-app-theme');
+    };
+  }, [themeKey]);
 
   // 根据 demo 角色 + 模块显隐集合计算最终菜单
   // 2 角色可见性维度：信息科管理员 = itAdmin；科室管理员 = itUser
@@ -49,6 +65,23 @@ const BasicLayout = () => {
   useEffect(() => {
     if (!currentUser) return;
     const path = location.pathname;
+    // 🛡️ V2.4 兜底:接入中心全部二级路径永久豁免拦截(不依赖 masterMenu 子项配置)
+    //  场景:StrictMode + 子组件 hooks 顺序漂移导致 ErrorBoundary 替换为 "Something went wrong.",
+    //  用户会误读为「拒绝访问」;此短路确保即使上游拦截逻辑因任何 race 误判,
+    //  接入中心主路径 + 全部子路径都不会被强制 navigate 跳走,渲染异常由页面内 ErrorBoundary 自处理。
+    if (path === '/app/agent-center' || path.startsWith('/app/agent-center/')) {
+      warnedForRef.current = '';
+      return;
+    }
+    // 🛡️ V2.4 兜底：台账中心 detail/risk 子路径永久豁免拦截
+    //  场景：masterMenu 中 ledger.children 仅显式列出 overview / list,
+    //  若后续角色基线收紧（如给 detail/risk 加 itAdmin 默认）会误判 startsWith 兜底;
+    //  此短路确保台账详情/风险分级路径永远由页面内权限逻辑（Detail.tsx 的 isPlatformAdmin
+    //  + 科室匹配）自处理,BasicLayout 不抢跳走,避免误报「拒绝访问」。
+    if (path.startsWith('/app/ledger/detail/') || path.startsWith('/app/ledger/risk/')) {
+      warnedForRef.current = '';
+      return;
+    }
     // 找出当前路径所属的模块（精确路径匹配或前缀匹配）
     const ownerModule = masterMenu.find((m) => {
       if (path === m.path) return true;
@@ -62,37 +95,38 @@ const BasicLayout = () => {
     // 2 角色：信息科管理员 → 首页；科室管理员 → 工作台
     const safeFallback = demoRole === '信息科管理员' ? '/app/home/overview' : '/app/home/workbench';
 
-    // 统一判定：与 resolveMenu / 演示树 共用 isModuleVisible / isSubPageVisible
-    // 涵盖「用户取消勾选」与「角色基线屏蔽」两种情况
-    // V1.7 扩展：模块对某角色可见、但子页面对该角色屏蔽时，也要强制回退
-    // （如科室管理员访问「评测沙盒/指标展示」这类仅管理员子页）
+    // 拦截策略 V2.1：仅在「角色基线无权」时强制回退，不再因演示面板取消勾选拦截路径。
+    // 理由：演示面板的可见性只是「侧边栏显隐」开关，不应劫持地址栏直接访问的路由。
+    // 保留项：仅信息科管理员可见的子页（如指标展示/数据资源/告警规则管理）对科室管理员仍然强制回退。
     const roleKey = demoRole === '信息科管理员' ? 'itAdmin' : 'itUser';
-    const moduleBlocked = !isModuleVisible(ownerModule, visibleModules, roleKey);
+    // 计算角色基线拦截：模块 defaultRoleVisible 对当前角色直接不可见
+    const roleBaselineBlocked =
+      ownerModule.defaultRoleVisible === 'itAdmin' && roleKey === 'itUser';
     // 路径归属子页面判定：精确路径匹配 或 路径以子页面 path + '/' 开头
-    // （覆盖子页面的详情/创建/导入等嵌套路由）
     const subPage = ownerModule.children?.find(
       (s) => path === s.path || path.startsWith(s.path + '/'),
     );
-    const subPageBlocked = subPage
-      ? !isSubPageVisible(ownerModule, subPage, visibleModules, visibleSubPages, roleKey)
+    const subRoleBaselineBlocked = subPage
+      ? (subPage.defaultRoleVisible || ownerModule.defaultRoleVisible) === 'itAdmin' &&
+        roleKey === 'itUser'
       : false;
+    const moduleBlocked = roleBaselineBlocked;
+    const subPageBlocked = subRoleBaselineBlocked;
     if (moduleBlocked || subPageBlocked) {
       if (path !== safeFallback) {
-        // V2.0：被演示设置隐藏时给出明确提示，避免"看起来被拒绝访问"
-        // 区分两种拦截原因：模块级取消勾选 / 子页面取消勾选 / 角色基线无权限
+        // V2.1：仅在角色基线不可见时拦截；路径提示以"角色基线"为由，不再误把"演示面板取消勾选"当拦截原因
         const reason = moduleBlocked
           ? subPage
             ? `「${ownerModule.name} / ${subPage.name}」`
             : `「${ownerModule.name}」`
           : `「${ownerModule.name} / ${subPage?.name ?? ''}」`;
-        const cause = moduleBlocked
-          ? (visibleModules[ownerModule.key] === false ? '已被演示设置取消勾选' : '当前角色无权访问')
-          : '已被演示设置取消勾选';
-        // 同一拦截目标（path + reason）只弹一次，避免 React 18 StrictMode 双弹 + 用户手动重试重复提示
         const warnedKey = `${path}::${reason}`;
         if (warnedForRef.current !== warnedKey) {
           warnedForRef.current = warnedKey;
-          message.warning(`${reason} ${cause}，已自动跳转。点击右上角头像 →「演示功能」可恢复。`, 4);
+          // V2.x fix: 措辞改友好 + 降级为 info。
+          //   信息科管理员误触发时不会被误当作权限 bug;
+          //   实际语义是「角色基线下此页面不在可见集合里」,信息强度更弱。
+          message.info(`${reason} 暂不可访问，已自动跳转到默认页。`, 3);
         }
         navigate(safeFallback, { replace: true });
       } else {
@@ -109,6 +143,23 @@ const BasicLayout = () => {
 
   // V1.1：身份免维护 + SSO 单点登录，用户基础信息与密码均由医院侧维护
   // 头像菜单保留「退出登录」；演示模式开启时，在上方加「演示功能」入口
+  // 主题切换（简约风 / 科技风）对所有用户可见，当前风格打勾
+  const themeMenuItem: NonNullable<MenuProps['items']>[number] = {
+    key: 'theme',
+    icon: <BgColorsOutlined />,
+    label: '主题切换',
+    children: (['simple', 'tech'] as ThemeKey[]).map((key) => ({
+      key: `theme:${key}`,
+      label: THEME_LABELS[key],
+      icon:
+        themeKey === key ? (
+          <CheckOutlined style={{ color: '#1677FF' }} />
+        ) : (
+          <span style={{ display: 'inline-block', width: 14 }} />
+        ),
+    })),
+  };
+
   const userMenuItems: MenuProps['items'] = demoMode
     ? [
         {
@@ -116,6 +167,7 @@ const BasicLayout = () => {
           icon: <SettingOutlined />,
           label: '演示功能',
         },
+        themeMenuItem,
         { type: 'divider' as const },
         {
           key: 'logout',
@@ -125,6 +177,8 @@ const BasicLayout = () => {
         },
       ]
     : [
+        themeMenuItem,
+        { type: 'divider' as const },
         {
           key: 'logout',
           icon: <LogoutOutlined />,
@@ -134,6 +188,10 @@ const BasicLayout = () => {
       ];
 
   const handleUserMenuClick: MenuProps['onClick'] = ({ key }) => {
+    if (key.startsWith('theme:')) {
+      setThemeKey(key.slice('theme:'.length) as ThemeKey);
+      return;
+    }
     switch (key) {
       case 'demo':
         setDemoPanelOpen(true);
@@ -155,17 +213,18 @@ const BasicLayout = () => {
           gap: 8,
           padding: '4px 10px',
           borderRadius: 16,
-          background: '#F0F5FF',
-          border: '1px solid #ADC6FF',
+          background: isTech ? 'rgba(34, 211, 238, 0.08)' : '#F0F5FF',
+          border: isTech ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid #ADC6FF',
+          boxShadow: isTech ? '0 0 16px rgba(34, 211, 238, 0.12)' : undefined,
           cursor: 'default',
         }}
         title={`当前演示用户：${currentUser?.name ?? '-'}（${demoRole}）`}
       >
-        <UserOutlined style={{ color: '#1677FF' }} />
-        <Text style={{ fontSize: 13, color: '#1677FF', fontWeight: 500 }}>
+        <UserOutlined style={{ color: isTech ? '#22d3ee' : '#1677FF' }} />
+        <Text style={{ fontSize: 13, color: isTech ? '#e8f1ff' : '#1677FF', fontWeight: 500 }}>
           {currentUser?.name ?? '-'}
         </Text>
-        <Text type="secondary" style={{ fontSize: 12 }}>
+        <Text type={isTech ? undefined : 'secondary'} style={{ fontSize: 12, color: isTech ? '#9fb3d1' : undefined }}>
           · {demoRole}
         </Text>
       </div>
@@ -175,7 +234,11 @@ const BasicLayout = () => {
         trigger={['click']}
       >
         <Avatar
-          style={{ backgroundColor: '#1677FF', cursor: 'pointer' }}
+          style={{
+            background: isTech ? 'linear-gradient(135deg, #1d4ed8, #0891b2)' : '#1677FF',
+            boxShadow: isTech ? '0 0 18px rgba(34, 211, 238, 0.25)' : undefined,
+            cursor: 'pointer',
+          }}
           icon={<UserOutlined />}
         />
       </Dropdown>
@@ -202,6 +265,22 @@ const BasicLayout = () => {
       title="医疗智能体管理平台"
       logo="/logo.svg"
       location={location}
+      navTheme={isTech ? 'realDark' : 'light'}
+      token={
+        isTech
+          ? {
+              header: { colorBgHeader: 'rgba(15, 24, 48, 0.85)', colorTextMenu: '#e8f1ff' },
+              sider: {
+                colorMenuBackground: 'rgba(9, 14, 28, 0.92)',
+                colorBgMenuItemSelected: 'rgba(34, 211, 238, 0.16)',
+                colorTextMenuSelected: '#ffffff',
+                colorTextMenu: '#9fb3d1',
+                colorTextMenuActive: '#e8f1ff',
+              },
+              bgLayout: 'transparent',
+            }
+          : undefined
+      }
       menuDataRender={() => filteredMenuItems as any}
       collapsed={collapsed}
       onCollapse={setCollapsed}
@@ -221,7 +300,7 @@ const BasicLayout = () => {
     >
       <div
         style={{
-          background: '#F5F5F5',
+          background: isTech ? 'transparent' : '#F5F5F5',
           minHeight: 'calc(100vh - 64px)',
         }}
       >
@@ -231,6 +310,11 @@ const BasicLayout = () => {
         <SmartDraftProvider>
           <Outlet />
           <AgentAssistant />
+          {/* 台账中心智能化升级(PRD §3.1.1 + §3.1.2):
+              进入台账总览 / 台账列表页时,自动弹出非打断态势汇报气泡欢迎语;
+              点击机器人可唤起 Agent 对话窗口(自然语言问答 + 推荐问句)。
+              AgentFloatHost 内部根据 pathname 判断是否渲染与弹气泡。 */}
+          <AgentFloatHost />
           {/* 演示设置抽屉: 由右上角头像下拉菜单的「演示功能」项触发,
               仅在 VITE_DEMO_MODE 开启时挂载, 生产环境不渲染 */}
           {demoMode && (

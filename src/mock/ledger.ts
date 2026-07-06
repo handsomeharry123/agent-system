@@ -1,4 +1,5 @@
 // 统一台账中心 - 全局 Mock 数据
+import dayjs from 'dayjs';
 // 对齐需求文档 V1.4：
 //   ① 8 个业务核心字段（身份编码、名称、科室、来源、供应商、类型、功能关键词、版本）
 //   ② 总览页 / 列表页 / 详情页统一数据源
@@ -169,6 +170,18 @@ export interface LinkedResource {
   contact: string; // 联系方式
   linkType: (typeof ENUMS.resourceLinkType)[number]; // 对接方式
   linkNote?: string; // 其他对接方式说明
+  // 360 画像视图（PRD §3.2.2 / §3.2.3）需要：在拓扑图中标注对接状态，异常连接醒目提示
+  linkStatus?: 'normal' | 'abnormal'; // 资源对接状态（正常 / 异常），用于 360 画像拓扑图异常高亮
+  // V2.8:多级辐射拓扑使用 — 决定节点落在哪一圈(1=核心圈 / 2=次圈 / 3=外圈 / 4=边缘)
+  ring?: 1 | 2 | 3 | 4;
+  // V2.8:节点卡片左上角系统类型徽标(PACS/HIS/EMR/LIS/NIS/MUSE/ESB/MQ/KM 等)
+  subType?: string;
+  // V2.9:资源关系图使用,parentId 为空表示直接连接中心智能体
+  parentId?: string;
+  // V2.9:节点层级,用于拓扑卡片文案与视觉分组
+  nodeKind?: 'domain' | 'system' | 'platform' | 'interface' | 'data';
+  // V2.9:Demo 精排角度,0=右侧,90=下方,-90=上方
+  angleDeg?: number;
 }
 
 // 准入评测结果（四维得分）
@@ -179,7 +192,7 @@ export interface EvaluationDimensionScore {
 }
 
 export interface EvaluationSecurityDetail {
-  name: string; // 如「数据脱敏」「权限隔离」「越权防护」「内容审计」
+  name: string; // 如「输入安全」「输出安全」「行为安全」「数据安全」「工具安全」
   score: number; // 0~100
 }
 
@@ -498,20 +511,83 @@ const filingAttachmentsFor = (raw: RawAgent): FilingAttachment[] => {
 
 // 已对接资源（取自医院资源管理中心）
 const linkedResourcesFor = (raw: RawAgent, idx: number): LinkedResource[] => {
-  if (raw.idCode.startsWith('DiagAssist') || raw.idCode.startsWith('CTVision')) {
+  if (raw.id === 'AGT-2024-001') {
+    // 360 画像视图:以 AskMed 智能体为中心,模拟其与院内业务域、系统平台、接口/数据资源的关系地图
     return [
-      { id: `${raw.id}-R1`, name: '电子病历系统 EMR', owner: '李建华', contact: '13900001001', linkType: 'API' },
-      { id: `${raw.id}-R2`, name: '医学影像归档系统 PACS', owner: '王志远', contact: '13900001002', linkType: 'API' },
+      { id: `${raw.id}-D1`, name: '临床业务域', owner: '张文博', contact: '13910000000', linkType: 'API', linkStatus: 'normal', ring: 1, subType: 'CLINIC', nodeKind: 'domain', angleDeg: -90 },
+      { id: `${raw.id}-D2`, name: '知识智库域', owner: '陈晓东', contact: '13900001003', linkType: 'SDK', linkStatus: 'normal', ring: 1, subType: 'KM', nodeKind: 'domain', angleDeg: 8 },
+      { id: `${raw.id}-D3`, name: '患者服务域', owner: '赵欣', contact: '13900001009', linkType: 'API', linkStatus: 'normal', ring: 1, subType: 'PATIENT', nodeKind: 'domain', angleDeg: 98 },
+      { id: `${raw.id}-D4`, name: '医保结算域', owner: '沈嘉', contact: '13900001010', linkType: 'API', linkStatus: 'abnormal', ring: 1, subType: 'PAY', nodeKind: 'domain', angleDeg: 178 },
+
+      { id: `${raw.id}-S1`, name: '电子病历系统 EMR', owner: '李建华', contact: '13900001001', linkType: 'API', linkStatus: 'normal', ring: 2, subType: 'EMR', parentId: `${raw.id}-D1`, nodeKind: 'system', angleDeg: -130 },
+      { id: `${raw.id}-S2`, name: 'HIS 主索引服务', owner: '王志远', contact: '13900001004', linkType: '数据库直连', linkStatus: 'normal', ring: 2, subType: 'HIS', parentId: `${raw.id}-D1`, nodeKind: 'system', angleDeg: -18 },
+      { id: `${raw.id}-S3`, name: '院内医学知识库', owner: '陈晓东', contact: '13900001003', linkType: 'SDK', linkStatus: 'normal', ring: 2, subType: 'KM', parentId: `${raw.id}-D2`, nodeKind: 'platform', angleDeg: 26 },
+      { id: `${raw.id}-S4`, name: '互联网医院平台', owner: '赵欣', contact: '13900001009', linkType: 'API', linkStatus: 'normal', ring: 2, subType: 'PORTAL', parentId: `${raw.id}-D3`, nodeKind: 'platform', angleDeg: 116 },
+      { id: `${raw.id}-S5`, name: '医保结算系统', owner: '沈嘉', contact: '13900001010', linkType: '文件交换', linkStatus: 'abnormal', ring: 2, subType: 'PAY', parentId: `${raw.id}-D4`, nodeKind: 'system', angleDeg: 198 },
+
+      { id: `${raw.id}-I1`, name: '患者基本信息接口', owner: '李建华', contact: '13900001001', linkType: 'API', linkStatus: 'normal', ring: 3, subType: 'API', parentId: `${raw.id}-S1`, nodeKind: 'interface', angleDeg: -156 },
+      { id: `${raw.id}-I2`, name: '既往史摘要接口', owner: '李建华', contact: '13900001001', linkType: 'API', linkStatus: 'normal', ring: 3, subType: 'API', parentId: `${raw.id}-S1`, nodeKind: 'interface', angleDeg: -108 },
+      { id: `${raw.id}-I3`, name: '预约挂号接口', owner: '王志远', contact: '13900001004', linkType: 'API', linkStatus: 'normal', ring: 3, subType: 'API', parentId: `${raw.id}-S2`, nodeKind: 'interface', angleDeg: -18 },
+      { id: `${raw.id}-I4`, name: '诊疗指南知识库', owner: '陈晓东', contact: '13900001003', linkType: 'SDK', linkStatus: 'normal', ring: 3, subType: 'KM', parentId: `${raw.id}-S3`, nodeKind: 'data', angleDeg: 48 },
+      { id: `${raw.id}-I5`, name: '在线问诊会话', owner: '赵欣', contact: '13900001009', linkType: 'SDK', linkStatus: 'normal', ring: 3, subType: 'CHAT', parentId: `${raw.id}-S4`, nodeKind: 'data', angleDeg: 138 },
+      { id: `${raw.id}-I6`, name: '医保身份核验接口', owner: '沈嘉', contact: '13900001010', linkType: 'API', linkStatus: 'abnormal', ring: 3, subType: 'API', parentId: `${raw.id}-S5`, nodeKind: 'interface', angleDeg: 220 },
+
+      { id: `${raw.id}-A1`, name: 'ESB 网关审计日志', owner: '刘洋', contact: '13900001008', linkType: '其他', linkNote: 'OTel Trace', linkStatus: 'normal', ring: 4, subType: 'ESB', parentId: `${raw.id}-I1`, nodeKind: 'data', angleDeg: -168 },
+      { id: `${raw.id}-A2`, name: '预问诊结构化摘要', owner: '张文博', contact: '13910000000', linkType: 'API', linkStatus: 'normal', ring: 4, subType: 'DOC', parentId: `${raw.id}-I2`, nodeKind: 'data', angleDeg: -112 },
+      { id: `${raw.id}-A3`, name: '异常对接工单', owner: '沈嘉', contact: '13900001010', linkType: '其他', linkNote: '监控告警联动', linkStatus: 'abnormal', ring: 4, subType: 'ALERT', parentId: `${raw.id}-I6`, nodeKind: 'data', angleDeg: 238 },
+    ];
+  }
+  if (raw.id === 'AGT-2023-007') {
+    // 员工心理健康评估系统:补齐 360 画像完整关联资源拓扑,
+    // 覆盖业务域 / 院内系统 / 接口服务 / 数据与工单四层。
+    return [
+      { id: `${raw.id}-D1`, name: '员工健康业务域', owner: '林妍', contact: '13910000121', linkType: 'API', linkStatus: 'normal', ring: 1, subType: 'CLINIC', nodeKind: 'domain', angleDeg: -96 },
+      { id: `${raw.id}-D2`, name: '人事组织域', owner: '周启明', contact: '13910000122', linkType: '数据库直连', linkStatus: 'normal', ring: 1, subType: 'HIS', nodeKind: 'domain', angleDeg: 4 },
+      { id: `${raw.id}-D3`, name: '心理干预资源域', owner: '袁可', contact: '13910000123', linkType: 'SDK', linkStatus: 'normal', ring: 1, subType: 'KM', nodeKind: 'domain', angleDeg: 118 },
+      { id: `${raw.id}-D4`, name: '隐私合规域', owner: '秦立', contact: '13910000124', linkType: 'API', linkStatus: 'normal', ring: 1, subType: 'ALERT', nodeKind: 'domain', angleDeg: 190 },
+
+      { id: `${raw.id}-S1`, name: '员工主数据平台', owner: '周启明', contact: '13910000122', linkType: '数据库直连', linkStatus: 'normal', ring: 2, subType: 'HIS', parentId: `${raw.id}-D2`, nodeKind: 'platform', angleDeg: -146 },
+      { id: `${raw.id}-S2`, name: '问卷量表系统', owner: '林妍', contact: '13910000121', linkType: 'API', linkStatus: 'normal', ring: 2, subType: 'API', parentId: `${raw.id}-D1`, nodeKind: 'system', angleDeg: -52 },
+      { id: `${raw.id}-S3`, name: '心理援助知识库', owner: '袁可', contact: '13910000123', linkType: 'SDK', linkStatus: 'normal', ring: 2, subType: 'KM', parentId: `${raw.id}-D3`, nodeKind: 'platform', angleDeg: 62 },
+      { id: `${raw.id}-S4`, name: '隐私脱敏网关', owner: '秦立', contact: '13910000124', linkType: 'API', linkStatus: 'normal', ring: 2, subType: 'ESB', parentId: `${raw.id}-D4`, nodeKind: 'platform', angleDeg: 168 },
+
+      { id: `${raw.id}-I1`, name: '员工组织关系接口', owner: '周启明', contact: '13910000122', linkType: 'API', linkStatus: 'normal', ring: 3, subType: 'API', parentId: `${raw.id}-S1`, nodeKind: 'interface', angleDeg: -168 },
+      { id: `${raw.id}-I2`, name: '匿名问卷提交接口', owner: '林妍', contact: '13910000121', linkType: 'API', linkStatus: 'normal', ring: 3, subType: 'CHAT', parentId: `${raw.id}-S2`, nodeKind: 'interface', angleDeg: -68 },
+      { id: `${raw.id}-I3`, name: '心理干预建议接口', owner: '袁可', contact: '13910000123', linkType: 'SDK', linkStatus: 'normal', ring: 3, subType: 'API', parentId: `${raw.id}-S3`, nodeKind: 'interface', angleDeg: 52 },
+      { id: `${raw.id}-I4`, name: '高风险预警接口', owner: '秦立', contact: '13910000124', linkType: 'API', linkStatus: 'normal', ring: 3, subType: 'ALERT', parentId: `${raw.id}-S4`, nodeKind: 'interface', angleDeg: 172 },
+
+      { id: `${raw.id}-A1`, name: '心理量表题库', owner: '袁可', contact: '13910000123', linkType: 'SDK', linkStatus: 'normal', ring: 4, subType: 'DOC', parentId: `${raw.id}-I3`, nodeKind: 'data', angleDeg: -122 },
+      { id: `${raw.id}-A2`, name: '脱敏评估结果集', owner: '秦立', contact: '13910000124', linkType: '文件交换', linkStatus: 'normal', ring: 4, subType: 'DOC', parentId: `${raw.id}-I2`, nodeKind: 'data', angleDeg: 18 },
+      { id: `${raw.id}-A3`, name: '危机干预工单队列', owner: '林妍', contact: '13910000121', linkType: '其他', linkNote: 'MQ 消息订阅', linkStatus: 'normal', ring: 4, subType: 'MQ', parentId: `${raw.id}-I4`, nodeKind: 'data', angleDeg: 132 },
+    ];
+  }
+  if (raw.idCode.startsWith('DiagAssist') || raw.idCode.startsWith('CTVision')) {
+    // 360 画像视图（PRD §3.2.2/§3.2.3）:影像类智能体 EMR 正常 + PACS 异常,演示异常连接醒目提示
+    // V2.8:多级辐射拓扑 — 节点分散到 4 层,演示 3-5 层视觉
+    return [
+      { id: `${raw.id}-R1`, name: '医学影像归档系统 PACS', owner: '王志远', contact: '13900001002', linkType: 'API', linkStatus: 'abnormal', ring: 1, subType: 'PACS' },
+      { id: `${raw.id}-R2`, name: '电子病历系统 EMR', owner: '李建华', contact: '13900001001', linkType: 'API', linkStatus: 'normal', ring: 2, subType: 'EMR' },
+      { id: `${raw.id}-R3`, name: '检验信息系统 LIS', owner: '周敏', contact: '13900001005', linkType: '数据库直连', linkStatus: 'normal', ring: 3, subType: 'LIS' },
+      { id: `${raw.id}-R4`, name: '护理信息系统 NIS', owner: '高雪', contact: '13900001006', linkType: 'SDK', linkStatus: 'normal', ring: 4, subType: 'NIS' },
     ];
   }
   if (idx % 4 === 0) {
     return [
-      { id: `${raw.id}-R1`, name: '院内知识库', owner: '陈晓东', contact: '13900001003', linkType: 'SDK' },
+      { id: `${raw.id}-R1`, name: '院内知识库', owner: '陈晓东', contact: '13900001003', linkType: 'SDK', linkStatus: idx % 8 === 0 ? 'abnormal' : 'normal', ring: idx % 8 === 0 ? 1 : 2, subType: 'KM' },
     ];
   }
   if (idx % 3 === 0) {
+    // V2.8:HIS 主索引放核心圈 ring=1,叠加 MUSE 演示心电数据接入
     return [
-      { id: `${raw.id}-R1`, name: 'HIS 主索引服务', owner: '王志远', contact: '13900001004', linkType: '数据库直连' },
+      { id: `${raw.id}-R1`, name: 'HIS 主索引服务', owner: '王志远', contact: '13900001004', linkType: '数据库直连', linkStatus: 'normal', ring: 1, subType: 'HIS' },
+      { id: `${raw.id}-R2`, name: '心电网络 MUSE', owner: '黄海', contact: '13900001007', linkType: 'API', linkStatus: 'normal', ring: 3, subType: 'MUSE' },
+    ];
+  }
+  if (idx % 5 === 0) {
+    // V2.8:其余演示用 ESB/MQ 边缘圈节点
+    return [
+      { id: `${raw.id}-R1`, name: '企业服务总线 ESB', owner: '王志远', contact: '13900001004', linkType: 'API', linkStatus: 'normal', ring: 4, subType: 'ESB' },
+      { id: `${raw.id}-R2`, name: '消息队列 MQ', owner: '刘洋', contact: '13900001008', linkType: '其他', linkStatus: 'normal', ring: 4, subType: 'MQ' },
     ];
   }
   return [];
@@ -541,10 +617,11 @@ const evaluationReportFor = (
     { dimension: '鲁棒性', score: Math.max(50, baseScore - 6), weight: 0.15 },
   ];
   const securityDetails: EvaluationSecurityDetail[] = [
-    { name: '数据脱敏', score: Math.min(100, baseScore + 3) },
-    { name: '权限隔离', score: Math.max(60, baseScore - 1) },
-    { name: '越权防护', score: Math.max(60, baseScore - 4) },
-    { name: '内容审计', score: Math.max(60, baseScore + 2) },
+    { name: '输入安全', score: Math.min(100, baseScore + 3) },
+    { name: '输出安全', score: Math.max(60, baseScore - 1) },
+    { name: '行为安全', score: Math.max(60, baseScore - 4) },
+    { name: '数据安全', score: Math.max(60, baseScore + 2) },
+    { name: '工具安全', score: Math.max(60, baseScore - 2) },
   ];
   // 多次准入评测历史（按版本号升序累加，不覆盖）
   const history: EvaluationHistoryEntry[] = [
@@ -2178,3 +2255,112 @@ export const getExpiringAuthorizations = (list: LedgerAgent[] = getVisibleAgents
   return result.sort((a, b) => a.daysLeft - b.daysLeft);
 };
 
+// ================== 6. 订阅速读历史报告（V2.0 PRD §3.3.3） ==================
+// 订阅抽屉 → 历史报告 Tab：按订阅设置每天/每周推送的速读报告记录
+export interface SubscriptionReportRecord {
+  id: string; // 报告 ID
+  title: string; // 报告名称
+  freq: 'daily' | 'weekly'; // 订阅频率
+  scope: 'all' | 'dept'; // 订阅范围
+  channels: Array<'workbench' | 'email' | 'im'>; // 推送通道
+  generatedAt: string; // 生成时间 YYYY-MM-DD HH:mm
+  deliveredAt: string; // 送达时间 YYYY-MM-DD HH:mm
+  highlights: string[]; // 报告要点（速读核心结论）
+  status: 'delivered' | 'viewed' | 'failed'; // 推送状态
+}
+
+// 历史报告 mock（按时间倒序：今天 / 昨天 / 3 天前 / 上周一 / 上上周一 …）
+export const getSubscriptionHistoryReports = (): SubscriptionReportRecord[] => {
+  const now = dayjs();
+  return [
+    {
+      id: 'BR-2026-0706-D',
+      title: `${now.format('YYYY-MM-DD')} 全院台账速读`,
+      freq: 'daily',
+      scope: 'all',
+      channels: ['workbench', 'email'],
+      generatedAt: now.format('YYYY-MM-DD 08:00'),
+      deliveredAt: now.format('YYYY-MM-DD 08:01'),
+      highlights: [
+        '本日新增 2 例告警（影像科 PACS 链路抖动 ×1、内分泌科 LLM 调用超时 ×1）',
+        '智能体总调用量 238.63 万,环比前日 +3.2%',
+        '覆盖 11/11 科室,中度关注智能体 4 个,本周新增 1 个',
+      ],
+      status: 'delivered',
+    },
+    {
+      id: 'BR-2026-0705-D',
+      title: `${now.subtract(1, 'day').format('YYYY-MM-DD')} 全院台账速读`,
+      freq: 'daily',
+      scope: 'all',
+      channels: ['workbench', 'email'],
+      generatedAt: now.subtract(1, 'day').format('YYYY-MM-DD 08:00'),
+      deliveredAt: now.subtract(1, 'day').format('YYYY-MM-DD 08:02'),
+      highlights: [
+        '本日新增 1 例故障（心内科 GPU 节点内存告警）,已自动重启',
+        '调用量较前日 -1.4%,处于正常波动区间',
+        '风险分级未变化,无新增高度关注智能体',
+      ],
+      status: 'viewed',
+    },
+    {
+      id: 'BR-2026-0704-D',
+      title: `${now.subtract(2, 'day').format('YYYY-MM-DD')} 全院台账速读`,
+      freq: 'daily',
+      scope: 'all',
+      channels: ['workbench', 'email'],
+      generatedAt: now.subtract(2, 'day').format('YYYY-MM-DD 08:00'),
+      deliveredAt: now.subtract(2, 'day').format('YYYY-MM-DD 08:01'),
+      highlights: [
+        '本日无新增告警与故障',
+        '影像科智能体调用量环比 +8.6%,疑似与本周体检高峰相关',
+        '1 个本科室智能体备案材料即将到期（7 日内）',
+      ],
+      status: 'viewed',
+    },
+    {
+      id: 'BR-2026-0703-D',
+      title: `${now.subtract(3, 'day').format('YYYY-MM-DD')} 全院台账速读`,
+      freq: 'daily',
+      scope: 'all',
+      channels: ['workbench'],
+      generatedAt: now.subtract(3, 'day').format('YYYY-MM-DD 08:00'),
+      deliveredAt: '',
+      highlights: [
+        '本日邮件通道投递失败（邮件服务临时不可用）,已回退至工作台消息',
+        '建议管理员检查 SMTP 配置',
+      ],
+      status: 'failed',
+    },
+    {
+      id: 'BR-2026-0629-W',
+      title: `${now.subtract(1, 'week').startOf('week').add(0, 'day').format('YYYY-MM-DD')} ~ ${now.subtract(1, 'week').endOf('week').format('YYYY-MM-DD')} 全院台账周报`,
+      freq: 'weekly',
+      scope: 'all',
+      channels: ['workbench', 'email'],
+      generatedAt: now.subtract(1, 'week').endOf('week').format('YYYY-MM-DD 09:00'),
+      deliveredAt: now.subtract(1, 'week').endOf('week').format('YYYY-MM-DD 09:02'),
+      highlights: [
+        '本周新增告警 7 例（环比 -25%）,其中已恢复 6 例',
+        '智能体数量净增 4 个（准入通过 3 / 下线归档 1）',
+        '周调用量 14.2 万,环比上周 +5.8%,重点增量来自放射科与内分泌科',
+      ],
+      status: 'viewed',
+    },
+    {
+      id: 'BR-2026-0622-W',
+      title: `${now.subtract(2, 'week').startOf('week').format('YYYY-MM-DD')} ~ ${now.subtract(2, 'week').endOf('week').format('YYYY-MM-DD')} 全院台账周报`,
+      freq: 'weekly',
+      scope: 'all',
+      channels: ['workbench', 'email'],
+      generatedAt: now.subtract(2, 'week').endOf('week').format('YYYY-MM-DD 09:00'),
+      deliveredAt: now.subtract(2, 'week').endOf('week').format('YYYY-MM-DD 09:01'),
+      highlights: [
+        '本周新增告警 12 例（环比 +20%）,影像科 PACS 链路抖动为主要原因',
+        '智能体覆盖率维持 100%,本科室新增 1 个「眼科 AI 辅助阅片」',
+        '已部署智能体平均可用率 99.62%,SLA 达标率 100%',
+      ],
+      status: 'viewed',
+    },
+  ];
+};

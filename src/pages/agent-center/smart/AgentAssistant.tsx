@@ -14,7 +14,8 @@
  *  - 文本 (回车发送)
  *  - 语音 (前端 mock 转写)
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Alert,
   Button,
@@ -27,9 +28,11 @@ import {
   message,
 } from 'antd';
 import {
+  ApiOutlined,
   AudioOutlined,
   CloseOutlined,
   CloudUploadOutlined,
+  FilePdfOutlined,
   LinkOutlined,
   PaperClipOutlined,
   SendOutlined,
@@ -40,7 +43,7 @@ import type { UploadFile } from 'antd';
 import RobotIcon from './AgentRobotIcon';
 import AgentMessageBubble from './AgentMessageBubble';
 import { useSmartDraft } from './store.tsx';
-import type { AgentMood } from './types';
+import type { AgentMessageType, AgentMood } from './types';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -81,8 +84,8 @@ const recognizeFile = async (fileName: string): Promise<RecognizeResult> => {
   return {
     fields: baseFields,
     summary: isTechSpec
-      ? `已从「${fileName}」中识别 ${baseFields.length} 个字段（含 ${baseFields.length - 9} 个技术信息，API key 置信度偏低请确认），可一键采纳。`
-      : `已从「${fileName}」中识别 ${baseFields.length} 个字段，可一键采纳到表单。`,
+      ? `已从「${fileName}」中识别 ${baseFields.length} 个字段（含 ${baseFields.length - 9} 个技术信息，API key 置信度偏低请确认），可选择字段采纳到表单。`
+      : `已从「${fileName}」中识别 ${baseFields.length} 个字段，可选择字段采纳到表单。`,
   };
 };
 
@@ -122,15 +125,16 @@ const recognizeText = async (text: string): Promise<RecognizeResult> => {
   } else {
     fields.push({ fieldKey: 'description', value: text, confidence: 0.55, source: '用户文本' });
   }
-  return { fields, summary: '已根据您的描述推断部分字段，建议补充材料以提升置信度。' };
+  return { fields, summary: '已根据您的描述推断部分字段，可选择字段采纳到表单。' };
 };
 
 // ──────────────────────────────────────────────────────────────────────
 // 主组件
 // ──────────────────────────────────────────────────────────────────────
 
-const CHAT_WIDTH = 440;
+const CHAT_WIDTH = 480;
 const CHAT_HEIGHT = 660;
+const HIDDEN_CHAT_MESSAGE_TYPES = new Set(['historical-plan', 'pre-audit-summary', 'pre-audit-issue']);
 
 // ──────────────────────────────────────────────────────────────────────
 // PRD §3.1.1 「位置与拖拽」: 默认右下角, 支持鼠标按住机器人拖拽到任意
@@ -160,6 +164,42 @@ const clampPos = (pos: FloatPos, size: number): FloatPos => {
   return {
     left: Math.min(Math.max(VIEWPORT_MARGIN, pos.left), maxLeft),
     top: Math.min(Math.max(VIEWPORT_MARGIN, pos.top), maxTop),
+  };
+};
+
+// §3.1.1 V2.2 改造: 需要让气泡顶到入口上方, 高度可达 420 的场景下重新选 top 锚点
+//   - 当前 anchor 默认 pos.top - 90, 适合短文案(高度 80~150px), 气泡底部略高于入口顶端
+//   - 含 previewProblems 场景下气泡高度可能 200~420px,
+//     仍按 -90 锚定会把气泡底部推出视口
+//   - 用 hasTallContent 标识需要让气泡底部贴近入口顶端 + 视口下界 8px 余量
+// V2.3.3 改造: 移除 miniList rows > 0 的判定, 仅 miniList 折叠态(不渲染 row)
+//   实际只占 30~50px(单个 ghost button), 不属于 tall content;
+//   展开态由 miniExpandedAt 控制, 真展开时高度 ~200 才需要 tall 锚定
+const hasTallContent = (
+  welcome: {
+    previewProblems?: { items: unknown[] } | null;
+    miniList?: { rows: unknown[] } | null;
+  } | null,
+  miniExpanded?: boolean,
+) => {
+  if (!welcome) return false;
+  if (welcome.previewProblems && welcome.previewProblems.items.length > 0) return true;
+  // miniList 仅在「真展开」时按 tall 计算; 折叠态只是 1 个 ghost button
+  if (miniExpanded && welcome.miniList && welcome.miniList.rows.length > 0) return true;
+  return false;
+};
+
+const getRobotBubblePlacement = (pos: FloatPos, bubbleHeight: number, bubbleWidth = 360) => {
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+  const margin = 8;
+  const gap = 12;
+  const width = Math.min(bubbleWidth, vw - margin * 2);
+  const desiredLeft = pos.left - gap - width;
+  const desiredTop = pos.top - gap - bubbleHeight;
+  return {
+    left: Math.max(margin, Math.min(desiredLeft, vw - width - margin)),
+    top: Math.max(margin, Math.min(desiredTop, vh - bubbleHeight - margin)),
   };
 };
 
@@ -196,6 +236,10 @@ const AgentAssistant = () => {
   const [draggingFile, setDraggingFile] = useState(false); // 拖拽文件至对话窗口任意区域
   // §3.1.1 指向性规则：列表页气泡「迷你清单」展开态；按 activeWelcome.at 归零(切 Tab 重置)
   const [miniExpandedAt, setMiniExpandedAt] = useState<number | null>(null);
+  // §3.1.1 新消息吸引: 600ms 内触发红点放大闪烁 (与 bounce 同步)
+  const [badgePulse, setBadgePulse] = useState(false);
+  // §3.1.1 收合挫手/坐下: 关闭对话窗口后 0.7s 内 entry 播放「挫手→坐下→回站」过渡
+  const [sitUntil, setSitUntil] = useState<number>(0);
 
   // PRD §3.1.1 「位置与拖拽」
   const [pos, setPos] = useState<FloatPos>(() => {
@@ -209,6 +253,19 @@ const AgentAssistant = () => {
   );
   const entryRef = useRef<HTMLDivElement>(null);
 
+  // 台账中心智能化升级(PRD §3.1):进入台账总览 / 列表页时,重置浮窗位置到右下角默认位置
+  //   避免用户之前在接入中心拖动到中部的位置残留到台账页面,遮挡表格
+  //   注意:只重置内存中的 pos(不删 localStorage),保留用户在其他页面的位置记忆
+  const location = useLocation();
+  useEffect(() => {
+    const path = location.pathname;
+    const isLedgerPage = path === '/app/ledger' || path === '/app/ledger/list' || path.startsWith('/app/ledger/list?');
+    if (isLedgerPage) {
+      setPos(getDefaultPos());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
   const msgEndRef = useRef<HTMLDivElement>(null);
   const dragCounter = useRef(0);
   const welcomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -216,6 +273,12 @@ const AgentAssistant = () => {
   const hiddenUploadRef = useRef<HTMLInputElement>(null);
   // 用户是否曾打开过浮层 — 在此之前的初始消息 / 欢迎语都不计入未读
   const hasOpenedRef = useRef(false);
+  // §3.1.1 V2.4.1: 气泡实际渲染高度(由 layout effect 写入),top 用它精修以避免预算误差
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const [bubbleActualH, setBubbleActualH] = useState<number | null>(null);
+  // §4.3 V5.0: materialOffer 侧气泡独立的 ref + 高度 (避免与 activeWelcome 共享 bubbleActualH 错位)
+  const materialOfferRef = useRef<HTMLDivElement>(null);
+  const [materialOfferH, setMaterialOfferH] = useState<number | null>(null);
 
   const {
     messages,
@@ -227,14 +290,50 @@ const AgentAssistant = () => {
     activeWelcome,
     pushWelcomeGreeting,
     consumeWelcome,
-    historicalPlans,
     syncUploadedFile,
+    // §4.3 V5.0: 备案材料生成提示 - 机器人旁独立侧气泡 (不在 ChatPanel 内)
+    materialOffer,
+    setMaterialOffer,
   } = useSmartDraft();
+
+  const visibleMessages = useMemo(
+    () => messages.filter((m) => !HIDDEN_CHAT_MESSAGE_TYPES.has(m.type)),
+    [messages],
+  );
 
   // 滚动到底部
   useEffect(() => {
     msgEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // §3.1.1 V2.4.1: 用 ResizeObserver 实时读 bubble 实际渲染高度,
+  //   写到 bubbleActualH 让 top 公式不再依赖预算 → 真正紧贴 entry.top - 12
+  useLayoutEffect(() => {
+    const el = bubbleRef.current;
+    if (!el) return undefined;
+    const update = () => {
+      const h = el.offsetHeight;
+      if (h > 0) setBubbleActualH(h);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeWelcome?.at]);
+
+  // §4.3 V5.0: materialOffer 侧气泡独立 ResizeObserver, 避免与 activeWelcome 共享 bubbleActualH 错位
+  useLayoutEffect(() => {
+    const el = materialOfferRef.current;
+    if (!el) return undefined;
+    const update = () => {
+      const h = el.offsetHeight;
+      if (h > 0) setMaterialOfferH(h);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [materialOffer?.at]);
 
   // 浮层打开时: 标记已阅 + 清零未读数; 仅在用户**真正打开过**后才开始累计未读
   useEffect(() => {
@@ -254,9 +353,12 @@ const AgentAssistant = () => {
         const newAgentMsgs = messages.slice(lastCount.current).filter((m) => m.role === 'agent');
         if (newAgentMsgs.length > 0) {
           setUnreadCount((c) => c + newAgentMsgs.length);
+          // §3.1.1 新消息: 触发红点放大闪烁 (600ms 两次脉冲, 与 bounce 同步)
+          setBadgePulse(true);
+          setTimeout(() => setBadgePulse(false), 1300);
         }
       }
-      // 触发 bounce 动画
+      // 触发 bounce 动画 (.agent-robot-bounce + .agent-robot-hand-wave 通过 entryRef 兄弟组加)
       setMood('happy');
       const t = setTimeout(() => setMood('idle'), 1200);
       return () => clearTimeout(t);
@@ -417,7 +519,11 @@ const AgentAssistant = () => {
     if (!text) return;
     addMessage({ role: 'user', type: 'text', content: text });
     setInput('');
-    runRecognitionFlow(() => recognizeText(text));
+    runRecognitionFlow(() => recognizeText(text), {
+      label: '正在识别文字描述…',
+      resultType: 'text-detect',
+      recognitionMode: 'text',
+    });
   };
 
   // ─── PRD §3.1.1 拖拽上传至对话窗口任意区域 ───
@@ -464,7 +570,13 @@ const AgentAssistant = () => {
   // ─── 统一识别流程：先推「detecting」消息，再推「识别结果」 ───
   const runRecognitionFlow = async (
     fetcher: () => Promise<RecognizeResult>,
-    extra?: { fileName?: string; fileSize?: number; label?: string },
+    extra?: {
+      fileName?: string;
+      fileSize?: number;
+      label?: string;
+      resultType?: AgentMessageType;
+      recognitionMode?: 'text' | 'voice';
+    },
   ) => {
     setMood('thinking');
     addMessage({
@@ -477,15 +589,16 @@ const AgentAssistant = () => {
       const result = await fetcher();
       // 替换上条「detecting」为「识别结果」
       appendToLastAgent({
-        type: extra?.fileName
+        type: extra?.resultType ?? (extra?.fileName
           ? /pdf/i.test(extra.fileName)
             ? 'file-detect'
             : 'image-detect'
-          : 'prefill',
+          : 'text-detect'),
         content: result.summary,
         payload: {
           ...(extra?.fileName ? { fileName: extra.fileName } : {}),
           ...(extra?.fileSize ? { fileSize: extra.fileSize } : {}),
+          ...(extra?.recognitionMode ? { recognitionMode: extra.recognitionMode } : {}),
           detectedFields: result.fields,
         },
       });
@@ -547,7 +660,10 @@ const AgentAssistant = () => {
     if (link) {
       addMessage({ role: 'user', type: 'text', content: `发送链接：${link}` });
       setInput('');
-      runRecognitionFlow(() => recognizeLink(link), { label: '正在抓取链接内容…' });
+      runRecognitionFlow(() => recognizeLink(link), {
+        label: '正在抓取链接内容…',
+        resultType: 'link-detect',
+      });
       return;
     }
     sendText();
@@ -559,7 +675,11 @@ const AgentAssistant = () => {
       setRecording(false);
       const mockTranscript = '我需要接入一个智能导诊助手';
       addMessage({ role: 'user', type: 'text', content: `[语音转写] ${mockTranscript}` });
-      runRecognitionFlow(() => recognizeText(mockTranscript), { label: '正在识别语音…' });
+      runRecognitionFlow(() => recognizeText(mockTranscript), {
+        label: '正在识别语音…',
+        resultType: 'text-detect',
+        recognitionMode: 'voice',
+      });
       return;
     }
     setRecording(true);
@@ -611,6 +731,28 @@ const AgentAssistant = () => {
 
   // 当前 mood 注入 hover 变体
   const effectiveMood: AgentMood = hover && !open ? 'hover' : mood;
+  const getWelcomeBubbleHeight = () => {
+    const miniExpanded = activeWelcome && miniExpandedAt !== null && miniExpandedAt === activeWelcome.at;
+    const tall = hasTallContent(activeWelcome, !!miniExpanded);
+    const hasChipsOrActions = !!(
+      activeWelcome &&
+      ((activeWelcome.chips && activeWelcome.chips.length > 0) ||
+        (activeWelcome.actions && activeWelcome.actions.length > 0) ||
+        (activeWelcome.miniList && activeWelcome.miniList.rows.length > 0))
+    );
+    return bubbleActualH ?? (tall ? 420 : hasChipsOrActions ? 280 : 80);
+  };
+
+  // V2.6 修复(2026-07-03):台账页面(/app/ledger 与 /app/ledger/*)由 AgentFloatHost
+  //   独家负责机器人 icon + 气泡 + 对话窗口,接入中心 AgentAssistant 在该路径家族下
+  //   整体隐藏(连浮层/气泡 DOM 都不挂),避免右下角出现「两个机器人」视觉重复。
+  //   ⚠️ 此 early return 必须在所有 hooks 之后,避免 React 18 StrictMode 下
+  //   hooks 顺序漂移(参考 [[alert-event-list-pending-assign-hooks-crash]] 教训)。
+  const isLedgerPath = useMemo(() => {
+    const p = location.pathname;
+    return p === '/app/ledger' || p.startsWith('/app/ledger/');
+  }, [location.pathname]);
+  if (isLedgerPath) return null;
 
   return (
     <>
@@ -630,43 +772,44 @@ const AgentAssistant = () => {
           §4.1.1 管理员总览：文字汇报 + 可点状态 chip + 一键直达（按权限置灰） */}
       {!open && activeWelcome && (
         <div
+          ref={bubbleRef}
           className="agent-welcome-bubble"
           data-testid="status-bubble"
           // PRD §3.1.1: 气泡需紧跟机器人, 拖到哪里气泡跟到哪里
-          //   - 默认入口在右下角 → 气泡出现在入口的左上方 (right: 110 / bottom: 28 视觉一致)
-          //   - 入口被拖到左半屏 → 气泡改放到入口的右上方, 避免溢出视口
-          // V2.1 改造:
-          //   - 短内容场景: maxHeight 去掉, 让气泡完全贴内容 (高度由 padding+子元素自然决定)
-          //   - 有 chip / miniList / 多个 action 时 (即下方中段 div 被渲染): 仍保留 280px 上限 + 内部滚动
-          //   - 修复 fixed top+bottom 同时设被拉伸: inline style 显式 bottom: auto / right: auto,
-          //     避免 CSS 的兜底 right:110 / bottom:28 把气泡撑到 viewport - top - bottom
+          // V2.8: 气泡放在机器人左上方;拖动时保持相同距离跟随,边缘仅做视口夹紧
+          // V2.1 改造(保留):
+          //   - 短内容场景: maxHeight 去掉, 让气泡完全贴内容
+          //   - 有 chip / miniList / 多个 action 时: 仍保留 280px 上限 + 内部滚动
+          //   - inline style 显式 bottom: auto / right: auto 避免被 CSS 兜底撑到 viewport
           style={{
-            ...(pos.left > (typeof window !== 'undefined' ? window.innerWidth : 1440) - 240
-              ? // 入口在右半屏: 气泡在左上方
-                { left: Math.max(8, pos.left - 360), top: Math.max(8, pos.top - 90) }
-              : // 入口在左半屏: 气泡在右上方
-                { left: pos.left + ENTRY_SIZE + 12, top: Math.max(8, pos.top - 90) }),
+            ...getRobotBubblePlacement(pos, getWelcomeBubbleHeight()),
             bottom: 'auto',
             right: 'auto',
+            transform: 'none',
+            transformOrigin: 'bottom right',
+            ['--agent-bubble-arrow-left' as any]: 'auto',
+            ['--agent-bubble-arrow-right' as any]: '18px',
+            ['--agent-bubble-arrow-bottom' as any]: '-6px',
+            // 仅 previewProblems 触发时放宽到 360, 其它场景维持 280 —
+            //   4 条问题 × ~50px(标题 + 行 + 链接按钮) ≈ 200px, 加上面板标题/正文容不下
             maxHeight:
-              ((activeWelcome.chips && activeWelcome.chips.length > 0) ||
-              (activeWelcome.actions && activeWelcome.actions.length > 0) ||
-              (activeWelcome.miniList && activeWelcome.miniList.rows.length > 0) ||
-              (activeWelcome.previewProblems && activeWelcome.previewProblems.items.length > 0))
-                ? 'min(280px, calc(100vh - 32px))'
-                : 'none',
+              activeWelcome.previewProblems && activeWelcome.previewProblems.items.length > 0
+                ? 'min(420px, calc(100vh - 32px))'
+                : ((activeWelcome.chips && activeWelcome.chips.length > 0) ||
+                (activeWelcome.actions && activeWelcome.actions.length > 0) ||
+                (activeWelcome.miniList && activeWelcome.miniList.rows.length > 0))
+                  ? 'min(280px, calc(100vh - 32px))'
+                  : 'none',
             maxWidth: 360,
             padding: '10px 12px',
             lineHeight: 1.5,
             fontSize: 12,
             overflow: 'hidden',
-            // V2.1 改造: width:fit-content + max-width:360 + inline-flex
-            //   - 短内容场景(<360): 气泡贴内容自然撑开, 不留右侧大块空白
-            //   - 长内容场景(>=360): 触发 max-width, 文字自然换行不被截断
-            //   - 配合全局 CSS 已去掉 min-width:280px, 真正做到「内容决定宽度」
+            // V2.4 修复: 中文长字符串无空格 → fit-content 会按单 token 测 min-content,
+            //   让气泡宽度被压成 ~100px,一行只容 6 个字;改为固定 width 让文字正常换行
             display: 'inline-flex',
             flexDirection: 'column',
-            width: 'fit-content',
+            width: 'min(360px, calc(100vw - 32px))',
           }}
           onClick={() => {
             // §4.1.1 文字汇报：点气泡展开对话窗口深入交流（不强制）
@@ -772,6 +915,10 @@ const AgentAssistant = () => {
                 background: '#FFFBE6',
                 borderRadius: 6,
                 padding: '6px 8px',
+                // 内部最大高度 200 + 滚动: 第 4~N 条超出时, 用户可在卡片内滚动到每条「采纳 / 忽略」按钮
+                //   (外层 bubble maxHeight 420 留给整体; 这里再加 200 防极端场景全部塞 8+ 条撑爆气泡)
+                maxHeight: 200,
+                overflowY: 'auto',
               }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -1067,6 +1214,93 @@ const AgentAssistant = () => {
         </div>
       )}
 
+      {/* §4.3 V5.0: 备案材料生成提示 - 机器人旁独立侧气泡 (不进入 ChatPanel messages)
+         - 与 activeWelcome 同位置(机器人左上方), 但不受 8s 自动收起影响, 需用户主动 dismiss / 生成 / 上传
+         - ChatPanel 打开时不重复显示 (避免双重提示)
+         - 仅在 smart-register 页且必填信息已完成时由 SmartRegistrationForm 写入 */}
+      {!open && materialOffer && materialOffer.missingCategories.length > 0 && (
+        <div
+          ref={materialOfferRef}
+          className="agent-welcome-bubble"
+          data-testid="material-offer-bubble"
+          style={{
+            ...getRobotBubblePlacement(pos, materialOfferH ?? 180),
+            position: 'fixed',
+            width: 'min(360px, calc(100vw - 32px))',
+            maxWidth: 360,
+            transform: 'none',
+            transformOrigin: 'bottom right',
+            ['--agent-bubble-arrow-left' as any]: 'auto',
+            ['--agent-bubble-arrow-right' as any]: '18px',
+            ['--agent-bubble-arrow-bottom' as any]: '-6px',
+            zIndex: 1000,
+            background: '#FFFFFF',
+            color: '#1F1F1F',
+            padding: '10px 14px 12px',
+            borderRadius: 12,
+            fontSize: 13,
+            lineHeight: 1.6,
+            border: '1px solid #91CAFF',
+            boxShadow: '0 8px 24px rgba(22, 119, 255, 0.18)',
+            boxSizing: 'border-box',
+            overflowWrap: 'break-word',
+            wordBreak: 'break-word',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <strong style={{ color: '#1677FF', fontSize: 13 }}>医小管</strong>
+          <span
+            style={{ marginLeft: 4, display: 'inline-block', marginTop: 4 }}
+            data-testid="material-offer-bubble-content"
+          >
+            {`检测到当前「备案材料」还缺少${materialOffer.missingCategories.map((k) => (k === 'product' ? '产品说明书' : '技术规格书')).join(' / ')}，我可依据你已填写的信息自动生成，需要现在生成吗？`}
+          </span>
+          <Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 8, marginBottom: 10 }}>
+            我会仅基于当前表单已填信息与已上传材料生成，完成后自动归档到「备案材料」。
+          </Text>
+          <Space size={8} wrap>
+            {materialOffer.missingCategories.includes('product') && (
+              <Button
+                size="small"
+                type="primary"
+                icon={<FilePdfOutlined />}
+                data-testid="side-bubble-generate-product-doc-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.dispatchEvent(new CustomEvent('agent-generate-registration-doc', { detail: 'product' }));
+                }}
+              >
+                生成产品说明书
+              </Button>
+            )}
+            {materialOffer.missingCategories.includes('tech') && (
+              <Button
+                size="small"
+                icon={<ApiOutlined />}
+                data-testid="side-bubble-generate-tech-doc-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.dispatchEvent(new CustomEvent('agent-generate-registration-doc', { detail: 'tech' }));
+                }}
+              >
+                生成技术说明书
+              </Button>
+            )}
+            <Button
+              size="small"
+              type="text"
+              data-testid="side-bubble-dismiss-material-generation-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(new CustomEvent('agent-dismiss-material-generation-offer'));
+              }}
+            >
+              暂不生成
+            </Button>
+          </Space>
+        </div>
+      )}
+
       {/* 悬浮入口 */}
       {!open && (
         <div
@@ -1081,6 +1315,18 @@ const AgentAssistant = () => {
             setMood('happy');
             setTimeout(() => setMood('idle'), 600);
           }}
+          // §3.1.1 动画类名：
+          //   - bounce: 新消息来时 (mood==='happy' 且 unread>0) 整体上下跳
+          //   - sit: 收起对话后 0.7s 内播放挫手→坐下→回站
+          //   - 与 hover transform 互斥 (bounce 优先于 hover)
+          className={
+            [
+              mood === 'happy' && unreadCount > 0 && !draggingFloat ? 'agent-robot-bounce' : '',
+              sitUntil > Date.now() && !draggingFloat ? 'agent-robot-sit' : '',
+            ]
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           style={{
             position: 'fixed',
             left: pos.left,
@@ -1095,12 +1341,22 @@ const AgentAssistant = () => {
             transition: draggingFloat
               ? 'none'
               : 'transform 200ms ease-out, opacity 150ms ease-out',
-            transform: hover && !draggingFloat ? 'translateY(-4px) scale(1.05)' : 'translateY(0) scale(1)',
+            transform:
+              hover && !draggingFloat && mood !== 'happy'
+                ? 'translateY(-4px) scale(1.05)'
+                : 'translateY(0) scale(1)',
           }}
           aria-label="唤起智能填写助手（医小管），可拖拽到任意位置"
           role="button"
         >
-          <RobotIcon mood={effectiveMood} size={hover ? 72 : 64} badge={unreadCount > 0 ? unreadCount : false} />
+          <RobotIcon
+            mood={effectiveMood}
+            size={hover ? 72 : 64}
+            badge={unreadCount > 0 ? unreadCount : false}
+            // §3.1.1 新消息: 红点放大闪烁 + 双臂挫手 (与 bounce 同步 0.6s × 2)
+            badgePulse={badgePulse}
+            handWave={badgePulse}
+          />
           {/* 浮动小气泡提示 (hover 时显示文字) */}
           {hover && (
             <div
@@ -1189,7 +1445,11 @@ const AgentAssistant = () => {
                 type="text"
                 size="small"
                 icon={<CloseOutlined />}
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  // §3.1.1 收起挫手/坐下: 关闭后 0.7s 内 entry 播放挫手→坐下→回站
+                  setSitUntil(Date.now() + 700);
+                  setOpen(false);
+                }}
               />
             </Tooltip>
           </div>
@@ -1227,49 +1487,12 @@ const AgentAssistant = () => {
               background: '#FAFAFA',
             }}
           >
-            {messages.map((m) => (
+            {visibleMessages.map((m) => (
               <AgentMessageBubble
                 key={m.id}
                 msg={m}
                 onAcknowledge={ackField}
                 onAcknowledgeFields={ackBatch}
-                // §3.3.2 历史方案复用：点击「复用此方案」按 planId 命中后弹成功提示
-                //   - 同时向 conversation 推一条 agent 反馈消息形成闭环
-                //   - 当前 frontend 是 mock, 不实际改表单(避免误覆盖), 让用户照抄
-                onReusePlan={(planId) => {
-                  const plan = historicalPlans.find((p) => p.id === planId);
-                  if (!plan) {
-                    message.warning('未找到该方案，请刷新知识库');
-                    return;
-                  }
-                  message.success(`已复用「${plan.agentName}」的成功配置到当前表单`);
-                  addMessage({
-                    role: 'agent',
-                    type: 'autofix-done',
-                    content: `已复用「${plan.agentName}」的成功配置（${plan.endpointPattern}），请在下方技术信息区继续核对修改。`,
-                  });
-                }}
-                // §4.2.1 / §4.3.1 智能预审气泡回调：通过 window 自定义事件转发到具体审核页
-                onIssueAdopt={(id) =>
-                  window.dispatchEvent(new CustomEvent('agent-issue-adopt', { detail: id }))
-                }
-                onIssueIgnore={(id) =>
-                  window.dispatchEvent(new CustomEvent('agent-issue-ignore', { detail: id }))
-                }
-                // §3.2.1 注册页实时审查：单条问题「定位到字段」走 window 事件
-                onIssueLocate={(fieldKey) =>
-                  window.dispatchEvent(
-                    new CustomEvent('agent-review-locate-field', { detail: fieldKey }),
-                  )
-                }
-                // §3.2.1 「帮我检查一下」按钮：注册页 re-run 实时审查
-                onRequestReview={() =>
-                  window.dispatchEvent(new CustomEvent('agent-review-rerun'))
-                }
-                onSeverityFilter={(s) =>
-                  window.dispatchEvent(new CustomEvent('agent-severity-filter', { detail: s }))
-                }
-                severityFilter={(window as any).__agentSeverityFilter || 'all'}
               />
             ))}
             <div ref={msgEndRef} />
@@ -1308,7 +1531,10 @@ const AgentAssistant = () => {
                   const url = window.prompt('请粘贴链接 URL');
                   if (url && /^https?:\/\//.test(url)) {
                     addMessage({ role: 'user', type: 'text', content: `发送链接：${url}` });
-                    runRecognitionFlow(() => recognizeLink(url), { label: '正在抓取链接内容…' });
+                    runRecognitionFlow(() => recognizeLink(url), {
+                      label: '正在抓取链接内容…',
+                      resultType: 'link-detect',
+                    });
                   }
                 }}
               />

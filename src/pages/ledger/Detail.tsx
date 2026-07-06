@@ -38,6 +38,7 @@ import {
   Alert,
   Result,
   Flex,
+  Segmented,
 } from 'antd';
 import { Radar } from '@ant-design/charts';
 import {
@@ -60,7 +61,10 @@ import {
   HistoryOutlined,
   RobotOutlined,
   PlusOutlined,
+  LockOutlined,
 } from '@ant-design/icons';
+import ProfileView360 from './ProfileView360';
+import { useAuth } from '../../hooks/useAuth';
 import {
   ledgerAgents,
   currentUser,
@@ -519,7 +523,13 @@ const LegendDot: React.FC<{ color: string; label: string; n: number }> = ({ colo
 const LedgerDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const isPlatformAdmin = currentUser.role === 'platform_admin';
+  // V2.4 修复：用 useAuth 当前用户角色判定 isPlatformAdmin
+  //  原代码用 mock/ledger 的硬编码 currentUser(恒为 platform_admin) → 任何角色都按管理员处理,
+  //  会导致「心内科科室管理员可编辑/启用/禁用信息中心的智能体」越权。
+  //  改成读 useAuth 真实角色后,本页的操作按钮 (编辑/禁用/启用) 与 360 画像视图的入口
+  //  才与 BasicLayout + List 列表的可见性基线一致。
+  const auth = useAuth();
+  const isPlatformAdmin = auth?.currentUser?.roles.includes('信息科管理员') ?? false;
 
   const agent: LedgerAgent | undefined = useMemo(
     () => ledgerAgents.find((a) => a.id === id),
@@ -537,6 +547,18 @@ const LedgerDetail = () => {
   const [previewFile, setPreviewFile] = useState<FilingAttachment | null>(null);
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('basic');
+  // 360 画像视图 / 信息详情页 切换(PRD §3.2.2:详情页默认展示本次新增的「360 画像视图」)
+  const [view, setView] = useState<'profile' | 'detail'>('profile');
+
+  useEffect(() => {
+    const handleViewDetail = (event: Event) => {
+      const agentId = (event as CustomEvent<{ agentId?: string }>).detail?.agentId;
+      if (agentId && agentId !== id) return;
+      setView('detail');
+    };
+    window.addEventListener('ledger-view-detail', handleViewDetail);
+    return () => window.removeEventListener('ledger-view-detail', handleViewDetail);
+  }, [id]);
 
   // 离开/关闭页面提示（编辑态）
   useEffect(() => {
@@ -560,6 +582,47 @@ const LedgerDetail = () => {
             <Button type="primary" onClick={() => navigate('/app/ledger/list')}>
               返回台账列表
             </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // V2.4 修复：跨科室越权访问拦截
+  //  原代码仅用 mock/ledger 硬编码的 platform_admin 判定权限,导致任何角色都按管理员渲染。
+  //  现在用 useAuth 真实角色 + agent.department 判断:
+  //    · 信息科管理员 → 放行(看所有科室)
+  //    · 科室管理员 → 仅放行本科室
+  //    · 跨科室访问 → 显示"无权访问"页面,而不是继续渲染(避免看到他人科室的智能体详情)
+  const authUser = auth?.currentUser;
+  const authRole = authUser?.roles?.[0] ?? '信息科管理员';
+  const authDept = (authUser as any)?.department as string | undefined;
+  const isCrossDept = !isPlatformAdmin && authDept && agent.department && authDept !== agent.department;
+  if (isCrossDept) {
+    return (
+      <div style={{ padding: 60, textAlign: 'center' }}>
+        <Result
+          icon={<LockOutlined style={{ color: '#8C8C8C' }} />}
+          title="无权访问该智能体"
+          subTitle={
+            <Space direction="vertical" size={4}>
+              <Text type="secondary">
+                当前角色「{authRole}」归属「{authDept}」,无权查看「{agent.department}」的智能体详情。
+              </Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                如需访问,请联系信息科开通跨科室权限,或在台账列表切换到本科室。
+              </Text>
+            </Space>
+          }
+          extra={
+            <Space>
+              <Button type="primary" onClick={() => navigate('/app/ledger/list')}>
+                返回台账列表
+              </Button>
+              <Button onClick={() => navigate('/app/home/workbench')}>
+                回到工作台
+              </Button>
+            </Space>
           }
         />
       </div>
@@ -1568,62 +1631,83 @@ exporter = OTLPSpanExporter(
       {/* 顶栏操作 */}
       <Card bordered={false} bodyStyle={{ padding: 16 }} style={{ marginBottom: 12 }}>
         <Flex justify="space-between" align="center" wrap gap={12}>
-          <Title level={4} style={{ margin: 0 }}>
-            {agent.name}
-          </Title>
-          <Space wrap>
-            {editing ? (
-              <>
-                <Button
-                  type="primary"
-                  icon={<CheckCircleOutlined />}
-                  loading={saving}
-                  onClick={handleSave}
-                >
-                  保存
-                </Button>
-                <Button onClick={handleCancelEdit}>取消</Button>
-              </>
-            ) : (
-              isPlatformAdmin && (
-                <Button
-                  type="primary"
-                  icon={<EditOutlined />}
-                  onClick={handleEdit}
-                >
-                  编辑
-                </Button>
-              )
-            )}
-            {canDisable && !editing && (
-              <Button danger icon={<StopOutlined />} onClick={() => setDisableOpen(true)}>
-                禁用
-              </Button>
-            )}
-            {canEnable && !editing && (
-              <Button icon={<PlayCircleOutlined />} onClick={() => setEnableOpen(true)}>
-                启用
-              </Button>
-            )}
-            {!editing && (
-              <Button icon={<SafetyCertificateOutlined />} onClick={handleGoRiskLevel}>
-                风险分级
-              </Button>
-            )}
-            {!editing && agent.evaluationReport && (
-              <Button icon={<FileSearchOutlined />} onClick={handleViewEvaluation}>
-                查看评测报告
-              </Button>
-            )}
-            {!editing && agent.lifecycleStatus === '已上线' && (
-              <Button icon={<MonitorOutlined />} onClick={handleViewMonitor}>
-                查看监控
-              </Button>
-            )}
+          <Space size={10} align="center" wrap>
+            <Title level={4} style={{ margin: 0 }}>
+              {agent.name}
+            </Title>
+            {/* PRD §3.2.2:详情页默认展示本次新增的「360 画像视图」,可切换回原「智能体信息详情页」 */}
+            <Segmented
+              value={view}
+              onChange={(v) => setView(v as 'profile' | 'detail')}
+              options={[
+                { label: '360 画像视图', value: 'profile' },
+                { label: '智能体信息详情页', value: 'detail' },
+              ]}
+            />
           </Space>
+          {/* 顶部操作按钮仅在「智能体信息详情页」展示;360 画像视图下隐藏,
+              360 视图自身的 Panel 内已提供 风险分级 / 报告 / 测试连接 等入口 */}
+          {view === 'detail' && (
+            <Space wrap>
+              {editing ? (
+                <>
+                  <Button
+                    type="primary"
+                    icon={<CheckCircleOutlined />}
+                    loading={saving}
+                    onClick={handleSave}
+                  >
+                    保存
+                  </Button>
+                  <Button onClick={handleCancelEdit}>取消</Button>
+                </>
+              ) : (
+                isPlatformAdmin && (
+                  <Button
+                    type="primary"
+                    icon={<EditOutlined />}
+                    onClick={handleEdit}
+                  >
+                    编辑
+                  </Button>
+                )
+              )}
+              {canDisable && !editing && (
+                <Button danger icon={<StopOutlined />} onClick={() => setDisableOpen(true)}>
+                  禁用
+                </Button>
+              )}
+              {canEnable && !editing && (
+                <Button icon={<PlayCircleOutlined />} onClick={() => setEnableOpen(true)}>
+                  启用
+                </Button>
+              )}
+              {!editing && (
+                <Button icon={<SafetyCertificateOutlined />} onClick={handleGoRiskLevel}>
+                  风险分级
+                </Button>
+              )}
+              {!editing && agent.evaluationReport && (
+                <Button icon={<FileSearchOutlined />} onClick={handleViewEvaluation}>
+                  查看评测报告
+                </Button>
+              )}
+              {!editing && agent.lifecycleStatus === '已上线' && (
+                <Button icon={<MonitorOutlined />} onClick={handleViewMonitor}>
+                  查看监控
+                </Button>
+              )}
+            </Space>
+          )}
         </Flex>
       </Card>
 
+      {/* 360 画像视图(PRD §3.2.2 — 默认展示) */}
+      {view === 'profile' && <ProfileView360 agent={agent} onSwitchToDetail={() => setView('detail')} />}
+
+      {/* 原 V1.8 §2.2 画像布局(view='detail' 时展示,本次不改动) */}
+      {view === 'detail' && (
+        <>
       {/* V1.8 §2.2 画像布局：左侧虚拟形象 + 关联图谱；右侧 5 个 Tab + 状态变更时间线 */}
       <Row gutter={12} align="stretch">
         {/* 左侧：智能体虚拟形象 + 关联图谱 */}
@@ -1748,6 +1832,8 @@ exporter = OTLPSpanExporter(
           </Card>
         </Col>
       </Row>
+        </>
+      )}
 
       {/* 禁用弹窗 */}
       <Modal

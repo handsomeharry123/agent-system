@@ -31,7 +31,7 @@ import PageHeader from '../../components/PageHeader';
 import { useAccessRecords } from './store';
 import { useSmartDraft } from './smart/store.tsx';
 import { useAuth } from '../../hooks/useAuth';
-import { ROLE_ADMIN } from './types';
+import { ROLE_ADMIN, ROLE_DEPT } from './types';
 import type { InsightProgress, ProgressPhase } from './smart/types';
 
 const { Text, Paragraph } = Typography;
@@ -46,7 +46,9 @@ const Detail = () => {
 
   const { pushWelcomeGreeting, addTaggedMessage, removeMessagesByTag } = useSmartDraft();
   const { currentUser } = useAuth();
-  const isPlatformAdmin = currentUser?.roles[0] === ROLE_ADMIN;
+  const currentRole = currentUser?.roles[0] || ROLE_DEPT;
+  const isPlatformAdmin = currentRole === ROLE_ADMIN;
+  const loginName = currentUser?.name || '当前用户';
 
   // PRD §3.4.1.2 — 接入进度 + 核心指标改为对话窗口呈现(详情页不嵌入卡片)
   // 在 early-return 之前派生, 避免 hooks 顺序不一致
@@ -97,7 +99,8 @@ const Detail = () => {
               key: 'eval',
               label: '发起准入评测',
               description: '进入评测沙盒新建评测任务',
-              path: `/app/evaluation/tasks/create?agentName=${encodeURIComponent(record.name)}`,
+              // V2.7: 同步带上 agentCode,与 Audit/index/List/InsightBubble 三入口保持一致
+              path: `/app/evaluation/tasks/create?agentName=${encodeURIComponent(record.name)}&agentCode=${encodeURIComponent(record.agentCode)}`,
               enabled: isPlatformAdmin,
             },
             {
@@ -131,19 +134,28 @@ const Detail = () => {
   // PRD §3.1.1 欢迎语：注册信息详情页 — 提供方 / 管理方文案一致,统一走 provider
   //   只读页气泡直接操作：【返回列表】+【查看附件】(滚动到备案材料 Card,无附件时置灰)
   useEffect(() => {
-    pushWelcomeGreeting('agent-center-detail', 'provider', undefined, {
+    const fmt = (n: number) => (n > 0 ? String(n) : '暂无');
+    const visibleRecords = records.filter((r) => (isPlatformAdmin ? true : r.applicant === loginName));
+    const count = (status: string) => visibleRecords.filter((r) => r.status === status).length;
+    pushWelcomeGreeting('agent-center-detail', isPlatformAdmin ? 'admin' : 'dept', (_key, _role, surface) =>
+      surface === 'bubble'
+        ? isPlatformAdmin
+          ? [fmt(count('待审核')), fmt(count('审核通过')), fmt(count('退回修改'))]
+          : [fmt(count('审核中')), fmt(count('审核通过')), fmt(count('退回修改'))]
+        : undefined,
+    {
       actions: [
-        { key: 'back', label: '← 返回列表', path: '/app/agent-center', enabled: true },
+        { key: 'back', label: '返回', path: '/app/agent-center', enabled: true },
         {
           key: 'attachments',
-          label: '查看附件',
+          label: '附件预览 / 下载',
           event: 'agent-detail-scroll-attachments',
           enabled: !!record && record.attachments.length > 0,
           reason: '该记录暂无备案材料',
         },
       ],
     });
-  }, [pushWelcomeGreeting, record]);
+  }, [pushWelcomeGreeting, record, isPlatformAdmin, records, loginName]);
 
   // 气泡「查看附件」→ 滚动到备案材料 Card
   useEffect(() => {

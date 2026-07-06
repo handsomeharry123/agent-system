@@ -46,6 +46,7 @@ const PageHeader = ({
 
   return (
     <div
+      className="app-page-header"
       style={{
         background: '#fff',
         borderRadius: 8,

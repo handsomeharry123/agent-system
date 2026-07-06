@@ -14,7 +14,7 @@
  *       不展示：#2 智能体科室覆盖率 / #6 智能体科室分布情况 / #8 智能体来源分布情况
  *       （这三项涉及全院科室维度或来源构成，对科室管理员无业务价值）
  */
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card,
@@ -29,6 +29,12 @@ import {
   DatePicker,
   Modal,
   Progress,
+  Drawer,
+  Switch,
+  Tabs,
+  Tag,
+  List,
+  message,
 } from 'antd';
 import {
   RobotOutlined,
@@ -39,6 +45,15 @@ import {
   InfoCircleOutlined,
   ArrowRightOutlined,
   ThunderboltOutlined,
+  FileTextOutlined,
+  BellOutlined,
+  RocketOutlined,
+  HistoryOutlined,
+  EyeOutlined,
+  CloseCircleOutlined,
+  CheckOutlined,
+  DownloadOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 import { Bar, Pie, Line, Column } from '@ant-design/charts';
 import dayjs from 'dayjs';
@@ -54,6 +69,7 @@ import {
   getAlarmStat,
   getInstanceOnlineRateStat,
   getCoverageStat,
+  getSubscriptionHistoryReports,
   type LedgerAgent,
   type LedgerUser,
 } from '../../mock/ledger';
@@ -107,6 +123,27 @@ const Overview = () => {
   // 顶部时间筛选（V1.6 联动所有卡片/图表，本版本仅 UI 占位）
   const [timeRange, setTimeRange] = useState<'today' | '7d' | '30d' | '90d' | 'custom'>('30d');
   const [customRange, setCustomRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+
+  // V1：速读订阅抽屉（PRD §3.3.3 / §3.1.1 汇报引导）
+  const [subDrawerOpen, setSubDrawerOpen] = useState(false);
+  const [subActiveTab, setSubActiveTab] = useState<'settings' | 'history'>('settings');
+  const [briefingFreq, setBriefingFreq] = useState<'daily' | 'weekly'>('daily');
+  const [briefingScope, setBriefingScope] = useState<'all' | 'dept'>(isPlatformAdmin ? 'all' : 'dept');
+  const [briefingChannels, setBriefingChannels] = useState<{ workbench: boolean; email: boolean; im: boolean }>({
+    workbench: true,
+    email: true,
+    im: false,
+  });
+
+  // 历史报告 mock：抽屉打开时取数
+  const subscriptionHistory = useMemo(() => getSubscriptionHistoryReports(), []);
+
+  const handleGenerateReport = () => {
+    navigate('/app/ledger-demo/report');
+  };
+  const handleSubscribeBriefing = () => {
+    setSubDrawerOpen(true);
+  };
 
   // 数据：派生自 mock/ledger
   const visibleList: LedgerAgent[] = useMemo(() => getVisibleAgents(user), [user]);
@@ -791,6 +828,9 @@ const Overview = () => {
         }
         extra={
           <Space size={12} align="center">
+            {/* V2:医小管 inline 状态提示(让用户进入总览页立即感知右下角 Agent 在工作)
+                复用现有 AgentFloatHost,不新建智能体,点击直跳右下角机器人 */}
+            {/* PRD §3.1.1/§4.1.1:态势汇报由 Agent 气泡承担,不再在标题区放置 chip */}
             {/* 时间筛选（V1.6 联动所有卡片，本版本仅 UI 占位）*/}
             <Radio.Group
               value={timeRange}
@@ -823,6 +863,25 @@ const Overview = () => {
             >
               查看台账列表
             </Button>
+            {/* V1：PRD §3.1.1 / §3.3.1 汇报引导（生成报告 + 订阅速读） */}
+            <Tooltip title="一键生成《全院智能体管理情况报告》">
+              <Button
+                size="middle"
+                icon={<FileTextOutlined />}
+                onClick={handleGenerateReport}
+              >
+                生成报告
+              </Button>
+            </Tooltip>
+            <Tooltip title="订阅台账速读（日/周）至工作台">
+              <Button
+                size="middle"
+                icon={<BellOutlined />}
+                onClick={handleSubscribeBriefing}
+              >
+                订阅速读
+              </Button>
+            </Tooltip>
           </Space>
         }
       />
@@ -1612,6 +1671,260 @@ const Overview = () => {
           })}
         </Row>
       </Modal>
+
+      {/* V1：台账速读订阅抽屉（PRD §3.3.3 / §3.1.1 汇报引导） */}
+      <Drawer
+        open={subDrawerOpen}
+        onClose={() => setSubDrawerOpen(false)}
+        title={
+          <Space>
+            <BellOutlined style={{ color: '#1677FF' }} />
+            <span>{isPlatformAdmin ? '全院台账速读订阅' : '本科室台账速读订阅'}</span>
+          </Space>
+        }
+        width={680}
+      >
+        <Tabs
+          activeKey={subActiveTab}
+          onChange={(k) => setSubActiveTab(k as 'settings' | 'history')}
+          items={[
+            {
+              key: 'settings',
+              label: (
+                <span style={{ fontSize: 14 }}>
+                  <RocketOutlined style={{ marginRight: 4 }} />
+                  订阅设置
+                </span>
+              ),
+              children: (
+                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                  <div>
+                    <Text strong>订阅频率</Text>
+                    <div style={{ marginTop: 6 }}>
+                      <Radio.Group
+                        value={briefingFreq}
+                        onChange={(e) => setBriefingFreq(e.target.value)}
+                        optionType="button"
+                        buttonStyle="solid"
+                      >
+                        <Radio.Button value="daily">每日速读</Radio.Button>
+                        <Radio.Button value="weekly">每周速读</Radio.Button>
+                      </Radio.Group>
+                    </div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      速读为轻量版,侧重异常告警/故障及相较{briefingFreq === 'daily' ? '前一日' : '前一周'}的数据变化
+                    </Text>
+                  </div>
+
+                  <div>
+                    <Text strong>订阅范围</Text>
+                    <div style={{ marginTop: 6 }}>
+                      <Radio.Group
+                        value={briefingScope}
+                        onChange={(e) => setBriefingScope(e.target.value)}
+                        optionType="button"
+                        buttonStyle="solid"
+                        disabled={!isPlatformAdmin}
+                      >
+                        <Radio.Button value="all">全院智能体</Radio.Button>
+                        <Radio.Button value="dept">本科室智能体</Radio.Button>
+                      </Radio.Group>
+                    </div>
+                    {!isPlatformAdmin && (
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        科室用户默认订阅「本科室智能体」
+                      </Text>
+                    )}
+                  </div>
+
+                  <div>
+                    <Text strong>推送通道</Text>
+                    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {[
+                        { key: 'workbench', label: '工作台消息' },
+                        { key: 'email', label: '邮件' },
+                        { key: 'im', label: '钉钉 / 企微' },
+                      ].map((c) => (
+                        <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <Switch
+                            size="small"
+                            checked={briefingChannels[c.key as keyof typeof briefingChannels]}
+                            onChange={(v) =>
+                              setBriefingChannels((p) => ({ ...p, [c.key]: v }))
+                            }
+                          />
+                          <span style={{ fontSize: 13 }}>{c.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Button
+                    type="primary"
+                    icon={<RocketOutlined />}
+                    block
+                    onClick={() => {
+                      setSubDrawerOpen(false);
+                      const channelList = Object.entries(briefingChannels)
+                        .filter(([, v]) => v)
+                        .map(([k]) => ({ workbench: '工作台', email: '邮件', im: '钉钉/企微' }[k] || k))
+                        .join(' / ');
+                      message.success(
+                        `订阅已开启: ${briefingFreq === 'daily' ? '每日' : '每周'} · ${briefingScope === 'all' ? '全院' : '本科室'} · ${channelList || '无'}`,
+                      );
+                    }}
+                  >
+                    立即开启订阅
+                  </Button>
+                </Space>
+              ),
+            },
+            {
+              key: 'history',
+              label: (
+                <span style={{ fontSize: 14 }}>
+                  <HistoryOutlined style={{ marginRight: 4 }} />
+                  历史报告
+                </span>
+              ),
+              children: (
+                <div data-testid="subscription-history">
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      共 {subscriptionHistory.length} 条历史报告,最近 {subscriptionHistory.filter((r) => r.freq === 'daily').length} 天每日推送 +{' '}
+                      {subscriptionHistory.filter((r) => r.freq === 'weekly').length} 条周报
+                    </Text>
+                    <Button
+                      size="small"
+                      type="link"
+                      icon={<DownloadOutlined />}
+                      onClick={() => message.success('已订阅历史报告导出任务（演示）')}
+                    >
+                      批量导出
+                    </Button>
+                  </div>
+                  <List
+                    size="small"
+                    dataSource={subscriptionHistory}
+                    renderItem={(item) => {
+                      const statusMeta: Record<
+                        typeof item.status,
+                        { color: string; text: string; icon: React.ReactNode }
+                      > = {
+                        delivered: { color: 'blue', text: '已送达', icon: <CheckOutlined /> },
+                        viewed: { color: 'default', text: '已查看', icon: <EyeOutlined /> },
+                        failed: { color: 'red', text: '推送失败', icon: <CloseCircleOutlined /> },
+                      };
+                      const meta = statusMeta[item.status];
+                      return (
+                        <List.Item
+                          key={item.id}
+                          style={{
+                            padding: '10px 12px',
+                            background: '#FAFAFA',
+                            borderRadius: 6,
+                            marginBottom: 8,
+                            border: '1px solid #F0F0F0',
+                          }}
+                          actions={[
+                            <Button
+                              key="view"
+                              size="small"
+                              type="link"
+                              icon={<EyeOutlined />}
+                              onClick={() => message.info(`查看报告: ${item.title}（演示）`)}
+                            >
+                              查看
+                            </Button>,
+                          ]}
+                        >
+                          <List.Item.Meta
+                            avatar={
+                              <FileTextOutlined
+                                style={{ fontSize: 20, color: item.status === 'failed' ? '#FF4D4F' : '#1677FF' }}
+                              />
+                            }
+                            title={
+                              <Space size={6} wrap>
+                                <Text strong style={{ fontSize: 13 }}>
+                                  {item.title}
+                                </Text>
+                                <Tag color={item.freq === 'daily' ? 'geekblue' : 'purple'} style={{ margin: 0 }}>
+                                  {item.freq === 'daily' ? '每日' : '每周'}
+                                </Tag>
+                                <Tag color={meta.color} icon={meta.icon} style={{ margin: 0 }}>
+                                  {meta.text}
+                                </Tag>
+                              </Space>
+                            }
+                            description={
+                              <div style={{ marginTop: 2 }}>
+                                <div
+                                  style={{
+                                    fontSize: 12,
+                                    color: '#595959',
+                                    marginBottom: 4,
+                                  }}
+                                >
+                                  <ClockCircleOutlined style={{ marginRight: 4 }} />
+                                  生成 {item.generatedAt}
+                                  {item.deliveredAt && ` · 送达 ${item.deliveredAt}`}
+                                </div>
+                                <ul
+                                  style={{
+                                    margin: 0,
+                                    paddingLeft: 18,
+                                    fontSize: 12,
+                                    color: '#595959',
+                                    lineHeight: 1.55,
+                                  }}
+                                >
+                                  {item.highlights.map((h, i) => (
+                                    <li key={i}>{h}</li>
+                                  ))}
+                                </ul>
+                                <div style={{ fontSize: 12, marginTop: 4 }}>
+                                  <Text type="secondary">通道：</Text>
+                                  {item.channels.map((c) => (
+                                    <Tag
+                                      key={c}
+                                      style={{ marginLeft: 2 }}
+                                      color={
+                                        c === 'workbench'
+                                          ? 'cyan'
+                                          : c === 'email'
+                                          ? 'gold'
+                                          : 'magenta'
+                                      }
+                                    >
+                                      {c === 'workbench'
+                                        ? '工作台'
+                                        : c === 'email'
+                                        ? '邮件'
+                                        : '钉钉/企微'}
+                                    </Tag>
+                                  ))}
+                                </div>
+                              </div>
+                            }
+                          />
+                        </List.Item>
+                      );
+                    }}
+                  />
+                </div>
+              ),
+            },
+          ]}
+        />
+      </Drawer>
     </div>
   );
 };

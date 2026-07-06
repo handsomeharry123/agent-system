@@ -184,28 +184,24 @@ const AgentCenter = () => {
         if (isMine) actions.push({ key: 'edit', label: '编辑', kind: 'navigate-edit' });
       } else if (tab === '待审核') {
         actions.push({ key: 'detail', label: '查看详情', kind: 'navigate-detail' });
-        if (isPlatformAdmin && !isMine) actions.push({ key: 'audit', label: '审核', kind: 'navigate-audit' });
-        if (isMine) actions.push({ key: 'cancel', label: '撤销', kind: 'confirm-cancel' });
+        actions.push({ key: 'cancel', label: '撤销', kind: 'confirm-cancel' });
       } else if (tab === '审核中') {
         actions.push({ key: 'detail', label: '查看详情', kind: 'navigate-detail' });
-        if (isMine) actions.push({ key: 'cancel', label: '撤销', kind: 'confirm-cancel' });
+        actions.push({ key: 'cancel', label: '撤销', kind: 'confirm-cancel' });
       } else if (tab === '退回修改') {
-        actions.push({ key: 'detail', label: '查看详情', kind: 'navigate-detail' });
-        if (isMine) actions.push({ key: 'edit', label: '编辑', kind: 'navigate-edit' });
+        actions.push({ key: 'edit', label: '编辑', kind: 'navigate-edit' });
       } else if (tab === '撤销修改') {
-        actions.push({ key: 'detail', label: '查看详情', kind: 'navigate-detail' });
-        if (isMine) actions.push({ key: 'edit', label: '编辑', kind: 'navigate-edit' });
-        if (isMine) actions.push({ key: 'del', label: '删除', kind: 'confirm-delete', danger: true });
+        actions.push({ key: 'edit', label: '编辑', kind: 'navigate-edit' });
+        actions.push({ key: 'del', label: '删除', kind: 'confirm-delete', danger: true });
       } else if (tab === '审核通过') {
         actions.push({ key: 'detail', label: '查看详情', kind: 'navigate-detail' });
-        if (isPlatformAdmin)
-          actions.push({
-            key: 'eval',
-            label: '立即评测',
-            kind: 'navigate-eval',
-            path: `/app/evaluation/tasks/create?agentName=${encodeURIComponent(r.name)}${r.agentCode ? `&agentCode=${encodeURIComponent(r.agentCode)}` : ''}`,
-          });
-        actions.push({ key: 'ledger', label: '查看台账', kind: 'navigate-ledger' });
+        actions.push({
+          key: 'eval',
+          label: '查看准入评测结果',
+          kind: 'navigate-eval',
+          path: `/app/evaluation/tasks/create?agentName=${encodeURIComponent(r.name)}${r.agentCode ? `&agentCode=${encodeURIComponent(r.agentCode)}` : ''}`,
+        });
+        actions.push({ key: 'ledger', label: '完善台账', kind: 'navigate-ledger' });
       }
       return {
         recordId: r.id,
@@ -237,27 +233,38 @@ const AgentCenter = () => {
   // PRD §3.1.1 欢迎语触发：进入注册管理页 / 切换 Tab 时,推一条 page-level 欢迎语
   //   - 「全部」Tab 提供方 (provider) / 管理方 (admin) 文案不同
   //   - 其他 6 Tab 两角色文案一致,统一走 provider
-  //   - 用 counts 实际条数填充草稿 N / 退回 N;管理方的『待审查 X』也按 counts 填, 0 时显示「暂无」
+  //   - 用 counts 实际条数填充草稿 N / 退回 N;管理方的『待审核 X』也按 counts 填, 0 时显示「暂无」
   useEffect(() => {
     const pageKeyByTab: Partial<Record<RegisterStatus | '全部', WelcomePageKey>> = {
       全部: 'agent-center-all',
       草稿: 'agent-center-draft',
       待审核: 'agent-center-pending',
+      审核中: 'agent-center-reviewing',
       退回修改: 'agent-center-return',
       撤销修改: 'agent-center-cancel',
       审核通过: 'agent-center-passed',
     };
     const key = pageKeyByTab[activeStatus];
     if (!key) return;
-    const role: WelcomeRole = key === 'agent-center-all' && isPlatformAdmin ? 'admin' : 'provider';
-    const fmt = (n: number) => (n > 0 ? String(n) : '暂无');
-    const perKeyReplacer: WelcomeReplacer = (k) => {
-      if (k === 'agent-center-draft') return [fmt(counts['草稿'] ?? 0)];
-      if (k === 'agent-center-return') return [fmt(counts['退回修改'] ?? 0)];
-      // 管理方「全部」Tab 文案里有 3 个 X：待审查 / 准入通过 / 退回修改 —— 按顺序替换
-      if (k === 'agent-center-all' && role === 'admin') {
+    const role: WelcomeRole = isPlatformAdmin ? 'admin' : 'dept';
+    const fmt = (n: number) => String(n);
+    const perKeyReplacer: WelcomeReplacer = (k, _r, surface) => {
+      if (!k.startsWith('agent-center-')) return undefined;
+      if (surface === 'window') {
+        if (k === 'agent-center-draft') return [fmt(counts['草稿'] ?? 0)];
+        if (k === 'agent-center-return') return [fmt(counts['退回修改'] ?? 0)];
+        return undefined;
+      }
+      if (role === 'admin') {
         return [
           fmt(counts['待审核'] ?? 0),
+          fmt(counts['审核通过'] ?? 0),
+          fmt(counts['退回修改'] ?? 0),
+        ];
+      }
+      if (role === 'dept') {
+        return [
+          fmt(counts['审核中'] ?? 0),
           fmt(counts['审核通过'] ?? 0),
           fmt(counts['退回修改'] ?? 0),
         ];
@@ -265,36 +272,31 @@ const AgentCenter = () => {
       return undefined;
     };
     // §4.1.1 态势汇报 - 仅在「全部」Tab + 进入/切换时，挂态势 chips + 一键直达
-    //   - chips: 可点状态 chip，点击跳对应 tab（与文字里的"X 条待审查"对应）
+    //   - chips: 可点状态 chip，点击跳对应 tab（与文字里的"X 条待审核"对应）
     //   - actions: 一键直达台账中心 / 准入评测沙盒（按 isPlatformAdmin 置灰）
     const extras =
       key === 'agent-center-all'
         ? {
             chips: [
-              { key: 'pending', label: `待审核 ${fmt(counts['待审核'] ?? 0)}`, targetTab: '待审核', tone: 'warning' as const },
-              { key: 'reviewing', label: `审核中 ${fmt(counts['审核中'] ?? 0)}`, targetTab: '审核中', tone: 'default' as const },
+              isPlatformAdmin
+                ? { key: 'pending', label: `待审核 ${fmt(counts['待审核'] ?? 0)}`, targetTab: '待审核', tone: 'warning' as const }
+                : { key: 'reviewing', label: `审核中 ${fmt(counts['审核中'] ?? 0)}`, targetTab: '审核中', tone: 'warning' as const },
               { key: 'returned', label: `退回 ${fmt(counts['退回修改'] ?? 0)}`, targetTab: '退回修改', tone: 'error' as const },
               { key: 'passed', label: `已通过 ${fmt(counts['审核通过'] ?? 0)}`, targetTab: '审核通过', tone: 'success' as const },
             ],
             actions: [
               {
-                key: 'ledger',
-                label: '→ 台账中心',
-                path: '/app/ledger/list',
-                enabled: true,
-              },
-              {
-                key: 'eval',
-                label: '→ 准入评测沙盒',
-                path: '/app/evaluation/tasks/create',
-                // 评测任务菜单 defaultRoleVisible='both', 但「立即评测」按钮按 audit-passed 三按钮实现为 admin only
-                // 这里的「准入评测沙盒」入口走创建页, 任意角色可发起, 不置灰
+                key: 'new-register',
+                label: '新建注册',
+                path: '/app/agent-center/smart-register',
                 enabled: true,
               },
             ],
           }
         : // §3.1.1 指向性规则：其余 6 状态 Tab 挂「迷你清单」— 前 5 条 + 每条记录级按钮
-          buildMiniListExtras(activeStatus);
+          {
+            ...buildMiniListExtras(activeStatus),
+          };
     pushWelcomeGreeting(key, role, perKeyReplacer, extras);
   }, [activeStatus, isPlatformAdmin, pushWelcomeGreeting, counts, records, loginName]);
 

@@ -11,7 +11,7 @@
  * V2.2：从原 Drawer 转为下转页面 + 底部固定审核操作栏。
  * 顶部为只读记录详情，底部为审核结论（Radio）+ 说明 + 二次确认。
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
@@ -50,7 +50,7 @@ import {
 import PageHeader from '../../components/PageHeader';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_ADMIN, type TimelineNode } from './types';
-import { useSmartDraft } from './smart/store.tsx';
+import { useSmartDraft, type WelcomeReplacer } from './smart/store.tsx';
 import {
   appendAuditNode,
   nowISO,
@@ -144,10 +144,22 @@ const Audit = () => {
     if (!isPlatformAdmin) return;
     // PRD §3.1.1：审核页气泡直接操作【审核通过】【退回修改】(单记录页保留直接操作)
     //   点击预选审核结论并滚动到结论区,最终仍由底部「确认」按钮提交(避免误触直接落库)
-    pushWelcomeGreeting('agent-center-audit', 'admin', undefined, {
+    pushWelcomeGreeting('agent-center-audit', 'admin', (k, _role, surface) => {
+      if (k !== 'agent-center-audit' || surface !== 'bubble') return undefined;
+      const errors =
+        typeof window !== 'undefined' && (window as any).__preAuditErrorCount !== undefined
+          ? (window as any).__preAuditErrorCount
+          : 0;
+      const verdictLabel =
+        typeof window !== 'undefined' && (window as any).__preAuditVerdictLabel
+          ? (window as any).__preAuditVerdictLabel
+          : '待定';
+      return [String(errors), verdictLabel];
+    }, {
       actions: [
         { key: 'audit-pass', label: '审核通过', event: 'agent-audit-verdict-pass', enabled: true },
         { key: 'audit-return', label: '退回修改', event: 'agent-audit-verdict-return', enabled: true },
+        { key: 'test', label: '测试验证', event: 'agent-audit-run-test', enabled: true },
       ],
     });
   }, [isPlatformAdmin, pushWelcomeGreeting]);
@@ -167,11 +179,17 @@ const Audit = () => {
     };
     const onPass = () => select('通过');
     const onReturn = () => select('退回');
+    const onRunTest = () => {
+      const btn = document.querySelector('[data-testid="audit-test-button"]') as HTMLButtonElement | null;
+      btn?.click();
+    };
     window.addEventListener('agent-audit-verdict-pass', onPass);
     window.addEventListener('agent-audit-verdict-return', onReturn);
+    window.addEventListener('agent-audit-run-test', onRunTest);
     return () => {
       window.removeEventListener('agent-audit-verdict-pass', onPass);
       window.removeEventListener('agent-audit-verdict-return', onReturn);
+      window.removeEventListener('agent-audit-run-test', onRunTest);
     };
   }, [confirmForm]);
 
@@ -435,6 +453,11 @@ const Audit = () => {
         reason = `基本信息完整、字段格式合规、连通测试正常`;
       }
     }
+    // V1.1:把 X(问题数)/XX(结论 label) 写到 window,让气泡文案替换
+    const verdictLabel =
+      verdict === 'pass' ? '建议通过' : verdict === 'reject' ? '建议退回' : '待定';
+    (window as any).__preAuditErrorCount = activeProblems.length;
+    (window as any).__preAuditVerdictLabel = verdictLabel;
     addMessage({
       role: 'agent',
       type: 'pre-audit-verdict',
@@ -517,6 +540,58 @@ const Audit = () => {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id, isPlatformAdmin]);
+
+  // §4.2.1 医小管自动预审结论：runTest 完成且出现 verdict 标签时, 自动填入 Radio + TextArea
+  //   - 仅 admin + 仅首次进页(老审核通过 / 退回修改记录不重填) + 仅跑一次(由 autoFilledRef 守护)
+  //   - 保留管理员编辑能力: 填值后仍可手动改 Radio / TextArea / 点"重新采纳预审草稿"
+  //   - 触发链: preAuditVerdict 由"信息待补"切到"建议通过/建议退回"时重算 → effect 重跑
+  //             returnDraft 在 testResult + activeProblems 稳定后才非空 → 避免空草稿提前占位
+  const autoFilledRef = useRef(false);
+  useEffect(() => {
+    if (!record || !isPlatformAdmin) return;
+    if (record.status !== '待审核' && record.status !== '审核中') return;
+    if (autoFilledRef.current) return;
+    // 直接读 useMemo 的 preAuditVerdict,与 runTest 末尾写 window.__preAuditVerdictLabel 同源;
+    // 之前读 window 是有 bug 的: setTestResult 在 React commit 阶段触发 re-render 时,
+    // window.__preAuditVerdictLabel 还没在 runTest 内被写入,导致 effect 重跑时拿不到值
+    if (preAuditVerdict === '信息待补') return; // 待定不自动选,让管理员决策
+    // 退回分支要求 returnDraft 就绪(否则先等下一次 effect 重跑)
+    if (preAuditVerdict === '建议退回' && !returnDraft) return;
+    const v: '通过' | '退回' = preAuditVerdict === '建议通过' ? '通过' : '退回';
+    setVerdict(v);
+    confirmForm.setFieldsValue({
+      verdict: v,
+      // 退回时一并把预审草稿(预审问题 + 连通失败)写进 returnReason; 通过时写一句自动备注
+      ...(v === '退回'
+        ? { returnReason: returnDraft }
+        : { passNote: '医小管预审通过：基本信息完整、字段格式合规、连通测试正常。' }),
+    });
+    // 提示气泡播报一条(让 chat panel 与结论区状态一致)
+    addMessage({
+      role: 'agent',
+      type: 'text',
+      content:
+        v === '通过'
+          ? '我已根据预审结论自动选「审核通过」，并预填了具体说明。如需调整，可直接修改或点重置。'
+          : `我已根据预审结论自动选「退回修改」，并把预审问题 + 连通结果汇总到退回说明里（共 ${preAuditProblems.length} 项标注）。如需调整，可直接修改或点「重新采纳预审草稿」重写。`,
+    });
+    // 滚动到结论区
+    setTimeout(() => {
+      document
+        .querySelector('[data-testid="audit-verdict-section"]')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
+    autoFilledRef.current = true;
+  }, [
+    record?.id,
+    record?.status,
+    isPlatformAdmin,
+    preAuditVerdict, // 触发: preAuditVerdict 由"信息待补"切到"建议通过/建议退回"时重算
+    returnDraft, // 退回草稿就绪后才填,避免空 returnDraft 提前占位
+    preAuditProblems, // 仅用于退回提示气泡读"共 N 项标注"
+    confirmForm,
+    addMessage,
+  ]);
 
   // §4.4 通过后引导：审核通过 → 显示引导气泡；关闭 → 进入列表页
   // （submitAudit 提交后会设置 showPassGuide，按钮"我知道了"关闭）
@@ -769,7 +844,7 @@ const Audit = () => {
         <Card
           title="技术信息"
           size="small"
-          extra={<Button onClick={runTest} size="small" icon={<ReloadOutlined />} loading={testStage >= 0}>测试验证</Button>}
+          extra={<Button data-testid="audit-test-button" onClick={runTest} size="small" icon={<ReloadOutlined />} loading={testStage >= 0}>测试验证</Button>}
         >
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label="接入方式">

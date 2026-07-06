@@ -214,6 +214,7 @@ const initialRecords: AccessRecord[] = [
     ],
     accessMode: 'API',
     apiEndpoint: 'http://10.10.10.50:8080/chat',
+    apiKey: 'ak-yy****-yy06',
     connectionTested: true,
     connectionStatus: 'success',
     status: '撤销修改',

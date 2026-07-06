@@ -2,9 +2,9 @@
  * §3.1.2 AI 预填标识 + 置信度悬浮气泡
  *
  * 3 档置信度 (与 types.confidenceLevel 对齐)：
- *   - high   (>= 0.9)   蓝色 ✨AI 预填, 待用户确认
- *   - medium (>= 0.7)   蓝色 ✨AI 预填 + 黄色问号, 建议复核
- *   - low    (<  0.7)   红色 ⚠️请确认, 强制复核
+ *   - high   (>= 0.9)   绿色 ✨AI 预填, 待用户确认
+ *   - medium (>= 0.7)   绿色 ✨AI 预填, 建议复核
+ *   - low    (<  0.7)   绿色 ✨AI 预填 · 请确认, 强制复核
  *
  * 悬浮气泡显示三要素：来源 / 置信度 / 采纳按钮
  *
@@ -18,7 +18,6 @@ import { Button, Space, Tag, Tooltip, Typography } from 'antd';
 import {
   CheckCircleFilled,
   CheckOutlined,
-  ExclamationCircleOutlined,
   ThunderboltFilled,
 } from '@ant-design/icons';
 import { confidenceLevel, type AIPrefillMeta } from './types';
@@ -70,19 +69,18 @@ const AIPrefillBadge = ({ meta, onAcknowledge, tipTitle }: Props) => {
 
   // 未采纳：按置信度展示 ✨AI 预填 标识
   const lvl = confidenceLevel(meta.confidence);
+  // 3 档置信度统一绿色系，和表单预填高亮保持一致。
   const colorMap = {
-    high: { bg: '#E6F4FF', color: '#1677FF', border: '#91CAFF' },
-    medium: { bg: '#FFFBE6', color: '#D48806', border: '#FFE58F' },
-    low: { bg: '#FFF1F0', color: '#CF1322', border: '#FFA39E' },
+    high: { color: 'green' as const, iconColor: '#389E0D' },
+    medium: { color: 'green' as const, iconColor: '#389E0D' },
+    low: { color: 'green' as const, iconColor: '#389E0D' },
   } as const;
   const c = colorMap[lvl];
 
   const inner = (
     <Tag
-      color={lvl === 'low' ? 'red' : lvl === 'medium' ? 'gold' : 'blue'}
-      icon={
-        lvl === 'low' ? <ExclamationCircleOutlined /> : <ThunderboltFilled />
-      }
+      color={c.color}
+      icon={<ThunderboltFilled />}
       style={{
         margin: 0,
         fontSize: 11,
@@ -105,12 +103,12 @@ const AIPrefillBadge = ({ meta, onAcknowledge, tipTitle }: Props) => {
         </div>
         <div>
           <Text type="secondary">置信度：</Text>
-          <Text strong style={{ color: c.color }}>
+          <Text strong style={{ color: c.iconColor }}>
             {(meta.confidence * 100).toFixed(0)}%
           </Text>
           <Tag
             style={{ marginLeft: 6 }}
-            color={lvl === 'low' ? 'red' : lvl === 'medium' ? 'gold' : 'green'}
+            color="green"
           >
             {lvl === 'high' ? '可直接采纳' : lvl === 'medium' ? '建议复核' : '需强制确认'}
           </Tag>
@@ -153,6 +151,7 @@ const AIPrefillBadge = ({ meta, onAcknowledge, tipTitle }: Props) => {
     </div>
   );
 
+  // 单一容器:不再叠外层 span 的背景/边框(避免与 Tag 自带样式形成"重影"双框)
   return (
     <Tooltip
       title={tipTitle ?? defaultTip}
@@ -165,10 +164,6 @@ const AIPrefillBadge = ({ meta, onAcknowledge, tipTitle }: Props) => {
           display: 'inline-flex',
           alignItems: 'center',
           cursor: 'help',
-          background: c.bg,
-          border: `1px solid ${c.border}`,
-          borderRadius: 4,
-          padding: '0 4px',
           marginLeft: 6,
           verticalAlign: 'middle',
         }}

@@ -11,7 +11,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Alert,
   Card,
   Button,
   Space,
@@ -40,6 +39,7 @@ import {
   type SampleLevel,
 } from '../../mock/evaluation';
 import { mockAgents } from '../../mock/agents';
+import { matchAgentByName } from '../../utils/agentNameMatcher';
 import { useAuth } from '../../hooks/useAuth';
 
 const { Text } = Typography;
@@ -69,19 +69,14 @@ const CreateTask = () => {
   const presetTask = presetTaskId
     ? mockEvaluationTasks.find((t) => t.id === presetTaskId)
     : undefined;
-  // V2.6 接入中心「立即评测」带入的智能体名称/编号
-  //   · agentName 命中 mockAgents → 自动选中(精准预填)
-  //   · agentName 未命中 → 顶部信息条提示「已带入名称 XXX,请在下方选择对应智能体」,引导用户手动选
+  // V2.6 接入中心「立即评测」带入的智能体名称
+  //   · agentName 命中 mockAgents → 静默自动选中(精准预填)
+  //   · agentName 未命中 → 静默留空,让用户主动选择(顶部 Alert / toast 提示按 PRD 移除)
   const presetAgentName = searchParams.get('agentName') || undefined;
-  const presetAgentCode = searchParams.get('agentCode') || undefined;
+  // V2.7: 改用公共 4 级匹配(精确 → 去尾缀 → 子串 → bigram min-归一化),
+  //   兼容接入中心「心电图智能辅助诊断」↔ 台账「心电图智能辅助诊断系统」的尾缀差异
   const matchedAgent = presetAgentName
-    ? mockAgents.find(
-        (a) =>
-          a.name === presetAgentName ||
-          // 模糊匹配：去掉「智能」/「系统」等尾缀再比
-          a.name.replace(/[（(].*?[)）]/g, '').trim() ===
-            presetAgentName.replace(/[（(].*?[)）]/g, '').trim(),
-      )
+    ? matchAgentByName(presetAgentName, mockAgents)
     : undefined;
   const { currentUser } = useAuth();
 
@@ -123,22 +118,15 @@ const CreateTask = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 预填：接入中心「立即评测」带入 agentName
+  // 预填：接入中心「立即评测」带入 agentName(V2.7 改为静默预填,不弹气泡)
   useEffect(() => {
     if (!presetAgentName) return;
     if (matchedAgent) {
-      // 命中：自动选中
+      // 命中：自动选中(静默,不弹 toast)
       setSelectedAgentId(matchedAgent.id);
       form.setFieldsValue({ agentId: matchedAgent.id });
-      message.success(`已自动带入智能体：${matchedAgent.name}`);
-    } else {
-      // 未命中：提示并让用户手动选择
-      message.info(
-        `已带入智能体名称「${presetAgentName}」${
-          presetAgentCode ? `（编号：${presetAgentCode}）` : ''
-        },请在下方选择对应智能体后开始评测`,
-      );
     }
+    // 未命中:留空,等用户主动选择;红色 * + validateFields 兜底
     // 仅在挂载时执行一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -252,25 +240,7 @@ const CreateTask = () => {
       <Form form={form} layout="vertical">
         {/* 评测对象 */}
         <Card style={{ marginTop: 16 }} title="评测对象">
-          {/* V2.6 接入中心「立即评测」带入智能体名称时,在表单顶部展示提示横幅
-                · 命中 mockAgents → success 绿色,提示已自动选中
-                · 未命中 → info 蓝色,提示已带入名称并请手动选择 */}
-          {presetAgentName && (
-            <Alert
-              style={{ marginBottom: 16 }}
-              type={matchedAgent ? 'success' : 'info'}
-              showIcon
-              message={
-                matchedAgent
-                  ? `已自动带入智能体：${matchedAgent.name}${
-                      presetAgentCode ? `（编号：${presetAgentCode}）` : ''
-                    }`
-                  : `已带入智能体名称「${presetAgentName}」${
-                      presetAgentCode ? `（编号：${presetAgentCode}）` : ''
-                    },请在下方手动选择对应智能体后开始评测`
-              }
-            />
-          )}
+          {/* V2.7: 顶部 Alert 横幅已移除(命中时静默预填,未命中时留空让用户选择) */}
           <Form.Item
             name="agentId"
             label="智能体"

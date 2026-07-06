@@ -14,6 +14,7 @@ export type AgentMessageType =
   | 'file-detect' // 文件识别完成
   | 'image-detect' // 图片识别完成
   | 'link-detect' // 链接抓取完成
+  | 'text-detect' // 文字 / 语音识别完成
   | 'detecting' // 识别中
   | 'prefill' // 预填确认
   | 'autofix-req' // 自动纠错请求
@@ -25,6 +26,12 @@ export type AgentMessageType =
   | 'pre-audit-test' // 联通测试 5 阶段
   | 'pre-audit-verdict' // 预审结论
   | 'historical-plan' // §3.3.2 历史方案复用（按匹配度推荐 + 复用此方案）
+  // §4.2.3 PRD：连通测试失败时, Agent 联网搜索解决方案, 在气泡中给出修改建议
+  | 'web-search-solution'
+  // §4.2.3 PRD：连通测试成功 / 失败 各自的整体结果呈现
+  | 'conn-test-result'
+  // §4.3 自动生成产品与技术说明书：必填信息已完成但备案材料缺失时主动提示
+  | 'material-generation-offer'
   // §3.4.1.2 注册信息详情页：进度+核心指标 由 Agent 对话窗口呈现, 详情页本身不再嵌入卡片
   | 'insight-detail';
 
@@ -44,6 +51,7 @@ export interface AgentMessage {
   payload?: {
     fileName?: string;
     fileSize?: number;
+    recognitionMode?: 'text' | 'voice';
     detectedFields?: DetectedField[];
     suggestions?: Array<{
       fieldKey: string;
@@ -92,8 +100,79 @@ export interface AgentMessage {
     historicalPlans?: HistoricalPlan[];
     /** 由哪条来源触发（'test-fail' | 'page-init'），用于气泡 header 提示 */
     historicalPlanSource?: string;
+    /**
+     * §4.2.3 PRD：连通测试失败后, Agent 联网搜索解决方案（在气泡内呈现）。
+     * - 失败诊断（错误码 + 失败原因 + 解决步骤）由 ConnectivityTester 写入 connDiagnostics
+     *   并在 §3.3.1「失败诊断」Alert 中已就地呈现
+     * - 此处为附加的「联网搜索方案」—— 通常 1-2 条最匹配的外部/平台内沉淀方案,
+     *   每条带 title / summary / source / url / score, 气泡中以链接方式呈现,
+     *   点击新窗口打开, 不修改表单
+     */
+    webSearchSolutions?: Array<{
+      id: string;
+      title: string;
+      summary: string;
+      source: string;
+      url?: string;
+      score?: number;
+    }>;
+    /**
+     * §4.2.3 PRD：连通测试成功 / 失败 整体结果气泡。
+     * - ok=true  时, content = "✓ 测试验证正常", 仅展示这一结果,
+     *   不再推送 historical-plan / 知识库新增（PRD 已下线 §3.3.2 知识库沉淀提示）
+     * - ok=false 时, content = "✗ 测试验证异常（错误码 XXX）",
+     *   description 给出失败原因与失败阶段, 引导 Agent 进一步联网搜索解决方案
+     */
+    connTestResult?: {
+      ok: boolean;
+      /** 错误代码（失败时） */
+      errorCode?: string;
+      /** 失败原因（失败时） */
+      errorReason?: string;
+      /** 失败阶段（失败时） */
+      failureStage?: ConnStage;
+      /** 测试总耗时 ms */
+      totalMs?: number;
+    };
+    // §4.3 自动生成产品与技术说明书
+    materialGenerationOffer?: {
+      missingCategories: Array<'product' | 'tech'>;
+    };
     // §3.4.1.2 注册信息详情页: 进度 + 核心指标 + 一键直达(对话窗口呈现, 详情页不嵌卡片)
     insightProgress?: InsightProgress;
+    // §3.1.1 页面欢迎语：窗口内同步呈现 PRD「引导动作 / 气泡操作按钮」
+    welcomeChips?: Array<{
+      key: string;
+      label: string;
+      targetTab?: string;
+      tone?: 'default' | 'warning' | 'success' | 'error';
+    }>;
+    welcomeActions?: Array<{
+      key: string;
+      label: string;
+      path?: string;
+      event?: string;
+      enabled: boolean;
+      reason?: string;
+    }>;
+    welcomeMiniList?: {
+      toggleLabel: string;
+      targetTab: string;
+      totalCount: number;
+      rows: Array<{
+        recordId: string;
+        title: string;
+        subTitle?: string;
+        meta?: string;
+        actions: Array<{
+          key: string;
+          label: string;
+          kind: string;
+          path?: string;
+          danger?: boolean;
+        }>;
+      }>;
+    };
   };
 }
 

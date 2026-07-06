@@ -22,25 +22,48 @@ import {
   EditOutlined,
   ExperimentOutlined,
   FilePdfOutlined,
-  HistoryOutlined,
+  GlobalOutlined,
   InfoCircleOutlined,
   LinkOutlined,
   LoadingOutlined,
+  AudioOutlined,
+  MessageOutlined,
   PictureOutlined,
   RocketOutlined,
   SearchOutlined,
   ThunderboltOutlined,
-  UndoOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import type { AgentMessage, HistoricalPlan, InsightProgress } from './types';
+import type { AgentMessage, InsightProgress } from './types';
 import { confidenceLevel } from './types';
 
 const { Text } = Typography;
 
+const REGISTER_FIELD_LABELS: Record<string, string> = {
+  name: '智能体名称',
+  agentCode: '智能体编号',
+  version: '智能体版本',
+  department: '所属科室',
+  clinicalStage: '诊疗环节',
+  clinicalStageCustom: '诊疗环节（其他）',
+  description: '功能描述',
+  source: '智能体来源',
+  supplier: '供应商名称',
+  contactName: '技术联系人',
+  contactPhone: '联系方式',
+  accessMode: '接入方式',
+  apiEndpoint: '接口地址',
+  apiKey: 'API key',
+  platformUrl: '平台 URL 地址',
+  platformKey: '平台密钥 key',
+  trackingCode: '埋点代码生成',
+};
+
+const getRegisterFieldLabel = (fieldKey: string) => REGISTER_FIELD_LABELS[fieldKey] || fieldKey;
+
 /**
- * 文件识别 / 图片识别 / 链接抓取气泡
+ * 文件识别 / 图片识别 / 链接抓取 / 文字语音识别气泡
  * 取代旧的「全部采纳 + 每字段一个按钮」: 改为「多选 Checkbox + 底部「确认采纳 (N)」主按钮」
  * - 与 PRD §3.2.1 智能预审 / 智能审查「勾选 + 确认采纳」交互同构
  * - 取消「高置信度自动采纳」: 即便 confidence >= 0.9, 仍需用户显式勾选才能确认
@@ -116,6 +139,13 @@ const FileDetectBubble = ({ msg, onAcknowledgeFields, onAcknowledge }: FileDetec
             <Tag color="purple" icon={<PictureOutlined />}>
               图片识别
             </Tag>
+          ) : msg.type === 'text-detect' ? (
+            <Tag
+              color="green"
+              icon={msg.payload?.recognitionMode === 'voice' ? <AudioOutlined /> : <MessageOutlined />}
+            >
+              {msg.payload?.recognitionMode === 'voice' ? '语音识别' : '文字识别'}
+            </Tag>
           ) : (
             <Tag color="cyan" icon={<LinkOutlined />}>
               链接抓取
@@ -155,23 +185,9 @@ const FileDetectBubble = ({ msg, onAcknowledgeFields, onAcknowledge }: FileDetec
                     onChange={() => toggle(f.fieldKey)}
                     data-testid={`file-detect-field-${f.fieldKey}`}
                   >
-                    <span style={{ color: '#1F1F1F' }}>{f.fieldKey}</span>
+                    <span style={{ color: '#1F1F1F' }}>{getRegisterFieldLabel(f.fieldKey)}</span>
                   </Checkbox>
                   <span style={{ flex: 1, color: '#666', fontSize: 11 }}>{f.value}</span>
-                  <Tooltip title={`来源：${f.source}　置信度：${(f.confidence * 100).toFixed(0)}%`}>
-                    <Tag
-                      color={
-                        confidenceLevel(f.confidence) === 'high'
-                          ? 'green'
-                          : confidenceLevel(f.confidence) === 'medium'
-                            ? 'gold'
-                            : 'red'
-                      }
-                      style={{ margin: 0, fontSize: 11 }}
-                    >
-                      {(f.confidence * 100).toFixed(0)}%
-                    </Tag>
-                  </Tooltip>
                 </div>
               );
             })}
@@ -218,7 +234,7 @@ const FileDetectBubble = ({ msg, onAcknowledgeFields, onAcknowledge }: FileDetec
             <Space wrap>
               {pendingFields.map((f) => (
                 <Button key={f.fieldKey} size="small" onClick={() => onAcknowledge(f.fieldKey)}>
-                  采纳 {f.fieldKey}
+                  采纳 {getRegisterFieldLabel(f.fieldKey)}
                 </Button>
               ))}
             </Space>
@@ -256,8 +272,6 @@ interface Props {
   severityFilter?: 'all' | 'error' | 'warning' | 'info';
   /** pre-audit-summary 「帮我检查一下」按钮回调（注册页智能审查） */
   onRequestReview?: () => void;
-  /** §3.3.2 历史方案复用 · 「复用此方案」回调（按 plan.id 定位） */
-  onReusePlan?: (planId: string) => void;
 }
 
 /**
@@ -297,10 +311,10 @@ const AgentMessageBubble = ({
   onIssueLocate,
   onSeverityFilter,
   onRequestReview,
-  onReusePlan,
   severityFilter = 'all',
 }: Props) => {
   const isAgent = msg.role === 'agent';
+  const [welcomeMiniExpanded, setWelcomeMiniExpanded] = useState(false);
   // §3.4.1.2 「接入进度·核心指标」→ 对话窗口内呈现的「洞察详情」气泡:
   //   - 一键直达按钮（完善台账 / 发起准入评测 / 查看监控告警 / 编辑修改）通过 useNavigate 跳转
   const navigate = useNavigate();
@@ -394,6 +408,7 @@ const AgentMessageBubble = ({
     case 'file-detect':
     case 'image-detect':
     case 'link-detect':
+    case 'text-detect':
       return <FileDetectBubble msg={msg} onAcknowledgeFields={onAcknowledgeFields} onAcknowledge={onAcknowledge} />;
 
     case 'prefill':
@@ -401,7 +416,7 @@ const AgentMessageBubble = ({
         <div style={wrap}>
           <div style={bubble}>
             <Space size={6} style={{ marginBottom: 6 }}>
-              <Tag color="blue">✨ AI 预填</Tag>
+              <Tag color="green">✨ AI 预填</Tag>
             </Space>
             <div style={{ marginBottom: 8 }}>{msg.content}</div>
             {msg.payload?.detectedFields && (
@@ -416,67 +431,11 @@ const AgentMessageBubble = ({
                       fontSize: 12,
                     }}
                   >
-                    <span style={{ minWidth: 80, color: '#1F1F1F' }}>{f.fieldKey}</span>
-                    <Tag
-                      color={
-                        confidenceLevel(f.confidence) === 'high'
-                          ? 'green'
-                          : confidenceLevel(f.confidence) === 'medium'
-                            ? 'gold'
-                            : 'red'
-                      }
-                      style={{ margin: 0 }}
-                    >
-                      {(f.confidence * 100).toFixed(0)}%
-                    </Tag>
+                    <span style={{ minWidth: 96, color: '#1F1F1F' }}>
+                      {getRegisterFieldLabel(f.fieldKey)}
+                    </span>
                     {confidenceLevel(f.confidence) === 'low' && (
-                      <Text type="warning" style={{ fontSize: 11 }}>
-                        <WarningOutlined /> 请确认
-                      </Text>
-                    )}
-                  </div>
-                ))}
-              </Space>
-            )}
-          </div>
-        </div>
-      );
-
-    case 'prefill':
-      return (
-        <div style={wrap}>
-          <div style={bubble}>
-            <Space size={6} style={{ marginBottom: 6 }}>
-              <Tag color="blue">✨ AI 预填</Tag>
-            </Space>
-            <div style={{ marginBottom: 8 }}>{msg.content}</div>
-            {msg.payload?.detectedFields && (
-              <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                {msg.payload.detectedFields.map((f) => (
-                  <div
-                    key={f.fieldKey}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      fontSize: 12,
-                    }}
-                  >
-                    <span style={{ minWidth: 80, color: '#1F1F1F' }}>{f.fieldKey}</span>
-                    <Tag
-                      color={
-                        confidenceLevel(f.confidence) === 'high'
-                          ? 'green'
-                          : confidenceLevel(f.confidence) === 'medium'
-                            ? 'gold'
-                            : 'red'
-                      }
-                      style={{ margin: 0 }}
-                    >
-                      {(f.confidence * 100).toFixed(0)}%
-                    </Tag>
-                    {confidenceLevel(f.confidence) === 'low' && (
-                      <Text type="warning" style={{ fontSize: 11 }}>
+                      <Text style={{ fontSize: 11, color: '#389E0D' }}>
                         <WarningOutlined /> 请确认
                       </Text>
                     )}
@@ -835,96 +794,145 @@ const AgentMessageBubble = ({
       );
     }
 
-    // ─── §3.3.2 历史方案复用 · 气泡 ───
-    case 'historical-plan': {
-      const plans = msg.payload?.historicalPlans ?? [];
-      const source = msg.payload?.historicalPlanSource;
-      const sourceLabel =
-        source === 'test-fail'
-          ? '失败诊断 · 历史方案复用'
-          : source === 'test-pass'
-            ? '测试通过 · 相似历史配置'
-            : '历史方案复用';
+    // ─── §4.2.3 PRD：连通测试结果气泡（成功 / 失败 整体结果） ───
+    case 'conn-test-result': {
+      const r = msg.payload?.connTestResult;
+      if (!r) return null;
+      const ok = r.ok;
+      const stageLabelMap: Record<string, string> = {
+        dns: 'DNS 解析',
+        connect: '建立连接',
+        auth: '鉴权验证',
+        request: '发送请求',
+        response: '接收响应',
+      };
       return (
         <div style={wrap}>
-          <div style={bubble} data-testid="historical-plan-msg">
+          <div
+            data-testid="conn-test-result-msg"
+            style={{
+              ...bubble,
+              borderColor: ok ? '#B7EB8F' : '#FFA39E',
+              background: ok ? '#F6FFED' : '#FFF1F0',
+            }}
+          >
             <Space size={6} style={{ marginBottom: 6 }}>
-              <HistoryOutlined style={{ color: '#1677FF' }} />
-              <Tag color="blue">{sourceLabel}</Tag>
+              {ok ? (
+                <CheckCircleOutlined style={{ color: '#52C41A' }} />
+              ) : (
+                <CloseCircleOutlined style={{ color: '#FF4D4F' }} />
+              )}
+              <Tag color={ok ? 'success' : 'error'}>
+                {ok ? '测试验证 · 通过' : '测试验证 · 异常'}
+              </Tag>
+              {!ok && r.errorCode && (
+                <Tag color="red">错误 {r.errorCode}</Tag>
+              )}
             </Space>
-            <div style={{ marginBottom: 10 }}>{msg.content}</div>
-            {plans.length === 0 ? (
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+              {msg.content}
+            </div>
+            {!ok && (
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                {r.failureStage && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    失败阶段：{stageLabelMap[r.failureStage] || r.failureStage}
+                  </Text>
+                )}
+                {r.errorReason && (
+                  <Text type="danger" style={{ fontSize: 12 }}>
+                    {r.errorReason}
+                  </Text>
+                )}
+                <Text type="secondary" style={{ fontSize: 11, marginTop: 2 }}>
+                  我会联网搜索解决方案，片刻后给到修改建议～
+                </Text>
+              </Space>
+            )}
+            {ok && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                5 阶段全部通过，可继续提交注册。
+              </Text>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── §4.2.3 PRD：连通测试失败 → Agent 联网搜索解决方案气泡 ───
+    case 'web-search-solution': {
+      const list = msg.payload?.webSearchSolutions ?? [];
+      return (
+        <div style={wrap}>
+          <div
+            data-testid="web-search-solution-msg"
+            style={{
+              ...bubble,
+              borderColor: '#91CAFF',
+              background: 'linear-gradient(90deg,#F0F8FF 0%, #FFFFFF 100%)',
+            }}
+          >
+            <Space size={6} style={{ marginBottom: 6 }}>
+              <GlobalOutlined style={{ color: '#1677FF' }} />
+              <Tag color="blue">联网搜索 · 解决方案</Tag>
+            </Space>
+            <div style={{ marginBottom: 8 }}>{msg.content}</div>
+            {list.length === 0 ? (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                暂无可复用方案
+                暂未匹配到相关方案，请联系平台运维协助排查。
               </Text>
             ) : (
               <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                {plans.map((p) => {
-                  const score = Math.round(p.matchScore * 100);
-                  const scoreColor =
-                    score >= 85 ? '#52C41A' : score >= 70 ? '#1677FF' : '#999';
-                  return (
-                    <div
-                      key={p.id}
-                      data-testid={`historical-plan-card-${p.id}`}
-                      style={{
-                        border: '1px solid #E8E8E8',
-                        background: '#FFFFFF',
-                        borderRadius: 6,
-                        padding: '10px 12px',
-                      }}
-                    >
-                      <Space size={6} wrap>
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            padding: '0 8px',
-                            height: 20,
-                            lineHeight: '20px',
-                            borderRadius: 10,
-                            background: scoreColor,
-                            color: '#fff',
-                            fontSize: 11,
-                            fontWeight: 500,
-                          }}
-                        >
-                          匹配 {score}%
-                        </span>
-                        <Text strong style={{ fontSize: 13 }}>
-                          {p.agentName}
-                        </Text>
-                        <Tag color="blue">{p.mode}</Tag>
-                        <Tag color="default">{p.endpointPattern}</Tag>
-                      </Space>
-                      <div style={{ marginTop: 4, fontSize: 12 }}>
-                        <Text type="secondary">症状：</Text>
-                        {p.symptom}
-                      </div>
-                      <div style={{ marginTop: 2, fontSize: 12 }}>
-                        <Text type="secondary">处置：</Text>
-                        {p.fix}
-                      </div>
-                      <Space size={6} style={{ marginTop: 6 }}>
+                {list.map((s) => (
+                  <div
+                    key={s.id}
+                    data-testid={`web-search-solution-${s.id}`}
+                    style={{
+                      border: '1px solid #E8E8E8',
+                      background: '#FFFFFF',
+                      borderRadius: 6,
+                      padding: '10px 12px',
+                    }}
+                  >
+                    <Space size={6} wrap>
+                      <Text strong style={{ fontSize: 13 }}>
+                        {s.title}
+                      </Text>
+                      {s.score !== undefined && (
+                        <Tag color="blue" style={{ fontSize: 11 }}>
+                          匹配 {Math.round(s.score * 100)}%
+                        </Tag>
+                      )}
+                    </Space>
+                    <div style={{ marginTop: 4, fontSize: 12, color: '#333', lineHeight: 1.6 }}>
+                      {s.summary}
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: 11, color: '#999' }}>
+                      来源：{s.source}
+                    </div>
+                    {s.url && (
+                      <div style={{ marginTop: 6 }}>
                         <Button
                           size="small"
-                          type="primary"
-                          icon={<UndoOutlined />}
-                          data-testid={`historical-plan-reuse-${p.id}`}
-                          onClick={() => onReusePlan?.(p.id)}
+                          type="link"
+                          icon={<LinkOutlined />}
+                          data-testid={`web-search-solution-open-${s.id}`}
+                          onClick={() => window.open(s.url, '_blank', 'noopener,noreferrer')}
+                          style={{ padding: 0 }}
                         >
-                          复用此方案
+                          打开查看完整方案 →
                         </Button>
-                        <Tooltip title="查看该方案的详细配置（脱敏信息）">
-                          <Button size="small" icon={<SearchOutlined />}>
-                            查看细节
-                          </Button>
-                        </Tooltip>
-                      </Space>
-                    </div>
-                  );
-                })}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </Space>
             )}
+            <div style={{ marginTop: 8, fontSize: 11, color: '#999' }}>
+              <Text type="secondary">
+                修改完成后请在表单中重新填写并再次发起【测试验证】；通过后即可提交注册。
+              </Text>
+            </div>
           </div>
         </div>
       );
@@ -1130,10 +1138,200 @@ const AgentMessageBubble = ({
 
     case 'text':
     default:
+      const welcomeChips = msg.payload?.welcomeChips ?? [];
+      const welcomeActions = msg.payload?.welcomeActions ?? [];
+      const welcomeMiniList = msg.payload?.welcomeMiniList;
+      const hasWelcomeGuides =
+        welcomeChips.length > 0 ||
+        welcomeActions.length > 0 ||
+        !!(welcomeMiniList && welcomeMiniList.rows.length > 0);
       return (
         <div style={wrap}>
           <div style={bubble}>
             <div>{msg.content}</div>
+            {hasWelcomeGuides && (
+              <div
+                style={{
+                  marginTop: 10,
+                  paddingTop: 8,
+                  borderTop: '1px solid #F0F0F0',
+                }}
+                data-testid={`chat-welcome-guides-${msg.id}`}
+              >
+                {welcomeChips.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                    {welcomeChips.map((c) => (
+                      <Tag.CheckableTag
+                        key={c.key}
+                        data-testid={`chat-welcome-chip-${c.key}`}
+                        checked={c.tone === 'success'}
+                        style={{
+                          padding: '2px 8px',
+                          border: `1px solid ${
+                            c.tone === 'warning'
+                              ? '#FAAD14'
+                              : c.tone === 'success'
+                                ? '#52C41A'
+                                : c.tone === 'error'
+                                  ? '#FF4D4F'
+                                  : '#D9D9D9'
+                          }`,
+                          borderRadius: 999,
+                          cursor: c.targetTab ? 'pointer' : 'default',
+                        }}
+                        onChange={() => {
+                          if (!c.targetTab) return;
+                          window.dispatchEvent(
+                            new CustomEvent('agent-jump-tab', { detail: c.targetTab }),
+                          );
+                        }}
+                      >
+                        {c.label}
+                      </Tag.CheckableTag>
+                    ))}
+                  </div>
+                )}
+
+                {welcomeActions.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                    {welcomeActions.map((a) => (
+                      <Tooltip
+                        key={a.key}
+                        title={a.enabled ? '' : (a.reason || '当前账号暂无该操作权限')}
+                      >
+                        <Button
+                          size="small"
+                          type="primary"
+                          ghost
+                          disabled={!a.enabled}
+                          data-testid={`chat-welcome-action-${a.key}`}
+                          onClick={() => {
+                            if (!a.enabled) return;
+                            if (a.event) {
+                              window.dispatchEvent(new CustomEvent(a.event));
+                              return;
+                            }
+                            if (a.path) navigate(a.path);
+                          }}
+                        >
+                          {a.label}
+                        </Button>
+                      </Tooltip>
+                    ))}
+                  </div>
+                )}
+
+                {welcomeMiniList && welcomeMiniList.rows.length > 0 && (
+                  <div>
+                    {!welcomeMiniExpanded ? (
+                      <Button
+                        size="small"
+                        type="primary"
+                        ghost
+                        data-testid="chat-welcome-mini-toggle"
+                        onClick={() => setWelcomeMiniExpanded(true)}
+                      >
+                        {welcomeMiniList.toggleLabel} ›
+                      </Button>
+                    ) : (
+                      <div
+                        data-testid="chat-welcome-mini"
+                        style={{
+                          border: '1px solid #E8E8E8',
+                          borderRadius: 8,
+                          background: '#FFFFFF',
+                          maxHeight: 220,
+                          overflowY: 'auto',
+                        }}
+                      >
+                        {welcomeMiniList.rows.map((row) => (
+                          <div
+                            key={row.recordId}
+                            data-testid={`chat-welcome-mini-row-${row.recordId}`}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 8,
+                              padding: '7px 8px',
+                              borderBottom: '1px solid #F5F5F5',
+                            }}
+                          >
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {row.title}
+                              </div>
+                              {(row.subTitle || row.meta) && (
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color: '#999',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {[row.subTitle, row.meta].filter(Boolean).join(' · ')}
+                                </div>
+                              )}
+                            </div>
+                            <Space size={0} wrap={false}>
+                              {row.actions.map((act) => (
+                                <Button
+                                  key={act.key}
+                                  size="small"
+                                  type="link"
+                                  danger={act.danger}
+                                  data-testid={`chat-welcome-mini-action-${act.kind}-${row.recordId}`}
+                                  onClick={() => {
+                                    window.dispatchEvent(
+                                      new CustomEvent('agent-bubble-row-action', {
+                                        detail: {
+                                          kind: act.kind,
+                                          recordId: row.recordId,
+                                          path: act.path,
+                                        },
+                                      }),
+                                    );
+                                  }}
+                                  style={{ padding: '0 6px', fontSize: 12 }}
+                                >
+                                  {act.label}
+                                </Button>
+                              ))}
+                            </Space>
+                          </div>
+                        ))}
+                        <Button
+                          type="link"
+                          size="small"
+                          block
+                          data-testid="chat-welcome-mini-footer"
+                          onClick={() => {
+                            window.dispatchEvent(
+                              new CustomEvent('agent-jump-tab', {
+                                detail: welcomeMiniList.targetTab,
+                              }),
+                            );
+                          }}
+                          style={{ fontSize: 12 }}
+                        >
+                          查看全部 ({welcomeMiniList.totalCount}) ›
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       );

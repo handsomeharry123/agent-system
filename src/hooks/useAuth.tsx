@@ -100,6 +100,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }}
     >
       {children}
+      {import.meta.env.DEV && (() => {
+        // 验证脚本使用：暴露 switchRole 到 window,verify 可主动调
+        if (typeof window !== 'undefined') {
+          (window as any).__useAuthSetRole = switchRole;
+        }
+        return null;
+      })()}
     </AuthContext.Provider>
   );
 };

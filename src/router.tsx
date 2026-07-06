@@ -32,6 +32,12 @@ import Ledger from './pages/ledger/index';
 import LedgerList from './pages/ledger/List';
 import LedgerDetail from './pages/ledger/Detail';
 import RiskLevelPage from './pages/ledger/RiskLevel';
+// 智能化升级 Demo(§3.1-3.3)
+import LedgerDemo from './pages/ledger/demo';
+import DemoOverviewV31 from './pages/ledger/demo/OverviewV31';
+import DemoProfileV32 from './pages/ledger/demo/AgentProfileV32';
+import DemoReportV34 from './pages/ledger/demo/ReportV34';
+import DemoAgentListV32 from './pages/ledger/demo/AgentListV32';
 
 // Pages - Resource Center (V1.0 医院资源管理中心)
 import ResourceCenter from './pages/resource-center/index';
@@ -174,6 +180,18 @@ const routes: RouteObject[] = [
           // V1.5 风险分级页（初判 / 人工审核）
           { path: 'risk/:id', element: <RiskLevelPage /> },
           // V1.5 已下线「权限治理」路由；权限治理统一收敛至「统一安全治理中心」
+        ],
+      },
+      // 智能化升级 Demo（§3.1-3.3）：独立路由,带 Tabs 切换 3 个子页
+      {
+        path: 'ledger-demo',
+        element: <LedgerDemo />,
+        children: [
+          { index: true, element: <Navigate to="/app/ledger-demo/overview" replace /> },
+          { path: 'overview', element: <DemoOverviewV31 /> },
+          { path: 'list', element: <DemoAgentListV32 /> },
+          { path: 'profile', element: <DemoProfileV32 /> },
+          { path: 'report', element: <DemoReportV34 /> },
         ],
       },
       // Resource Center (V1.0 医院资源管理中心)

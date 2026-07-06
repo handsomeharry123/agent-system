@@ -18,33 +18,24 @@ import type {
 } from './types';
 
 // ──────────────────────────────────────────────────────────────────────
-// 默认初始会话：首次唤起浮层时, 给用户一段欢迎语 + 分步引导
+// 默认初始会话：留空，不在 ChatPanel 浮层首次打开时强塞历史欢迎语。
+//   - 实际「进入接入中心列表页 / 新建注册页 / 审核页」时, 由对应页面的
+//     useEffect 调 pushWelcomeGreeting(pageKey, role) 按需往 messages /
+//     activeWelcome 同步投递, 并用 __welcome__ tag 去重;
+//   - 不再保留 2026-06-30 那段「智能填写助手」开场白 — 它原本是给浮层
+//     默认可用文案, 但实际接入中心主页进入时, 该文案与
+//     WELCOME_GREETINGS['agent-center-all'] 文案不一致, 用户看到的
+//     是「旧版」句子, 易造成「页面没刷新就过期了」的错觉。
 // ──────────────────────────────────────────────────────────────────────
 
-const initialMessages: AgentMessage[] = [
-  {
-    id: 'm-welcome',
-    role: 'agent',
-    type: 'text',
-    content:
-      '你好！我是「智能填写助手」。我可以帮你把产品说明书 / 技术规格书 / 图片 / 链接里的内容自动识别并填到右侧表单, 你只需核对确认即可。',
-    timestamp: '2026-06-30 09:30:00',
-  },
-  {
-    id: 'm-guide',
-    role: 'agent',
-    type: 'text',
-    content:
-      '请先上传「产品说明书」与「技术规格书」PDF, 或者直接把链接 / 图片丢给我, 也可以直接打字描述你想接入的智能体。',
-    timestamp: '2026-06-30 09:30:02',
-  },
-];
+const initialMessages: AgentMessage[] = [];
 
 export type WelcomePageKey =
   // 提供方侧列表 (各 Tab)
   | 'agent-center-all'          // 「全部」Tab — 提供方/管理方 文案不同
   | 'agent-center-draft'       // 「草稿」Tab
   | 'agent-center-pending'     // 「待审核」Tab
+  | 'agent-center-reviewing'   // 「审核中」Tab
   | 'agent-center-return'      // 「退回修改」Tab
   | 'agent-center-cancel'      // 「撤销修改」Tab
   | 'agent-center-passed'      // 「审核通过」Tab
@@ -55,7 +46,21 @@ export type WelcomePageKey =
   | 'agent-center-audit';      // 审核注册页
 
 /** PRD §3.1.1: 同一页面在「智能体提供方」与「智能体管理方」下文案可能完全不同 */
-export type WelcomeRole = 'provider' | 'admin';
+export type WelcomeRole = 'dept' | 'provider' | 'admin';
+
+type WelcomeCopy = {
+  /** 机器人旁气泡提示文案 */
+  bubble: string;
+  /** 对话窗口内欢迎语文案 */
+  window: string;
+};
+
+const adminSituationBubble =
+  '今日待审核 X 个、准入通过 X 个、退回修改 X 个。在气泡里点对应状态即可直接进入处理～';
+const deptSituationBubble =
+  '今日审核中 X 个、准入通过 X 个、退回修改 X 个。在气泡里点对应状态即可直接进入处理～';
+const registerWindowCopy =
+  '你好！我是医小管。点击【新建注册】，把产品说明书 / 技术规格书发给我（支持 PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮你自动识别并填表～';
 
 /**
  * PRD §3.1.1 欢迎语表（窗口内 + 机器人旁气泡同步展示）
@@ -64,60 +69,146 @@ export type WelcomeRole = 'provider' | 'admin';
  *   目前仅 agent-center-all 与 agent-center-audit 在两角色下文案不同；
  *   其余页面两角色走同一句欢迎语。
  */
-const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, string>> = {
+const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>> = {
   'agent-center-all': {
-    provider:
-      '你好！我是医小管。点击【新建注册】，把产品说明书 / 技术规格书 PDF（或链接 / 图片）丢给我，我来帮你自动识别并填表～',
-    admin:
-      '今日待审查 X 个、准入通过 X 个、退回修改 X 个。点击对应状态卡片可直接进入处理～',
+    dept: {
+      bubble: deptSituationBubble,
+      window: registerWindowCopy,
+    },
+    provider: {
+      bubble: deptSituationBubble,
+      window: registerWindowCopy,
+    },
+    admin: {
+      bubble: adminSituationBubble,
+      window: registerWindowCopy,
+    },
   },
   'agent-center-draft': {
-    provider:
-      '你还有 N 条未完成的草稿，需要我帮你继续补全吗？点开任意草稿，我接着帮你填。',
-    admin:
-      '你还有 N 条未完成的草稿，需要我帮你继续补全吗？点开任意草稿，我接着帮你填。',
+    dept: {
+      bubble: deptSituationBubble,
+      window: '你还有 X 条未完成的草稿，需要我帮你继续补全吗？点开任意草稿，我接着帮你填。',
+    },
+    provider: {
+      bubble: deptSituationBubble,
+      window: '你还有 X 条未完成的草稿，需要我帮你继续补全吗？点开任意草稿，我接着帮你填。',
+    },
+    admin: {
+      bubble: adminSituationBubble,
+      window: '你还有 X 条未完成的草稿，需要我帮你继续补全吗？点开任意草稿，我接着帮你填。',
+    },
   },
   'agent-center-pending': {
-    provider:
-      '这里是已提交、正在等待审核的智能体，我会帮你盯进度，有审核结果第一时间提醒你。',
-    admin:
-      '这里是已提交、正在等待审核的智能体，我会帮你盯进度，有审核结果第一时间提醒你。',
+    dept: {
+      bubble: deptSituationBubble,
+      window: '这里是已提交、正在等待审核的智能体，我会帮你盯进度，有审核结果第一时间提醒你。',
+    },
+    provider: {
+      bubble: deptSituationBubble,
+      window: '这里是已提交、正在等待审核的智能体，我会帮你盯进度，有审核结果第一时间提醒你。',
+    },
+    admin: {
+      bubble: adminSituationBubble,
+      window: '这里是已提交、正在等待审核的智能体，我会帮你盯进度，有审核结果第一时间提醒你。',
+    },
+  },
+  'agent-center-reviewing': {
+    dept: {
+      bubble: deptSituationBubble,
+      window: '这里是已提交、已在审核中的智能体，我会帮你盯进度，有审核结果第一时间提醒你。',
+    },
+    provider: {
+      bubble: deptSituationBubble,
+      window: '这里是已提交、已在审核中的智能体，我会帮你盯进度，有审核结果第一时间提醒你。',
+    },
+    admin: {
+      bubble: adminSituationBubble,
+      window: '这里是已提交、已在审核中的智能体，我会帮你盯进度，有审核结果第一时间提醒你。',
+    },
   },
   'agent-center-return': {
-    provider:
-      '有 N 条被退回啦，别担心～我已整理好退回意见和问题点，点开我陪你逐条改好再提交。',
-    admin:
-      '有 N 条被退回啦，别担心～我已整理好退回意见和问题点，点开我陪你逐条改好再提交。',
+    dept: {
+      bubble: deptSituationBubble,
+      window: '有 X 条被退回啦，别担心～我已整理好退回意见和问题点，点开我陪你逐条改好再提交。',
+    },
+    provider: {
+      bubble: deptSituationBubble,
+      window: '有 X 条被退回啦，别担心～我已整理好退回意见和问题点，点开我陪你逐条改好再提交。',
+    },
+    admin: {
+      bubble: adminSituationBubble,
+      window: '有 X 条被退回啦，别担心～我已整理好退回意见和问题点，点开我陪你逐条改好再提交。',
+    },
   },
   'agent-center-cancel': {
-    provider:
-      '这些是你撤销的注册，需要我帮你快速修改后重新提交吗？',
-    admin:
-      '这些是你撤销的注册，需要我帮你快速修改后重新提交吗？',
+    dept: {
+      bubble: deptSituationBubble,
+      window: '这些是你撤销的注册，需要我帮你快速修改后重新提交吗？',
+    },
+    provider: {
+      bubble: deptSituationBubble,
+      window: '这些是你撤销的注册，需要我帮你快速修改后重新提交吗？',
+    },
+    admin: {
+      bubble: adminSituationBubble,
+      window: '这些是你撤销的注册，需要我帮你快速修改后重新提交吗？',
+    },
   },
   'agent-center-passed': {
-    provider:
-      '恭喜！这些智能体已通过接入🎉 需要我带你去完善台账，或发起准入评测吗？',
-    admin:
-      '恭喜！这些智能体已通过接入🎉 需要我带你去完善台账，或发起准入评测吗？',
+    dept: {
+      bubble: deptSituationBubble,
+      window: '恭喜！这些智能体已通过接入🎉 需要我带你去完善台账，或查看准入评测结果吗？',
+    },
+    provider: {
+      bubble: deptSituationBubble,
+      window: '恭喜！这些智能体已通过接入🎉 需要我带你去完善台账，或查看准入评测结果吗？',
+    },
+    admin: {
+      bubble: adminSituationBubble,
+      window: '恭喜！这些智能体已通过接入🎉 需要我带你去完善台账，或查看准入评测结果吗？',
+    },
   },
   'smart-register': {
-    provider:
-      '你好！我是医小管。先上传「产品说明书」与「技术规格书」PDF，或直接把链接 / 图片发我，也可以打字描述你想接入的智能体，我自动识别并填到表单，你核对确认即可。',
-    admin:
-      '你好！我是医小管。先上传「产品说明书」与「技术规格书」PDF，或直接把链接 / 图片发我，也可以打字描述你想接入的智能体，我自动识别并填到表单，你核对确认即可。',
+    dept: {
+      bubble: deptSituationBubble,
+      window: registerWindowCopy,
+    },
+    provider: {
+      bubble: deptSituationBubble,
+      window: registerWindowCopy,
+    },
+    admin: {
+      bubble: adminSituationBubble,
+      window: registerWindowCopy,
+    },
   },
   'agent-center-detail': {
-    provider:
-      '这是该智能体的注册详情，需要我帮你解读某个字段，或对比历史填写版本吗？',
-    admin:
-      '这是该智能体的注册详情，需要我帮你解读某个字段，或对比历史填写版本吗？',
+    dept: {
+      bubble: deptSituationBubble,
+      window: '这是该智能体的注册详情，需要我帮你解读某个字段，或对比历史填写版本吗？',
+    },
+    provider: {
+      bubble: deptSituationBubble,
+      window: '这是该智能体的注册详情，需要我帮你解读某个字段，或对比历史填写版本吗？',
+    },
+    admin: {
+      bubble: adminSituationBubble,
+      window: '这是该智能体的注册详情，需要我帮你解读某个字段，或对比历史填写版本吗？',
+    },
   },
   'agent-center-audit': {
-    provider:
-      '我已完成预审：标注了 X 个疑似问题并跑了连通测试，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。',
-    admin:
-      '我已完成预审：标注了 X 个疑似问题并跑了连通测试，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。',
+    dept: {
+      bubble: '我已完成预审：标注了 X 个疑似问题并跑了连通测试，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。',
+      window: '【审核通过】【退回修改】（附【测试验证】复核连通），引导给出审核结论',
+    },
+    provider: {
+      bubble: '我已完成预审：标注了 X 个疑似问题并跑了连通测试，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。',
+      window: '【审核通过】【退回修改】（附【测试验证】复核连通），引导给出审核结论',
+    },
+    admin: {
+      bubble: '我已完成预审：标注了 X 个疑似问题并跑了连通测试，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。',
+      window: '【审核通过】【退回修改】（附【测试验证】复核连通），引导给出审核结论',
+    },
   },
 };
 
@@ -129,12 +220,13 @@ const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, string>> = {
  *  - 数组长度不够时，剩余位置保留字面字符
  *  - 数组过长时，多余的值会被忽略
  *
- * 例:文案 `"待审查 X 个、退回 X 个、关键词 XX"` + 返回 `["3","5","接入异常"]` →
- *     `"待审查 3 个、退回 5 个、关键词 接入异常"`
+ * 例:文案 `"待审核 X 个、退回 X 个、关键词 XX"` + 返回 `["3","5","接入异常"]` →
+ *     `"待审核 3 个、退回 5 个、关键词 接入异常"`
  */
 export type WelcomeReplacer = (
   key: WelcomePageKey,
   role: WelcomeRole,
+  surface?: 'bubble' | 'window',
 ) => Array<string | number> | undefined;
 
 /**
@@ -227,6 +319,7 @@ interface SmartDraftCtx {
     pageKey: WelcomePageKey;
     role: WelcomeRole;
     content: string;
+    windowContent: string;
     at: number;
     /** §4.1.1 列表页态势气泡：可点状态 chip，点击跳对应状态 tab */
     chips?: Array<{ key: string; label: string; targetTab?: string; tone?: 'default' | 'warning' | 'success' | 'error' }>;
@@ -260,6 +353,7 @@ interface SmartDraftCtx {
       chips?: Array<{ key: string; label: string; targetTab?: string; tone?: 'default' | 'warning' | 'success' | 'error' }>;
       actions?: Array<{ key: string; label: string; path?: string; event?: string; enabled: boolean; reason?: string }>;
       miniList?: WelcomeMiniList;
+      windowReplacements?: Array<string | number>;
       previewProblems?: { total: number; items: WelcomePreviewProblem[] };
     },
   ) => void;
@@ -340,14 +434,37 @@ interface SmartDraftCtx {
   pendingUploadedFile: UploadedFileBridge | null;
   syncUploadedFile: (file: UploadedFileBridge) => void;
   clearUploadedFile: () => void;
+
+  /**
+   * §4.3 PRD：自动生成产品/技术说明书提示。
+   *   - 之前在 ChatPanel 内以 `material-generation-offer` 消息呈现, 会让对话窗口堆叠
+   *   - V5.0 改为机器人旁气泡 (activeWelcome 之外的独立 side-bubble 槽位)
+   *   - 触发条件: 必填信息已完成 + 备案材料缺少 product / tech
+   *   - 由 SmartRegistrationForm.maybePushMaterialGenerationOffer 写入
+   *   - AgentAssistant 在机器人旁独立渲染 (不被 activeWelcome 8s 自动收起影响, 用户主动 dismiss 才清掉)
+   */
+  materialOffer: {
+    missingCategories: Array<'product' | 'tech'>;
+    at: number;
+  } | null;
+  setMaterialOffer: (offer: { missingCategories: Array<'product' | 'tech'> } | null) => void;
 }
 
 const Ctx = createContext<SmartDraftCtx | null>(null);
 
 let __id = 0;
 const nextId = () => `msg-${Date.now()}-${++__id}`;
+const HIDDEN_CHAT_MESSAGE_TYPES = new Set<AgentMessage['type']>([
+  'historical-plan',
+  'pre-audit-summary',
+  'pre-audit-issue',
+]);
 
 export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
+  // §3.1.1 ChatPanel 浮层打开时默认空消息：实际欢迎语由各页面 useEffect
+  //   pushWelcomeGreeting(pageKey, role) 按需投递,带 __welcome__:<key>:<role>
+  //   tag 去重,避免重复堆叠;初始留空避免「一进入接入中心就看到旧版
+  //   智能填写助手开场白」与 WELCOME_GREETINGS['agent-center-all'] 文案冲突
   const [messages, setMessages] = useState<AgentMessage[]>(initialMessages);
   const [pendingPrefills, setPendingPrefills] = useState<Record<string, string>>({});
   const [prefillMeta, setPrefillMeta] = useState<Record<string, AIPrefillMeta>>({});
@@ -375,7 +492,11 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
   // §3.1.1 Agent 对话窗口 → 备案材料 bridge：单一 buffer，Registration 消费后置空
   const [pendingUploadedFile, setPendingUploadedFile] = useState<UploadedFileBridge | null>(null);
 
+  // §4.3 备案材料生成提示：机器人旁独立气泡槽位 (不进入 ChatPanel messages)
+  const [materialOffer, setMaterialOfferState] = useState<SmartDraftCtx['materialOffer']>(null);
+
   const addMessage: SmartDraftCtx['addMessage'] = useCallback((m) => {
+    if (HIDDEN_CHAT_MESSAGE_TYPES.has(m.type)) return;
     setMessages((prev) => [
       ...prev,
       { ...m, id: nextId(), timestamp: formatNow() },
@@ -387,6 +508,7 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
    * 同一 idPrefix 多次调用会保留多条历史消息，按 idPrefix 移除时一次性清掉。
    */
   const addTaggedMessage: SmartDraftCtx['addTaggedMessage'] = useCallback((idPrefix, m) => {
+    if (HIDDEN_CHAT_MESSAGE_TYPES.has(m.type)) return;
     setMessages((prev) => [
       ...prev,
       { ...m, id: `${idPrefix}-${nextId()}`, timestamp: formatNow() },
@@ -429,42 +551,58 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
     (pageKey, role = 'provider', replacer, extras) => {
       const raw = WELCOME_GREETINGS[pageKey]?.[role];
       if (!raw) return;
-      const replacements = replacer?.(pageKey, role);
-      let cursor = 0;
-      const content = raw.replace(/[XN]/g, (ch) => {
-        const v = replacements?.[cursor];
-        cursor += 1;
-        return v === undefined || v === null ? ch : String(v);
-      });
+      const bubbleReplacements = replacer?.(pageKey, role, 'bubble');
+      const windowReplacements = extras?.windowReplacements ?? replacer?.(pageKey, role, 'window');
+      const applyReplacements = (template: string, values?: Array<string | number>) => {
+        let cursor = 0;
+        return template.replace(/XX|[XN]/g, (ch) => {
+          const v = values?.[cursor];
+          cursor += 1;
+          return v === undefined || v === null ? ch : String(v);
+        });
+      };
+      const content = applyReplacements(raw.bubble, bubbleReplacements);
+      const windowContent = applyReplacements(raw.window, windowReplacements);
+      const shouldAttachPreview = pageKey !== 'smart-register';
       setActiveWelcome({
         pageKey,
         role,
         content,
+        windowContent,
         at: Date.now(),
         chips: extras?.chips,
         actions: extras?.actions,
         miniList: extras?.miniList,
         // §3.2.1 智能预审气泡：调用方若显式传 previewProblems, 用之; 否则消费草稿
         //   - 草稿在下一次重审时会被刷新, 实现「气泡内容随表单实时同步」的目标
+        //   - 新建注册页初始欢迎气泡按 PRD §3.1.1 仅展示态势文案 + 上传/语音直接操作;
+        //     实时预审问题进入对话窗口和字段定位,不嵌入机器人旁欢迎气泡。
         previewProblems:
-          extras?.previewProblems ?? welcomePreviewDraftRef.current ?? undefined,
+          shouldAttachPreview
+            ? extras?.previewProblems ?? welcomePreviewDraftRef.current ?? undefined
+            : undefined,
       });
       // 推过之后清掉草稿(已迁入 activeWelcome); 下次再变化时由 setWelcomePreviewProblems 再写一份
-      if (!extras?.previewProblems) {
+      if (!extras?.previewProblems || !shouldAttachPreview) {
         welcomePreviewDraftRef.current = null;
       }
       // 同一页（按 pageKey + role）首次进入：往对话窗口也推一条（带 tag 便于合并去重）
       setMessages((prev) => {
         const tag = `__welcome__:${pageKey}:${role}`;
-        if (prev.some((m) => m.content === content && m.id.startsWith(tag))) return prev;
+        if (prev.some((m) => m.content === windowContent && m.id.startsWith(tag))) return prev;
         return [
           ...prev,
           {
             id: `${tag}-${Date.now()}`,
             role: 'agent',
             type: 'text',
-            content,
+            content: windowContent,
             timestamp: formatNow(),
+            payload: {
+              welcomeChips: extras?.chips,
+              welcomeActions: extras?.actions,
+              welcomeMiniList: extras?.miniList,
+            },
           },
         ];
       });
@@ -486,9 +624,15 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
     (preview) => {
       setActiveWelcome((prev) => {
         if (!prev) {
-          // 气泡已关 → 记入草稿, 留待下次 pushWelcomeGreeting 使用
-          welcomePreviewDraftRef.current = preview;
+          // 当前仅新建注册页会推送实时预审问题; 气泡已关时不缓存到下一次欢迎语,
+          // 避免离开新建注册页后把本页预审清单串到其他页面气泡。
+          welcomePreviewDraftRef.current = null;
           return prev;
+        }
+        if (prev.pageKey === 'smart-register') {
+          // PRD §3.1.1:新建注册页机器人旁气泡保留欢迎语 +【上传】【语音描述】,
+          // §3.2.1 的实时预审问题只进入对话窗口/字段定位,不覆盖入口气泡。
+          return { ...prev, previewProblems: undefined };
         }
         return { ...prev, previewProblems: preview ?? undefined };
       });
@@ -707,7 +851,13 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // 历史方案知识库初始化（演示种子）
-  useState(() => {
+  // V2.x fix: 拆除"useState initializer 内 setState"反模式。
+  //   原写法在 React 18 StrictMode Provider 双 mount 中会被执行两次,
+  //   导致 SmartRegistrationForm 的 useEffect 在 mount/unmount/remount 序列中
+  //   被以「空→种子→再种子」反复触发,挤压 message 通道,
+  //   并让 BasicLayout 的拦截 effect 读到中间态 currentUser 误判「无权访问」。
+  //   新写法: useState 永远从 [] 开始；副作用挪到 mount-only useEffect, 空值时补种子, 只跑一次。
+  useEffect(() => {
     if (historicalPlans.length === 0) {
       setHistoricalPlansState([
         {
@@ -739,8 +889,8 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
         },
       ]);
     }
-    return null;
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount-only；不允许重新触发种子
 
   const saveHistoricalPlan: SmartDraftCtx['saveHistoricalPlan'] = useCallback((plan) => {
     setHistoricalPlansState((prev) => {
@@ -757,34 +907,9 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
    * - source='page-init'   : 进入新建注册页时主动推荐 Top3，让用户在还没测试前就能复用
    */
   const pushHistoricalPlans: SmartDraftCtx['pushHistoricalPlans'] = useCallback(
-    (plans, source) => {
+    (_plans, source) => {
       const tag = `__historical_plan__:${source}`;
-      if (!plans || plans.length === 0) {
-        // 推空时把已有同 source 消息清除, 避免留下已无方案的卡片
-        setMessages((prev) => prev.filter((m) => !m.id.startsWith(tag)));
-        return;
-      }
-      const introMap: Record<typeof source, string> = {
-        'test-fail': '按匹配度为你推荐以下历史成功方案，可一键复用：',
-        'test-pass': '本条配置已通过，以下是同接入方式的相似历史配置供参考：',
-        'page-init': '以下是基于关键词匹配的历史成功方案，可点开直接复用：',
-      };
-      const newMsg: AgentMessage = {
-        id: `${tag}-${Date.now()}`,
-        role: 'agent',
-        type: 'historical-plan',
-        content: introMap[source],
-        timestamp: formatNow(),
-        payload: {
-          historicalPlans: plans,
-          historicalPlanSource: source,
-        },
-      };
-      setMessages((prev) => {
-        // 替换或追加：先去掉同 source 的旧消息
-        const filtered = prev.filter((m) => !m.id.startsWith(tag));
-        return [...filtered, newMsg];
-      });
+      setMessages((prev) => prev.filter((m) => !m.id.startsWith(tag) && m.type !== 'historical-plan'));
     },
     [],
   );
@@ -805,6 +930,17 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
   }, []);
   const clearUploadedFile: SmartDraftCtx['clearUploadedFile'] = useCallback(() => {
     setPendingUploadedFile(null);
+  }, []);
+
+  // §4.3 备案材料生成提示写入侧气泡
+  //   - offer=null → 清空 (用户 dismiss 或已补齐材料)
+  //   - at 字段用于触发 ChatPanel 打开时 offer 也自动隐藏 (避免双重提示)
+  const setMaterialOffer: SmartDraftCtx['setMaterialOffer'] = useCallback((offer) => {
+    if (!offer || offer.missingCategories.length === 0) {
+      setMaterialOfferState(null);
+      return;
+    }
+    setMaterialOfferState({ missingCategories: offer.missingCategories, at: Date.now() });
   }, []);
 
   const value = useMemo<SmartDraftCtx>(
@@ -848,6 +984,8 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
       pendingUploadedFile,
       syncUploadedFile,
       clearUploadedFile,
+      materialOffer,
+      setMaterialOffer,
     }),
     [
       messages,
@@ -889,6 +1027,7 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
       pendingUploadedFile,
       syncUploadedFile,
       clearUploadedFile,
+      materialOffer,
     ],
   );
 
@@ -902,11 +1041,13 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
       pushWelcomeGreeting,
       pushHistoricalPlans,
       syncUploadedFile,
+      applyPrefill,
+      acknowledgePrefill,
     };
     return () => {
       delete (window as any).__smartDraft;
     };
-  }, [addMessage, pushWelcomeGreeting, pushHistoricalPlans, syncUploadedFile]);
+  }, [addMessage, pushWelcomeGreeting, pushHistoricalPlans, syncUploadedFile, applyPrefill, acknowledgePrefill]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };

@@ -31,7 +31,6 @@ import {
 } from '@ant-design/icons';
 import { ProTable, type ProColumns, type ActionType } from '@ant-design/pro-components';
 import PageHeader from '../../components/PageHeader';
-import { PermissionDenied } from '../../components/PageStates';
 import {
   mockAlertEventsV18, AlertEventStatusLabels, AlertEventStatusColors,
   NotifyChannelLabels, type AlertEventV18, type AlertEventStatus,
@@ -150,9 +149,15 @@ const AlertEventListV18 = () => {
     return list.slice().sort((a, b) => +new Date(b.triggerTime) - +new Date(a.triggerTime));
   }, [events, activeTab, keyword, typeFilter, roleScopedFilter]);
 
-  if (!isAdmin && activeTab === 'pending_assign') {
-    return <PermissionDenied message="「待分派事件」仅面向 IT 管理员" />;
-  }
+  // V2.3：删除早期 `if (!isAdmin && activeTab === 'pending_assign') return <PermissionDenied/>`
+  //   早期 early return 出现在 useMemo（filtered、tabCounts）等 hooks 之前，
+  //   导致 React 在科室管理员 + URL ?tab=pending_assign 场景下触发
+  //   "Rendered fewer hooks than expected" 错误（页面被 ErrorBoundary 替换为 "Something went wrong."，
+  //   用户感知为「拒绝访问」/「页面打不开」）。
+  //   改用派生过滤 + useEffect 自动收敛：
+  //     1. roleScopedFilter 对科室管理员的 pending_assign 永远返回 false（已实现），
+  //        → 列表为空，配合 Tabs 处对 adminOnly Tab 的隐藏，自然不会展示「待分派」内容。
+  //     2. 上方 useEffect 会在科室管理员进入页面后立即把 activeTab 收敛到 pending_handle。
 
   // 序号列渲染
   const renderIndex = (_: any, __: any, index: number) => index + 1;

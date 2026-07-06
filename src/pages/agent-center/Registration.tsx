@@ -41,7 +41,6 @@ import {
   Row,
   Select,
   Space,
-  Steps,
   Tag,
   Tooltip,
   Typography,
@@ -54,7 +53,6 @@ import {
   CopyOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
-  ReloadOutlined,
   SaveOutlined,
   SendOutlined,
 } from '@ant-design/icons';
@@ -85,11 +83,6 @@ import type { ReviewProblem } from './smart/types';
 
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
-
-// ──────────────────────────────────────────────────────────────────────
-// 测试验证流程状态（V2.1 § 1.2.3 中间过程呈现：建立连接 → 鉴权验证 → 发送请求 → 接收响应）
-// ──────────────────────────────────────────────────────────────────────
-const TEST_STAGES = ['建立连接', '鉴权验证', '发送请求', '接收响应'];
 
 // PRD §1.2.1 备案材料（V3.1 统一上传入口）：
 //   不分类、不限份数、不做必填校验，管理员审核时自行判断。
@@ -124,7 +117,9 @@ const Registration = () => {
     confirmProblem,
     ignoreProblem,
     connSteps,
+    setConnSteps,
     connDiagnostics,
+    setConnDiagnostics,
     pendingUploadedFile,
     clearUploadedFile,
   } = useSmartDraft();
@@ -140,13 +135,80 @@ const Registration = () => {
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [tested, setTested] = useState(false);
-  const [testStage, setTestStage] = useState<number>(-1);
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;
     message: string;
     historical?: boolean;
   }>(null);
   const [showSecret, setShowSecret] = useState(false);
+  const [connectionValues, setConnectionValues] = useState<{
+    accessMode?: AccessMode;
+    apiEndpoint?: string;
+    apiKey?: string;
+    platformUrl?: string;
+    platformKey?: string;
+  }>({ accessMode: 'API' });
+
+  const refreshConnectionValues = useCallback(() => {
+    const v = form.getFieldsValue([
+      'accessMode',
+      'apiEndpoint',
+      'apiKey',
+      'platformUrl',
+      'platformKey',
+    ]);
+    setConnectionValues({
+      accessMode: v.accessMode,
+      apiEndpoint: v.apiEndpoint,
+      apiKey: v.apiKey,
+      platformUrl: v.platformUrl,
+      platformKey: v.platformKey,
+    });
+  }, [form]);
+
+  const syncConnectionValues = useCallback((v: Record<string, any>) => {
+    setConnectionValues({
+      accessMode: v.accessMode,
+      apiEndpoint: v.apiEndpoint,
+      apiKey: v.apiKey,
+      platformUrl: v.platformUrl,
+      platformKey: v.platformKey,
+    });
+  }, []);
+
+  const connectionAutoTriggerKey = useMemo(() => {
+    const endpoint = String(connectionValues.apiEndpoint || '').trim();
+    const apiKey = String(connectionValues.apiKey || '').trim();
+    if (connectionValues.accessMode !== 'API' || !endpoint || !apiKey) return '';
+    return ['API', endpoint, apiKey].join('|');
+  }, [connectionValues]);
+
+  const connectionSignature = useMemo(
+    () =>
+      [
+        connectionValues.accessMode || '',
+        String(connectionValues.apiEndpoint || '').trim(),
+        String(connectionValues.apiKey || '').trim(),
+        String(connectionValues.platformUrl || '').trim(),
+        String(connectionValues.platformKey || '').trim(),
+      ].join('|'),
+    [connectionValues],
+  );
+
+  const lastConnectionSignatureRef = useRef('');
+  useEffect(() => {
+    if (!connectionSignature) return;
+    if (!lastConnectionSignatureRef.current) {
+      lastConnectionSignatureRef.current = connectionSignature;
+      return;
+    }
+    if (lastConnectionSignatureRef.current === connectionSignature) return;
+    lastConnectionSignatureRef.current = connectionSignature;
+    setTested(false);
+    setTestResult(null);
+    setConnSteps([]);
+    setConnDiagnostics(null);
+  }, [connectionSignature, setConnSteps, setConnDiagnostics]);
 
   // 进入编辑态：填充表单
   // 修复点：1) 接入方式下的 apiEndpoint / apiKey / platformUrl / platformKey
@@ -168,6 +230,7 @@ const Registration = () => {
         clinicalStage: '其他',
         department: isDeptAdmin ? currentUser?.department : undefined,
       });
+      requestAnimationFrame(refreshConnectionValues);
       lastEditTargetId.current = undefined;
       return;
     }
@@ -205,8 +268,9 @@ const Registration = () => {
     );
     // 第一步：写 accessMode（外层 Form.Item 始终挂载，可同步触发 shouldUpdate 子树挂载）
     form.setFieldsValue({ accessMode: draftTarget.accessMode });
+    requestAnimationFrame(refreshConnectionValues);
     lastEditTargetId.current = draftTarget.id;
-  }, [draftTarget, form, isDeptAdmin, currentUser]);
+  }, [draftTarget, form, isDeptAdmin, currentUser, refreshConnectionValues]);
 
   // §3.2 审查 debounce timer
   const reviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -239,9 +303,10 @@ const Registration = () => {
         platformUrl: draftTarget.platformUrl,
         platformKey: draftTarget.platformKey,
       });
+      refreshConnectionValues();
     });
     return () => cancelAnimationFrame(id);
-  }, [draftTarget, form]);
+  }, [draftTarget, form, refreshConnectionValues]);
 
   // ──────────────────────────────────────────────────────────────────
   // V2.6 智能填入：进入页面即推送欢迎语
@@ -250,8 +315,21 @@ const Registration = () => {
   //   - 用户身份标记 provider 角色，与新建注册同源
   // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    pushWelcomeGreeting('smart-register', 'provider');
-  }, [pushWelcomeGreeting]);
+    const visibleRecords = records.filter((r) => (isDeptAdmin ? r.applicant === loginName : true));
+    const count = (status: string) => visibleRecords.filter((r) => r.status === status).length;
+    pushWelcomeGreeting('smart-register', isDeptAdmin ? 'dept' : 'admin', (_key, _role, surface) =>
+      surface === 'bubble'
+        ? isDeptAdmin
+          ? [String(count('审核中')), String(count('审核通过')), String(count('退回修改'))]
+          : [String(count('待审核')), String(count('审核通过')), String(count('退回修改'))]
+        : undefined,
+    {
+      actions: [
+        { key: 'upload', label: '上传', event: 'agent-register-trigger-upload', enabled: true },
+        { key: 'voice', label: '语音描述', event: 'agent-register-trigger-voice', enabled: true },
+      ],
+    });
+  }, [pushWelcomeGreeting, isDeptAdmin, records, loginName]);
 
   // ──────────────────────────────────────────────────────────────────
   // §3.2 填写内容智能审查 — 注册页实时审查
@@ -643,7 +721,7 @@ const Registration = () => {
   }, [pendingUploadedFile, clearUploadedFile]);
 
   // ──────────────────────────────────────────────────────────────────
-  // 上传 / OCR / 签发 / 测试
+  // 上传 / OCR / 签发
   //   V3.1：备案材料统一上传入口——不做分类、不限份数、不做必填校验，
   //   仅校验 PDF 格式 + 单文件 ≤30M，管理员审核时自行判断材料完整性。
   //   历史附件保留 category 字段（用于详情页/审核页展示分类标签）。
@@ -692,38 +770,6 @@ const Registration = () => {
       platformKey: 'sk-otel-' + Math.random().toString(36).slice(2, 10),
     });
     message.success('OTel 已签发：URL + 密钥已生成');
-  };
-
-  const runTest = async () => {
-    const v = form.getFieldsValue(['accessMode', 'apiEndpoint', 'apiKey', 'platformUrl', 'platformKey']);
-    if (v.accessMode === 'API' && !v.apiEndpoint) {
-      message.error('请先填写接口地址');
-      return;
-    }
-    if ((v.accessMode === 'SDK' || v.accessMode === 'OTel') && !v.platformUrl) {
-      message.error('请先获取 SDK / OTel 平台 URL');
-      return;
-    }
-    setTested(false);
-    setTestResult(null);
-    setTestStage(0);
-    for (let i = 0; i < TEST_STAGES.length; i++) {
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((r) => setTimeout(r, 350));
-      setTestStage(i);
-    }
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((r) => setTimeout(r, 200));
-    const ok = Math.random() > 0.2;
-    setTested(true);
-    setTestResult(
-      ok
-        ? { ok: true, message: '联通成功，可提交注册。' }
-        : { ok: false, message: '联通失败：接口超时（错误码 504），请检查网络与认证信息。' },
-    );
-    setTestStage(-1);
-    if (ok) message.success('测试验证正常');
-    else message.error('测试验证异常，请再次检查技术信息填写内容');
   };
 
   // ──────────────────────────────────────────────────────────────────
@@ -909,7 +955,8 @@ const Registration = () => {
         form={form}
         layout="vertical"
         preserve={false}
-        onValuesChange={() => {
+        onValuesChange={(_changedValues, allValues) => {
+          syncConnectionValues(allValues);
           // §3.2 表单值变化 800ms debounce 触发实时审查
           if (reviewTimerRef.current) clearTimeout(reviewTimerRef.current);
           reviewTimerRef.current = setTimeout(() => runReview(), 800);
@@ -1340,6 +1387,11 @@ const Registration = () => {
           <Space direction="vertical" style={{ width: '100%' }}>
             {/* §3.3 智能化连通测试 — 替换原「测试验证」按钮 + Steps */}
             <ConnectivityTester
+              autoTriggerKey={connectionAutoTriggerKey}
+              onTestStart={() => {
+                setTested(false);
+                setTestResult(null);
+              }}
               getConnectionFormValues={() => {
                 const v = form.getFieldsValue([
                   'accessMode',
@@ -1362,11 +1414,10 @@ const Registration = () => {
                 form.scrollToField(fieldKey, { behavior: 'smooth', block: 'center' });
               }}
             />
-            {/* 旧 runTest 同步状态（向后兼容 buildRecord）：判定最新一次结果 */}
+            {/* 同步 ConnectivityTester 状态（向后兼容 buildRecord）：判定最新一次结果 */}
             <TestStatusSync
               steps={connSteps}
               diagnostics={connDiagnostics}
-              testResult={testResult}
               onResolved={(tr) => {
                 setTested(true);
                 setTestResult(tr);
@@ -1441,11 +1492,6 @@ const Registration = () => {
 interface TestStatusSyncProps {
   steps: ReturnType<typeof useSmartDraft>['connSteps'];
   diagnostics: ReturnType<typeof useSmartDraft>['connDiagnostics'];
-  testResult: ReturnType<typeof useSmartDraft> extends never ? never : {
-    ok: boolean;
-    message: string;
-    historical?: boolean;
-  } | null;
   onResolved: (tr: { ok: boolean; message: string }) => void;
 }
 

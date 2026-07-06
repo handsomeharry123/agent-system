@@ -1,22 +1,21 @@
 /**
- * §3.3 智能化连通测试面板
+ * §3.3 / §4.2.3 智能化连通测试面板
  *
  * 功能：
  *   - 启动测试：依次呈现 DNS 解析 → 建连 → 认证 → 请求 → 返回 5 阶段状态与耗时
  *   - 失败自动诊断：定位失败阶段、错误码、原因
  *   - 解决步骤：编号化建议 + 「按建议修改」（触发 onLocateField）
- *   - 历史方案复用：按匹配度展示历史成功方案 + 「复用此方案」
- *   - 测试通过：方案沉淀提示 + 知识库新增
+ *   - 测试通过：仅推送"测试验证正常"结果气泡（不再沉淀知识库 / 推送历史方案）
+ *   - 测试失败：推送「测试验证异常」结果气泡 + Agent 联网搜索解决方案
  *
  * 父组件：Registration.tsx 通过 form + testFields 获取实时数据，
  *        调用 startTest(formValues) 触发，组件负责推进步骤与写入 store。
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Button,
   Card,
-  Empty,
   Progress,
   Space,
   Tag,
@@ -46,6 +45,9 @@ const { Text, Paragraph } = Typography;
 interface Props {
   form?: FormInstance;
   onLocateField?: (fieldKey: string) => void;
+  /** 连通必填项完整后由父级传入稳定签名，变化时自动发起测试 */
+  autoTriggerKey?: string;
+  onTestStart?: () => void;
   /** 用户填写的接口信息 */
   getConnectionFormValues: () => {
     accessMode?: string;
@@ -57,6 +59,109 @@ interface Props {
   };
 }
 
+/**
+ * §4.2.3 PRD：连通测试失败时, Agent 联网搜索解决方案。
+ *   - 在 mock 环境下，模拟 WebSearch 返回「与失败错误码强相关」的 1-2 条解决方案
+ *   - 真实环境应替换为后端检索（WebSearch 接口 / 内部知识库 RAG）
+ *   - 失败原因 / 错误码 / 失败阶段 决定返回哪些条目
+ */
+const fetchWebSearchSolutions = (
+  failStage: ConnStage,
+  errorCode: string,
+  reason: string,
+): Array<{ id: string; title: string; summary: string; source: string; url: string; score: number }> => {
+  // 模拟联网搜索的"延迟 + 命中"——按错误码字典返回最相关的 1-2 条
+  const dict: Record<
+    string,
+    Array<{ id: string; title: string; summary: string; source: string; url: string }>
+  > = {
+    NXDOMAIN: [
+      {
+        id: 'ws-nx-1',
+        title: 'NXDOMAIN 接口域名解析失败 — 排查步骤',
+        summary:
+          '1) 用 nslookup 域名 验证本地 DNS 是否能解析；2) 若内网域名, 需把 platform-hospital.cn 加入 hosts 或 DNS 转发；3) 若公网域名, 联系 IT 检查出口网络 ACL。',
+        source: 'platform-kb.internal/article/conn-nxdomain',
+        url: 'https://kb.platform-hospital.cn/article/conn-nxdomain',
+      },
+      {
+        id: 'ws-nx-2',
+        title: '智能体接入常见 DNS 故障案例（社区）',
+        summary:
+          '多位开发者反馈：接口地址拼写错误（多/少字符）或协议头未带 https:// 都会触发 NXDOMAIN。建议先以 IP 形式 ping 域名, 排除网络层后聚焦应用层。',
+        source: 'dev-community/search?q=NXDOMAIN+agent',
+        url: 'https://community.platform-hospital.cn/search?q=NXDOMAIN+agent',
+      },
+    ],
+    '504': [
+      {
+        id: 'ws-504-1',
+        title: '504 网关超时 — 平台侧长连接配置建议',
+        summary:
+          '504 多由「网关 5s 默认超时 + 智能体首包慢」共同引起。建议：1) 把客户端超时从 5s 调到 30s；2) 启用 HTTP Keep-Alive 长连接复用；3) 智能体侧确认已完成 SDK 初始化, 避免冷启动延迟。',
+        source: 'platform-kb.internal/article/conn-504',
+        url: 'https://kb.platform-hospital.cn/article/conn-504',
+      },
+      {
+        id: 'ws-504-2',
+        title: '智能体接入超时阈值规范 V2.1',
+        summary:
+          '平台对所有接入智能体统一推荐超时阈值: 健康检查 3s / 普通对话 30s / 长任务 120s。低于阈值会被网关侧截断, 高于阈值会被熔断器记录。',
+        source: 'platform-doc/runtime/timeout-spec',
+        url: 'https://docs.platform-hospital.cn/runtime/timeout-spec',
+      },
+    ],
+    '401': [
+      {
+        id: 'ws-401-1',
+        title: '401 鉴权失败 — API Key 签发 / 过期处理',
+        summary:
+          '401 通常是 API Key 无效或已过期。处置：1) 平台管理端 → 智能体 → 重新签发密钥；2) 在请求头添加 X-Api-Key: <key>；3) 确认密钥复制完整, 包含前缀 sk- 且无空格截断；4) 检查账号是否被禁用。',
+        source: 'platform-kb.internal/article/conn-401',
+        url: 'https://kb.platform-hospital.cn/article/conn-401',
+      },
+      {
+        id: 'ws-401-2',
+        title: 'API Key 命名规范与轮换策略',
+        summary:
+          '平台要求密钥以 sk- 前缀, 长度 ≥ 32 字符, 单 key 默认有效期 90 天。建议接入端实现 key 轮换（双 key 并行 + 灰度切换），避免过期导致全量 401。',
+        source: 'platform-doc/security/key-rotation',
+        url: 'https://docs.platform-hospital.cn/security/key-rotation',
+      },
+    ],
+    '400': [
+      {
+        id: 'ws-400-1',
+        title: '400 请求参数不符 — Content-Type 与 body schema 校验',
+        summary:
+          '400 常见原因：1) 请求头 Content-Type 与 body 不匹配（JSON 必须 application/json）；2) 必填字段缺失（接口地址 / patient / deviceId 等）；3) 字段类型与示例 schema 不符。处置: 先用平台提供的 curl 模板发一次, 排除自身代码。',
+        source: 'platform-kb.internal/article/conn-400',
+        url: 'https://kb.platform-hospital.cn/article/conn-400',
+      },
+      {
+        id: 'ws-400-2',
+        title: '智能体接口字段字典 V3',
+        summary:
+          '所有接入智能体的入参字段均已在「智能体接口字典 V3」中给出明确定义, 含必填、类型、示例。开发前请先下载对应字段表比对, 避免遗漏或拼写错。',
+        source: 'platform-doc/api/field-dict-v3',
+        url: 'https://docs.platform-hospital.cn/api/field-dict-v3',
+      },
+    ],
+  };
+  const list = dict[errorCode] || [
+    {
+      id: `ws-gen-${errorCode}`,
+      title: `${errorCode || '未知错误'} — 通用排查清单`,
+      summary:
+        '建议按以下顺序排查：1) 核对接口地址 / 平台 URL 是否完整；2) 重新签发 API Key / 平台密钥；3) 检查 Content-Type / 请求体字段；4) 联系平台运维或在监控告警台账查询该接口状态。',
+      source: 'platform-kb.internal/article/conn-generic',
+      url: 'https://kb.platform-hospital.cn/article/conn-generic',
+    },
+  ];
+  // 第一条 score=0.92, 第二条 0.78
+  return list.map((it, idx) => ({ ...it, score: idx === 0 ? 0.92 : 0.78 }));
+};
+
 const STAGE_META: Record<ConnStage, { label: string; icon: React.ReactNode }> = {
   dns: { label: 'DNS 解析', icon: <GlobalOutlined /> },
   connect: { label: '建立连接', icon: <ApiOutlined /> },
@@ -67,21 +172,27 @@ const STAGE_META: Record<ConnStage, { label: string; icon: React.ReactNode }> = 
 
 const STAGE_ORDER: ConnStage[] = ['dns', 'connect', 'auth', 'request', 'response'];
 
-const ConnectivityTester: React.FC<Props> = ({ onLocateField, getConnectionFormValues }) => {
+const ConnectivityTester: React.FC<Props> = ({
+  onLocateField,
+  autoTriggerKey,
+  onTestStart,
+  getConnectionFormValues,
+}) => {
   const {
     connSteps,
     setConnSteps,
     connDiagnostics,
     setConnDiagnostics,
     historicalPlans,
-    saveHistoricalPlan,
     pushHistoricalPlans,
+    addMessage,
   } = useSmartDraft();
 
   const [running, setRunning] = useState(false);
   // 本地状态镜像 + 写 store：保证 functional update 类型安全
   const [localSteps, setLocalSteps] = useState<ConnStep[]>([]);
   const [localDiagnostics, setLocalDiagnostics] = useState<ConnDiagnostics | null>(null);
+  const lastAutoTriggerRef = useRef<string>('');
 
   // 模拟故障注入：当 apiKey 包含 "expired" 或 endpoint 含 "timeout" 时在指定阶段失败
   const decideOutcome = (vals: ReturnType<Props['getConnectionFormValues']>) => {
@@ -139,6 +250,7 @@ const ConnectivityTester: React.FC<Props> = ({ onLocateField, getConnectionFormV
 
   // 启动测试
   const startTest = useCallback(async () => {
+    if (running) return;
     const v = getConnectionFormValues();
     // 校验必填
     if (v.accessMode === 'API' && !v.apiEndpoint) {
@@ -150,6 +262,7 @@ const ConnectivityTester: React.FC<Props> = ({ onLocateField, getConnectionFormV
       return;
     }
 
+    onTestStart?.();
     setRunning(true);
     setLocalDiagnostics(null);
     setConnDiagnostics(null);
@@ -204,10 +317,38 @@ const ConnectivityTester: React.FC<Props> = ({ onLocateField, getConnectionFormV
         setLocalDiagnostics(diag);
         setRunning(false);
         message.error(`测试验证异常（${outcomes.code}）`);
-        // §3.3.2 历史方案复用：失败时按错误码匹配 Top3,推一条 'historical-plan' 进对话气泡
-        //   - 同 source='test-fail' 既有消息会被新推送替换(去重)
-        //   - 若知识库为空则不上推
-        pushHistoricalPlans(recommendPlansForDiagnostics(outcomes), 'test-fail');
+        // §4.2.3 PRD：连通测试失败 → 1) 先在对话窗口推送「测试验证异常」结果气泡；
+        //                  2) Agent 联网搜索解决方案（按错误码匹配 Top2），气泡中给出修改建议
+        //   - 同 source 的旧消息会在 store 层被替换, 不堆叠
+        //   - 不再推送 'historical-plan'（PRD §3.3.2 知识库/方案复用已下线）
+        addMessage({
+          role: 'agent',
+          type: 'conn-test-result',
+          content: `测试验证异常（${outcomes.code}）`,
+          payload: {
+            connTestResult: {
+              ok: false,
+              errorCode: outcomes.code!,
+              errorReason: outcomes.reason!,
+              failureStage: outcomes.failStage!,
+              totalMs: undefined,
+            },
+          },
+        });
+        addMessage({
+          role: 'agent',
+          type: 'web-search-solution',
+          content: '我正在联网搜索解决方案……',
+          payload: {
+            webSearchSolutions: fetchWebSearchSolutions(
+              outcomes.failStage!,
+              outcomes.code!,
+              outcomes.reason!,
+            ),
+          },
+        });
+        // 同步清掉同 source 的旧 historical-plan（防止切换页面后遗留）
+        pushHistoricalPlans([], 'test-fail');
         return;
       }
       // 当前阶段成功 → 标 ok
@@ -221,20 +362,30 @@ const ConnectivityTester: React.FC<Props> = ({ onLocateField, getConnectionFormV
     // 全程通过
     setRunning(false);
     message.success('测试验证正常');
-    // 沉淀为历史方案（脱敏：endpoint 只保留 path）
-    const m = /https?:\/\/[^/]+(\/.+)/.exec(v.apiEndpoint || '');
-    const endpointPattern = m ? m[1] : '/api/agent';
-    saveHistoricalPlan({
-      agentName: v.agentName || '未命名',
-      mode: v.accessMode || 'API',
-      endpointPattern,
-      symptom: '联通成功',
-      fix: '本次配置正确，已脱敏沉淀为知识库供后续复用',
-      matchScore: 0,
+    // §4.2.3 PRD：连通测试成功 → 仅弹"测试验证正常"，不再推送历史方案/知识库沉淀
+    //   - PRD §3.3.2「知识库沉淀 / 方案复用」已下线, 不再调用 saveHistoricalPlan
+    //   - 也不推送 historical-plan 气泡, 避免误导用户在成功后再做"复用"动作
+    addMessage({
+      role: 'agent',
+      type: 'conn-test-result',
+      content: '✓ 测试验证正常',
+      payload: {
+        connTestResult: {
+          ok: true,
+          totalMs: undefined,
+        },
+      },
     });
-    // §3.3.2 历史方案：通过后推荐若干相似历史配置
-    pushHistoricalPlans(recommendPlansForPass(historicalPlans), 'test-pass');
-  }, [getConnectionFormValues, setConnSteps, setConnDiagnostics, saveHistoricalPlan, buildSteps, pushHistoricalPlans, historicalPlans]);
+    // 清掉同 source 的旧 historical-plan（防止页面内历史方案残留）
+    pushHistoricalPlans([], 'test-pass');
+  }, [running, getConnectionFormValues, onTestStart, setConnSteps, setConnDiagnostics, addMessage, pushHistoricalPlans, historicalPlans]);
+
+  useEffect(() => {
+    if (!autoTriggerKey || running) return;
+    if (lastAutoTriggerRef.current === autoTriggerKey) return;
+    lastAutoTriggerRef.current = autoTriggerKey;
+    void startTest();
+  }, [autoTriggerKey, running, startTest]);
 
   // 当组件 mount 时把历史匹配度排个序
   useEffect(() => {
@@ -289,7 +440,7 @@ const ConnectivityTester: React.FC<Props> = ({ onLocateField, getConnectionFormV
   }, [localDiagnostics, setConnDiagnostics]);
 
   return (
-    <div data-testid="connectivity-tester">
+    <div data-testid="connectivity-tester" data-auto-trigger-key={autoTriggerKey || ''}>
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         {/* 测试控制条 */}
         <div
@@ -461,39 +612,16 @@ const ConnectivityTester: React.FC<Props> = ({ onLocateField, getConnectionFormV
           />
         )}
 
-        {/* PRD §3.3.1:历史方案复用不再在新建注册页新增独立卡片,
-            改为由 Agent 对话气泡统一呈现(由 ConnectivityTester 推送 'historical-plan' 消息)
-            - 测试失败时:按错误码匹配 Top3 推 'test-fail'
-            - 测试通过时:按 matchScore 取 Top3 推 'test-pass'
-            - 进入页面时:SmartRegistrationForm 推 'page-init' (Top3) */}
-        {/* 通过状态 / 无数据 */}
-        {localSteps.length === 0 && (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={
-              <Space direction="vertical" size={2}>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  点击「测试验证」由医小管自动发起连通性测试
-                </Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  · 失败时自动诊断错误码、给出编号化解决步骤
-                </Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  · 通过的方案将脱敏沉淀为知识库供后续复用
-                </Text>
-              </Space>
-            }
-            style={{ padding: '12px 0' }}
-          />
-        )}
-
+        {/* PRD §4.2.3：连通测试通过 / 失败 的整体结果由 Agent 对话窗口的
+            'conn-test-result' 气泡统一呈现。下方 alert 仅作为页面内紧凑提示。
+            成功时不再展示"已脱敏沉淀"等知识库相关文案。 */}
         {!running && localSteps.length > 0 && failIdx < 0 && okCount === totalSteps && (
           <Alert
             type="success"
             showIcon
             icon={<CheckCircleOutlined />}
             message="测试验证正常"
-            description="本次配置已脱敏沉淀至接入中心「历史方案」知识库，可供后续同模式接入复用"
+            description="可在底部点击「提交注册」继续"
           />
         )}
       </Space>

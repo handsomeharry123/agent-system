@@ -13,7 +13,7 @@
 //   · 智能体来源：自研 / 第三方 / 合作研发（V1.8 命名口径）
 //   · 风险分级 Tag 形态（V1.8 #10）：高度关注 / 中度关注 / 一般关注（不再区分初/复）
 
-import { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Card,
@@ -30,7 +30,12 @@ import {
   Empty,
   Alert,
   Dropdown,
+  Drawer,
   message,
+  Radio,
+  Checkbox,
+  Tabs,
+  List,
   Typography,
 } from 'antd';
 import type { MenuProps } from 'antd';
@@ -48,15 +53,21 @@ import {
   DownOutlined,
   UpOutlined,
   DownloadOutlined,
+  FileTextOutlined,
+  BellOutlined,
+  RocketOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import PageHeader from '../../components/PageHeader';
+import { matchAgentByName } from '../../utils/agentNameMatcher';
 import {
   ledgerAgents,
   currentUser,
   SOURCE_COLOR,
   ENUMS,
   getVisibleAgents,
+  getSubscriptionHistoryReports,
   type LedgerAgent,
 } from '../../mock/ledger';
 
@@ -106,6 +117,26 @@ const LedgerList = () => {
   // 多选导出台账：已勾选行 id 集合
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
+  // V1：速读订阅抽屉（PRD §3.1.1 / §3.3.1 汇报引导）
+  const [subDrawerOpen, setSubDrawerOpen] = useState(false);
+  const [subActiveTab, setSubActiveTab] = useState<'settings' | 'history'>('settings');
+  // 订阅频率:多选(每日 + 每周 可同时配置)
+  const [briefingFreqs, setBriefingFreqs] = useState<Array<'daily' | 'weekly'>>(['daily']);
+  // 每周推送日(0=周日,1=周一...6=周六),默认周一
+  const [weeklyDays, setWeeklyDays] = useState<number[]>([1]);
+  // 历史报告多选导出
+  const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
+
+  // 历史报告 mock：抽屉打开时取数
+  const subscriptionHistory = useMemo(() => getSubscriptionHistoryReports(), []);
+
+  const handleGenerateReport = () => {
+    navigate('/app/ledger-demo/report');
+  };
+  const handleSubscribeBriefing = () => {
+    setSubDrawerOpen(true);
+  };
+
   // 从 URL 预筛（总览页 → 列表页的预筛状态）
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -153,84 +184,14 @@ const LedgerList = () => {
     if (!openDetail || !searchName) return;
     if (autoOpenConsumed.current === location.search) return;
 
-    // 去除「系统/平台/智能/助手/引擎/服务/机器人」等常见尾缀,让两侧命名口径归一
-    const stripTail = (s: string) =>
-      s.replace(/(系统|平台|智能|助手|引擎|服务|机器人|模块)$/g, '').trim();
-    // 2 字中文片段切分(用于弱匹配关键词命中)
-    const bigrams = (s: string): string[] => {
-      const out: string[] = [];
-      for (let i = 0; i < s.length - 1; i += 1) {
-        const t = s.slice(i, i + 2);
-        if (/[一-鿿]/.test(t)) out.push(t);
-      }
-      return out;
-    };
-    // Jaccard 相似度 = |A∩B| / |A∪B|,对大集合取 min 防「一个长串一个短词」误命中
-    const jaccard = (a: string[], b: string[]): number => {
-      if (a.length === 0 && b.length === 0) return 0;
-      const setA = new Set(a);
-      const setB = new Set(b);
-      let inter = 0;
-      setA.forEach((x) => {
-        if (setB.has(x)) inter += 1;
-      });
-      const union = setA.size + setB.size - inter;
-      return union === 0 ? 0 : inter / union;
-    };
-
-    const all = getVisibleAgents();
-    // 1) 精确相等
-    let matched = all.find((a) => a.name === searchName);
-    // 2) 去除尾缀后再相等
-    if (!matched) {
-      const strippedSearch = stripTail(searchName);
-      matched = all.find((a) => stripTail(a.name) === strippedSearch);
-    }
-    // 3) 名称互为子串(任一方向包含)
-    if (!matched) {
-      matched = all.find(
-        (a) => a.name.includes(searchName) || searchName.includes(a.name),
-      );
-    }
-    // 4) 2 字 bigram 相似度(取「min(|A|, |B|)」归一化,比 Jaccard 更适合「长短名」场景)
-    //    要求:交集数 ≥ 2 且占比 ≥ 0.3
-    //    短名称(< 2 个 bigram)不做,易把"智能"片段硬撞到任意带"智能"的智能体上
-    //    平局规则:同分时优先「活跃」记录(已上线/试运行/已注册),过滤掉已禁用/已归档
-    //    (防同名已下线旧版 V0 等被误命中)
-    if (!matched) {
-      const searchBg = bigrams(searchName);
-      if (searchBg.length >= 2) {
-        const MIN_INTERSECT = 2;
-        const MIN_RATIO = 0.3;
-        // 活跃判定:与「已禁用」「已归档」互斥
-        const isActive = (ls?: string) => {
-          const v = ls || '';
-          return v !== '已禁用' && v !== '已归档';
-        };
-        const scoreOf = (a: LedgerAgent) => {
-          const aBg = bigrams(a.name);
-          const setA = new Set(searchBg);
-          const setB = new Set(aBg);
-          let inter = 0;
-          setA.forEach((x) => {
-            if (setB.has(x)) inter += 1;
-          });
-          // 用较小集合的基数归一化 —— 解决「短名 vs 长名」时 Jaccard 偏低的问题
-          const ratio = inter / Math.min(searchBg.length, aBg.length);
-          return { a, inter, ratio, active: isActive(a.lifecycleStatus) };
-        };
-        const candidates = all
-          .map(scoreOf)
-          .filter((c) => c.inter >= MIN_INTERSECT && c.ratio >= MIN_RATIO)
-          // 排序:活跃优先 > 交集数 > 占比
-          .sort((x, y) => {
-            if (x.active !== y.active) return x.active ? -1 : 1;
-            if (y.inter !== x.inter) return y.inter - x.inter;
-            return y.ratio - x.ratio;
-          });
-        if (candidates.length > 0) matched = candidates[0].a;
-      }
-    }
+    // V2.7: 改用公共 4 级匹配(精确 → 去尾缀 → 子串 → bigram min-归一化 + 活跃 tiebreaker)
+    //   接入中心 / 台账 mock 命名口径不一致时仍能命中(如「心电图智能辅助诊断」↔「心电图智能辅助诊断系统」)
+    const matched = matchAgentByName(searchName, getVisibleAgents(), {
+      isActive: (a) =>
+        // 原 List.tsx 内联 4 级匹配的活跃判定:排除「已禁用」/「已归档」(后者虽不在 LedgerAgent 枚举里,保留判定以防 mock 增改)
+        (a as LedgerAgent).lifecycleStatus !== '已禁用' &&
+        String((a as LedgerAgent).lifecycleStatus) !== '已归档',
+    });
 
     if (matched) {
       autoOpenConsumed.current = location.search;
@@ -618,7 +579,7 @@ const LedgerList = () => {
         return (
           <Space size={6} split={<Divider type="vertical" style={{ margin: 0 }} />}>
             <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleViewDetail(record)} style={{ padding: 0 }}>
-              详情
+              360画像
             </Button>
             <Button type="link" size="small" icon={<SafetyCertificateOutlined />} onClick={() => handleRiskLevel(record)} style={{ padding: 0 }}>
               风险分级
@@ -639,6 +600,21 @@ const LedgerList = () => {
       <PageHeader
         title="台账列表"
         subTitle={isPlatformAdmin ? '全院智能体台账' : `仅显示 ${currentUser.department} 台账`}
+        extra={
+          <Space size={8}>
+            {/* V1：PRD §3.1.1 / §3.3.1 汇报引导（生成报告 + 订阅速读） */}
+            <Tooltip title="一键生成《全院智能体管理情况报告》">
+              <Button icon={<FileTextOutlined />} onClick={handleGenerateReport}>
+                生成报告
+              </Button>
+            </Tooltip>
+            <Tooltip title="订阅台账速读（日/周）至工作台">
+              <Button icon={<BellOutlined />} onClick={handleSubscribeBriefing}>
+                订阅速读
+              </Button>
+            </Tooltip>
+          </Space>
+        }
       />
 
       <Card
@@ -813,6 +789,240 @@ const LedgerList = () => {
           </div>
         )}
       </Card>
+
+      {/* V1：台账速读订阅抽屉（PRD §3.1.1 / §3.3.1 汇报引导） */}
+      <Drawer
+        open={subDrawerOpen}
+        onClose={() => setSubDrawerOpen(false)}
+        title={
+          <Space>
+            <BellOutlined style={{ color: '#1677FF' }} />
+            <span>{isPlatformAdmin ? '全院台账速读订阅' : '本科室台账速读订阅'}</span>
+          </Space>
+        }
+        width={680}
+      >
+        <Tabs
+          activeKey={subActiveTab}
+          onChange={(k) => setSubActiveTab(k as 'settings' | 'history')}
+          items={[
+            {
+              key: 'settings',
+              label: (
+                <span style={{ fontSize: 14 }}>
+                  <RocketOutlined style={{ marginRight: 4 }} />
+                  订阅设置
+                </span>
+              ),
+              children: (
+                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                  <div>
+                    <Text strong>订阅频率</Text>
+                    <div style={{ marginTop: 6, display: 'flex', gap: 16 }}>
+                      <Checkbox
+                        checked={briefingFreqs.includes('daily')}
+                        onChange={(e) =>
+                          setBriefingFreqs((prev) =>
+                            e.target.checked ? [...prev, 'daily'] : prev.filter((f) => f !== 'daily'),
+                          )
+                        }
+                      >
+                        每日速读
+                      </Checkbox>
+                      <Checkbox
+                        checked={briefingFreqs.includes('weekly')}
+                        onChange={(e) =>
+                          setBriefingFreqs((prev) =>
+                            e.target.checked ? [...prev, 'weekly'] : prev.filter((f) => f !== 'weekly'),
+                          )
+                        }
+                      >
+                        每周速读
+                      </Checkbox>
+                    </div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      速读为轻量版,侧重异常告警/故障及相较前一日/前一周的数据变化
+                    </Text>
+                  </div>
+
+                  {briefingFreqs.includes('weekly') && (
+                    <div data-testid="weekly-day-picker">
+                      <Text strong>每周推送日</Text>
+                      <div style={{ marginTop: 6 }}>
+                        <Checkbox.Group
+                          value={weeklyDays}
+                          onChange={(v) => setWeeklyDays(v as number[])}
+                          style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}
+                        >
+                          {[
+                            { v: 1, l: '一' },
+                            { v: 2, l: '二' },
+                            { v: 3, l: '三' },
+                            { v: 4, l: '四' },
+                            { v: 5, l: '五' },
+                            { v: 6, l: '六' },
+                            { v: 0, l: '日' },
+                          ].map((d) => (
+                            <Checkbox key={d.v} value={d.v}>
+                              周{d.l}
+                            </Checkbox>
+                          ))}
+                        </Checkbox.Group>
+                      </div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        多选表示多天推送,至少选 1 天
+                      </Text>
+                    </div>
+                  )}
+
+                  <Button
+                    type="primary"
+                    icon={<RocketOutlined />}
+                    block
+                    style={{ width: '100%' }}
+                    disabled={briefingFreqs.length === 0 || (briefingFreqs.includes('weekly') && weeklyDays.length === 0)}
+                    onClick={() => {
+                      setSubDrawerOpen(false);
+                      const parts: string[] = [];
+                      if (briefingFreqs.includes('daily')) parts.push('每日');
+                      if (briefingFreqs.includes('weekly')) {
+                        const dayMap = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                        const dayText = weeklyDays
+                          .slice()
+                          .sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b))
+                          .map((d) => dayMap[d])
+                          .join('/');
+                        parts.push(`每周${dayText}`);
+                      }
+                      message.success(
+                        `订阅已开启: ${parts.join(' + ')} · ${isPlatformAdmin ? '全院' : '本科室'}`,
+                      );
+                    }}
+                  >
+                    立即开启订阅
+                  </Button>
+                </Space>
+              ),
+            },
+            {
+              key: 'history',
+              label: (
+                <span style={{ fontSize: 14 }}>
+                  <HistoryOutlined style={{ marginRight: 4 }} />
+                  历史报告
+                </span>
+              ),
+              children: (
+                <div data-testid="subscription-history">
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <Space size={6}>
+                      <Checkbox
+                        checked={
+                          subscriptionHistory.length > 0 &&
+                          selectedReportIds.length === subscriptionHistory.length
+                        }
+                        indeterminate={
+                          selectedReportIds.length > 0 &&
+                          selectedReportIds.length < subscriptionHistory.length
+                        }
+                        onChange={() => {
+                          // 行为:已全选 → 全不选;否则(含 indeterminate)→ 全选
+                          const allSelected =
+                            selectedReportIds.length === subscriptionHistory.length;
+                          setSelectedReportIds(allSelected ? [] : subscriptionHistory.map((r) => r.id));
+                        }}
+                      >
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          全选
+                        </Text>
+                      </Checkbox>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        共 {subscriptionHistory.length} 条
+                        {selectedReportIds.length > 0 && ` · 已选 ${selectedReportIds.length} 条`}
+                      </Text>
+                    </Space>
+                    <Button
+                      size="small"
+                      type="primary"
+                      ghost
+                      icon={<DownloadOutlined />}
+                      disabled={selectedReportIds.length === 0}
+                      onClick={() => {
+                        message.success(
+                          `已订阅 ${selectedReportIds.length} 条历史报告导出任务（演示）`,
+                        );
+                        setSelectedReportIds([]);
+                      }}
+                    >
+                      批量导出
+                    </Button>
+                  </div>
+                  <List
+                    size="small"
+                    dataSource={subscriptionHistory}
+                    renderItem={(item) => {
+                      const checked = selectedReportIds.includes(item.id);
+                      return (
+                        <List.Item
+                          key={item.id}
+                          style={{
+                            padding: '8px 12px',
+                            background: '#FAFAFA',
+                            borderRadius: 6,
+                            marginBottom: 6,
+                            border: '1px solid #F0F0F0',
+                          }}
+                          actions={[
+                            <Button
+                              key="view"
+                              size="small"
+                              type="link"
+                              icon={<EyeOutlined />}
+                              onClick={() => message.info(`查看报告: ${item.title}（演示）`)}
+                            >
+                              查看
+                            </Button>,
+                          ]}
+                        >
+                          <List.Item.Meta
+                            avatar={
+                              <Checkbox
+                                checked={checked}
+                                onChange={(e) => {
+                                  setSelectedReportIds((prev) =>
+                                    e.target.checked
+                                      ? [...prev, item.id]
+                                      : prev.filter((id) => id !== item.id),
+                                  );
+                                }}
+                              />
+                            }
+                            title={
+                              <Space size={6} wrap>
+                                <FileTextOutlined style={{ fontSize: 16, color: '#1677FF' }} />
+                                <Text strong style={{ fontSize: 13 }}>
+                                  {item.title}
+                                </Text>
+                              </Space>
+                            }
+                          />
+                        </List.Item>
+                      );
+                    }}
+                  />
+                </div>
+              ),
+            },
+          ]}
+        />
+      </Drawer>
     </div>
   );
 };

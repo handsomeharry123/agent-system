@@ -3,12 +3,14 @@ import { RouterProvider } from 'react-router-dom';
 import { AuthProvider } from './hooks/useAuth';
 import { DemoScenarioProvider } from './hooks/useDemoScenario';
 import { DemoSettingsProvider } from './hooks/useDemoSettings';
-import theme from './theme/themeConfig';
+import { ThemeProvider, useTheme } from './hooks/useTheme';
+import { getTheme } from './theme/themeConfig';
 import router from './router';
 
-function App() {
+function ThemedApp() {
+  const { themeKey } = useTheme();
   return (
-    <ConfigProvider theme={theme}>
+    <ConfigProvider theme={getTheme(themeKey)}>
       <AuthProvider>
         <DemoSettingsProvider>
           <DemoScenarioProvider>
@@ -17,6 +19,14 @@ function App() {
         </DemoSettingsProvider>
       </AuthProvider>
     </ConfigProvider>
+  );
+}
+
+function App() {
+  return (
+    <ThemeProvider>
+      <ThemedApp />
+    </ThemeProvider>
   );
 }
 
