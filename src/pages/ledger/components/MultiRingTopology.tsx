@@ -19,7 +19,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Empty, Flex, Space, Tag } from 'antd';
+import { Empty } from 'antd';
 import { NodeIndexOutlined } from '@ant-design/icons';
 import AgentRobotIcon from '../../agent-center/smart/AgentRobotIcon';
 import type { LedgerAgent, LinkedResource } from '../../../mock/ledger';
@@ -38,8 +38,9 @@ interface MultiRingTopologyProps {
 const RING_COUNT = 4;
 // 收窄 RingLevel 至 LinkedResource.ring 允许范围 (1..4)
 type AllowedRing = 1 | 2 | 3 | 4;
-const TOPO_NODE_MAX_W = 112;
-const TOPO_NODE_MAX_H = 44;
+// V2.9:缩小节点卡片,加大环间距,避免 ~18 个节点遮挡
+const TOPO_NODE_MAX_W = 96;
+const TOPO_NODE_MAX_H = 38;
 
 const NODE_KIND_LABEL: Record<NonNullable<LinkedResource['nodeKind']>, string> = {
   domain: '业务域',
@@ -61,18 +62,18 @@ export const MultiRingTopology: React.FC<MultiRingTopologyProps> = ({
   const width = Math.max(520, Math.round(measured.width || preferredWidth));
   const height = Math.max(320, Math.round(measured.height || preferredHeight));
   const scale = clamp(Math.min(width / 760, height / 540), 0.72, 1.12);
-  const nodeW = Math.round(clamp(92 * scale, 82, TOPO_NODE_MAX_W));
-  const nodeH = Math.round(clamp(42 * scale, 34, TOPO_NODE_MAX_H));
+  // V2.9:节点基线 78×34,scale 区间收紧(64~96, 28~38),更紧凑的卡片
+  const nodeW = Math.round(clamp(78 * scale, 64, TOPO_NODE_MAX_W));
+  const nodeH = Math.round(clamp(34 * scale, 28, TOPO_NODE_MAX_H));
   const rings = useMemo(() => {
-    const usableY = Math.max(160, height - 140);
-    const usableX = Math.max(280, width - 180);
-    const outer = Math.max(142, Math.min(220, usableY / 2, usableX / (2 * 1.18)));
-    return [outer * 0.50, outer * 0.67, outer * 0.83, outer] as const;
+    // V2.9:加大 4 层环的半径,使 ~18 个节点均匀分布不遮挡
+    //   之前 outer=142~220,现在 baseline 180~260
+    const usableY = Math.max(180, height - 110);
+    const usableX = Math.max(320, width - 160);
+    const outer = Math.max(180, Math.min(260, usableY / 2, usableX / (2 * 1.18)));
+    // 4 层环间隔均匀:outer*0.45 / 0.65 / 0.83 / 1.0
+    return [outer * 0.45, outer * 0.65, outer * 0.83, outer] as const;
   }, [width, height]);
-  const decorationRadii = useMemo(
-    () => [rings[0] + 6, rings[1] + 8, rings[2] + 10, rings[3] + 12, rings[3] + 28],
-    [rings],
-  );
   const cx = width / 2;
   const cy = height / 2;
 
@@ -112,12 +113,13 @@ export const MultiRingTopology: React.FC<MultiRingTopologyProps> = ({
       rings,
       xScale: 1.18,
       nodeSize: { width: nodeW, height: nodeH },
-      nodeGap: Math.round(18 * scale),
-      collisionIterations: 40,
+      // V2.9:加大节点间距,减少 ~18 节点碰撞概率
+      nodeGap: Math.round(28 * scale),
+      collisionIterations: 60,
       bounds: {
         minX: nodeW / 2 + 8,
         maxX: width - nodeW / 2 - 8,
-        minY: 62,
+        minY: 50,
         maxY: height - nodeH / 2 - 8,
       },
       ringStartAngles: [
@@ -129,11 +131,6 @@ export const MultiRingTopology: React.FC<MultiRingTopologyProps> = ({
     });
   }, [resources, cx, cy, height, nodeH, nodeW, rings, scale, width]);
 
-  const abnormalCount = positions.filter((p) => p.node.linkStatus === 'abnormal').length;
-  const normalCount = positions.length - abnormalCount;
-  const domainCount = resources.filter((r) => r.nodeKind === 'domain').length;
-  const systemCount = resources.filter((r) => r.nodeKind === 'system' || r.nodeKind === 'platform').length;
-  const interfaceCount = resources.filter((r) => r.nodeKind === 'interface' || r.nodeKind === 'data').length;
   const positionMap = useMemo(() => new Map(positions.map((p) => [p.node.id, p])), [positions]);
 
   return (
@@ -163,22 +160,22 @@ export const MultiRingTopology: React.FC<MultiRingTopologyProps> = ({
           zIndex: 10,
         }}
       >
-        <Flex justify="space-between" align="center">
-          <Space>
-            <NodeIndexOutlined style={{ color: TOPO_THEME.normal }} />
-            <span style={{ color: '#effbff', fontWeight: 600 }}>关联资源拓扑地图</span>
-            <span style={{ color: 'rgba(205,231,255,0.55)', fontSize: 11, marginLeft: 4 }}>
-              · {agent.name.length > 14 ? `${agent.name.slice(0, 14)}…` : agent.name} ({agent.idCode})
-            </span>
-          </Space>
-          <Space size={8}>
-            <Tag color="blue">业务域 {domainCount}</Tag>
-            <Tag color="geekblue">系统 {systemCount}</Tag>
-            <Tag color="purple">接口/数据 {interfaceCount}</Tag>
-            <Tag color="cyan">已连接 {normalCount}</Tag>
-            <Tag color={abnormalCount > 0 ? 'red' : 'default'}>异常 {abnormalCount}</Tag>
-          </Space>
-        </Flex>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, whiteSpace: 'nowrap' }}>
+          <NodeIndexOutlined style={{ color: TOPO_THEME.normal, flex: '0 0 auto' }} />
+          <span style={{ color: '#effbff', fontWeight: 600, flex: '0 0 auto' }}>关联资源拓扑地图</span>
+          <span
+            title={agent.name}
+            style={{
+              color: 'rgba(205,231,255,0.62)',
+              fontSize: 11,
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            · {agent.name}
+          </span>
+        </div>
       </div>
 
       {resources.length === 0 ? (
@@ -301,9 +298,9 @@ export const MultiRingTopology: React.FC<MultiRingTopologyProps> = ({
               </g>
 
               {/* 中心柔光晕 */}
-              <circle cx={cx} cy={cy} r={105} fill="url(#topo-halo)" />
+              <circle cx={cx} cy={cy} r={92} fill="url(#topo-halo)" />
 
-              {/* 分层说明,帮助用户读出从中心智能体向外扩展的关系语义 */}
+              {/* 分层说明(右下角),帮助用户读出从中心智能体向外扩展的关系语义 */}
               {[
                 { r: rings[0], text: 'L1 业务域' },
                 { r: rings[1], text: 'L2 系统/平台' },
@@ -312,10 +309,10 @@ export const MultiRingTopology: React.FC<MultiRingTopologyProps> = ({
               ].map((item, i) => (
                 <text
                   key={item.text}
-                  x={cx + item.r * 1.18 + 8}
-                  y={cy - 5 + i * 13}
-                  fill="rgba(205,231,255,0.48)"
-                  fontSize={10}
+                  x={cx + item.r * 1.18 + 6}
+                  y={cy + 38 + i * 12}
+                  fill="rgba(205,231,255,0.4)"
+                  fontSize={9}
                 >
                   {item.text}
                 </text>

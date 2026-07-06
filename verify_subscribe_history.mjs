@@ -1,4 +1,8 @@
-// 验证台账速读订阅抽屉 - 订阅设置 / 历史报告 Tab
+// 验证台账速读订阅抽屉 - 订阅设置 / 历史报告 Tab（V2.0：精简版）
+//   · 历史报告 Tab 移除「每日/每周」「已送达/已查看」标签、移除 highlights description、移除通道 Tag
+//   · 右侧操作按钮由「查看」→「导出」
+//   · 点击报告名称跳 /app/ledger-demo/report
+//   · 全选 Checkbox + 批量导出 + 单条导出支持单选/多选/全选
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,49 +61,108 @@ const run = async () => {
       await screenshot(page, '02_overview_drawer_settings.png');
     });
 
-    await step('总览页：切换到「历史报告」Tab', async () => {
+    await step('总览页：切换到「历史报告」Tab — V2.0 精简版校验', async () => {
       await page.click('.ant-drawer .ant-tabs-tab:has-text("历史报告")');
       await page.waitForTimeout(400);
-      // 历史报告容器应可见
       const historyBox = page.locator('[data-testid="subscription-history"]');
       if (!(await historyBox.isVisible())) fail('历史报告容器未渲染');
-      // 顶部摘要
-      const summary = await historyBox.locator('text=/共 \\d+ 条历史报告/').textContent();
+
+      // V2.0 摘要改为「共 N 条」
+      const summary = await historyBox.locator('text=/共 \\d+ 条/').first().textContent();
       info(`摘要: ${summary}`);
-      if (!summary.includes('条历史报告')) fail('历史报告摘要异常');
+      if (!summary.includes('条')) fail('历史报告摘要异常');
 
       // 列表项数量
       const items = await historyBox.locator('.ant-list-item').count();
       info(`历史报告条数: ${items}`);
       if (items < 5) fail(`历史报告至少应展示 5 条,实际 ${items}`);
 
-      // 验证标题文本「全院台账速读」
-      const firstTitle = await historyBox.locator('.ant-list-item strong').first().textContent();
-      info(`首条报告标题: ${firstTitle}`);
-      if (!firstTitle.includes('全院台账速读')) fail(`首条报告标题异常: ${firstTitle}`);
+      // V2.0: 已移除「每日/每周」Tag —— 全 Tab 都不应再有
+      const dailyTag = await historyBox.locator('.ant-tag:has-text("每日")').count();
+      const weeklyTag = await historyBox.locator('.ant-tag:has-text("每周")').count();
+      info(`残留每日/每周 Tag 数: ${dailyTag}/${weeklyTag}`);
+      if (dailyTag > 0 || weeklyTag > 0) fail('仍残留「每日/每周」Tag,V2.0 应移除');
 
-      // 验证存在「每日」「每周」Tag
-      const hasDaily = await historyBox.locator('.ant-tag:has-text("每日")').count();
-      const hasWeekly = await historyBox.locator('.ant-tag:has-text("每周")').count();
-      info(`每日/每周 Tag 数: ${hasDaily}/${hasWeekly}`);
-      if (hasDaily < 1) fail('缺少「每日」Tag');
-      if (hasWeekly < 1) fail('缺少「每周」Tag');
-
-      // 验证存在「推送失败」状态（demo 含 1 条失败）
+      // V2.0: 已移除「已送达/已查看/推送失败」状态 Tag
+      const deliveredTag = await historyBox.locator('.ant-tag:has-text("已送达")').count();
+      const viewedTag = await historyBox.locator('.ant-tag:has-text("已查看")').count();
       const failedTag = await historyBox.locator('.ant-tag:has-text("推送失败")').count();
-      info(`推送失败条数: ${failedTag}`);
-      if (failedTag < 1) fail('缺少「推送失败」演示条');
+      info(`残留状态 Tag(送达/查看/失败): ${deliveredTag}/${viewedTag}/${failedTag}`);
+      if (deliveredTag + viewedTag + failedTag > 0) fail('仍残留状态 Tag,V2.0 应移除');
 
-      // 验证存在「查看」按钮
+      // V2.0: 已移除「通道：工作台 / 邮件」Tag
+      const channelTag = await historyBox.locator('.ant-tag:has-text("工作台")').count();
+      const emailTag = await historyBox.locator('.ant-tag:has-text("邮件")').count();
+      info(`残留通道 Tag(工作台/邮件): ${channelTag}/${emailTag}`);
+      if (channelTag + emailTag > 0) fail('仍残留通道 Tag,V2.0 应移除');
+
+      // V2.0: 右侧操作按钮改为「导出」,不再有「查看」
       const viewBtns = await historyBox.locator('button:has-text("查看")').count();
-      info(`查看按钮数: ${viewBtns}`);
-      if (viewBtns < 5) fail('查看按钮数量异常');
+      if (viewBtns > 0) fail('仍残留「查看」按钮,V2.0 应改为「导出」');
+      const exportBtns = await historyBox.locator('.ant-list-item button:has-text("导出")').count();
+      info(`单条导出按钮数: ${exportBtns}`);
+      if (exportBtns < 5) fail(`导出按钮数量异常,期望 ≥5,实际 ${exportBtns}`);
 
-      ok('历史报告列表渲染正常');
+      // 全选 Checkbox + 批量导出按钮
+      const selectAll = await historyBox.locator('label:has-text("全选")').count();
+      if (selectAll < 1) fail('缺少「全选」Checkbox');
+      const batchExport = await historyBox.locator('button:has-text("批量导出")').count();
+      if (batchExport < 1) fail('缺少「批量导出」按钮');
+      ok('历史报告列表渲染正常(V2.0 精简版)');
       await screenshot(page, '03_overview_drawer_history.png');
     });
 
-    await step('总览页：切回订阅设置 Tab 仍正常', async () => {
+    await step('总览页：勾选两条 + 单条导出 + 批量导出 + 全选', async () => {
+      const historyBox = page.locator('[data-testid="subscription-history"]');
+      // 勾选前两条
+      const itemCheckboxes = historyBox.locator('.ant-list-item .ant-checkbox-input');
+      await itemCheckboxes.nth(0).check();
+      await itemCheckboxes.nth(1).check();
+      await page.waitForTimeout(200);
+
+      // 摘要应显示「已选 2 条」
+      const selectedHint = await historyBox.locator('text=/已选 2 条/').count();
+      if (selectedHint < 1) fail('已选 2 条 摘要未更新');
+
+      // 批量导出按钮应可用 + 点击不报错
+      const batchBtn = historyBox.locator('button:has-text("批量导出")');
+      if (await batchBtn.isDisabled()) fail('批量导出按钮应可用');
+      await batchBtn.click();
+      await page.waitForTimeout(300);
+      ok('批量导出触发成功');
+
+      // 全选 Checkbox —— 再次点击应全选
+      const selectAllCb = historyBox.locator('label:has-text("全选") input[type="checkbox"]');
+      await selectAllCb.click();
+      await page.waitForTimeout(200);
+      const allHint = await historyBox.locator('text=/共 \\d+ 条/').first().textContent();
+      info(`全选后摘要: ${allHint}`);
+      ok('全选交互正常');
+      await screenshot(page, '03b_overview_drawer_history_select_all.png');
+    });
+
+    await step('总览页：点击报告名称 → 跳 /app/ledger-demo/report', async () => {
+      const historyBox = page.locator('[data-testid="subscription-history"]');
+      // 先取消全选，避免列表受全选 Checkbox 影响
+      const selectAllCb = historyBox.locator('label:has-text("全选") input[type="checkbox"]');
+      if (await selectAllCb.isChecked()) await selectAllCb.click();
+      await page.waitForTimeout(200);
+
+      const firstLink = historyBox.locator('.ant-list-item a').first();
+      const linkText = await firstLink.textContent();
+      info(`首条报告链接: ${linkText}`);
+      await firstLink.click();
+      // 等待路由切换
+      await page.waitForURL(/\/app\/ledger-demo\/report$/, { timeout: 5000 });
+      ok(`点击「${linkText?.trim()}」跳转至报告详情页`);
+      await screenshot(page, '03c_report_detail.png');
+    });
+
+    await step('总览页：返回抽屉 → 切回订阅设置 Tab 仍正常', async () => {
+      // 返回抽屉：直接回访问历史报告 Tab
+      await page.goto(`${URL_BASE}/app/ledger`, { waitUntil: 'networkidle' });
+      await page.click('button:has-text("订阅速读")');
+      await page.waitForSelector('.ant-drawer-open', { timeout: 5000 });
       await page.click('.ant-drawer .ant-tabs-tab:has-text("订阅设置")');
       await page.waitForTimeout(300);
       const dailyBtn = page.locator('.ant-drawer label:has-text("每日速读")');
@@ -127,10 +190,16 @@ const run = async () => {
     await step('列表页：切换历史报告 Tab', async () => {
       await page.click('.ant-drawer .ant-tabs-tab:has-text("历史报告")');
       await page.waitForTimeout(400);
-      const items = await page.locator('[data-testid="subscription-history"] .ant-list-item').count();
+      const historyBox = page.locator('[data-testid="subscription-history"]');
+      const items = await historyBox.locator('.ant-list-item').count();
       info(`列表页历史报告条数: ${items}`);
       if (items < 5) fail(`列表页历史报告数量异常: ${items}`);
-      ok('列表页历史报告 Tab 渲染正常');
+
+      const exportBtns = await historyBox.locator('.ant-list-item button:has-text("导出")').count();
+      info(`列表页单条导出按钮数: ${exportBtns}`);
+      if (exportBtns < 5) fail('列表页导出按钮缺失');
+
+      ok('列表页历史报告 Tab 渲染正常(V2.0 精简版)');
       await screenshot(page, '05_list_drawer_history.png');
     });
 

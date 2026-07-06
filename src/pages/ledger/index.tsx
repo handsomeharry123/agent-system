@@ -14,8 +14,8 @@
  *       不展示：#2 智能体科室覆盖率 / #6 智能体科室分布情况 / #8 智能体来源分布情况
  *       （这三项涉及全院科室维度或来源构成，对科室管理员无业务价值）
  */
-import React, { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useMemo, useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Card,
   Row,
@@ -34,6 +34,7 @@ import {
   Tabs,
   Tag,
   List,
+  Checkbox,
   message,
 } from 'antd';
 import {
@@ -50,10 +51,7 @@ import {
   RocketOutlined,
   HistoryOutlined,
   EyeOutlined,
-  CloseCircleOutlined,
-  CheckOutlined,
   DownloadOutlined,
-  ClockCircleOutlined,
 } from '@ant-design/icons';
 import { Bar, Pie, Line, Column } from '@ant-design/charts';
 import dayjs from 'dayjs';
@@ -117,6 +115,7 @@ const PHASE_COLOR_PALETTE = [
 
 const Overview = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const user: LedgerUser = currentUser;
   const isPlatformAdmin = user.role === 'platform_admin';
 
@@ -127,13 +126,10 @@ const Overview = () => {
   // V1：速读订阅抽屉（PRD §3.3.3 / §3.1.1 汇报引导）
   const [subDrawerOpen, setSubDrawerOpen] = useState(false);
   const [subActiveTab, setSubActiveTab] = useState<'settings' | 'history'>('settings');
-  const [briefingFreq, setBriefingFreq] = useState<'daily' | 'weekly'>('daily');
-  const [briefingScope, setBriefingScope] = useState<'all' | 'dept'>(isPlatformAdmin ? 'all' : 'dept');
-  const [briefingChannels, setBriefingChannels] = useState<{ workbench: boolean; email: boolean; im: boolean }>({
-    workbench: true,
-    email: true,
-    im: false,
-  });
+  // 多选订阅频率：可同时勾选「每日」「每周」;推送日共享(每日+每周都按同一组星期几推送)
+  const [briefingFreqs, setBriefingFreqs] = useState<Array<'daily' | 'weekly'>>(['daily']);
+  const [pushDays, setPushDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [selectedReportIds, setSelectedReportIds] = useState<Array<string | number>>([]);
 
   // 历史报告 mock：抽屉打开时取数
   const subscriptionHistory = useMemo(() => getSubscriptionHistoryReports(), []);
@@ -165,6 +161,18 @@ const Overview = () => {
     Object.entries(params).forEach(([k, v]) => v && qs.set(k, v));
     navigate(`/app/ledger/list${qs.toString() ? `?${qs}` : ''}`);
   };
+
+  // V2：从 URL ?openSubscribe=1 触发抽屉(由 AgentFloatHost 气泡「订阅速读」跳转)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('openSubscribe') === '1') {
+      setSubDrawerOpen(true);
+      // 清理 URL 上的标记,避免刷新重复打开
+      params.delete('openSubscribe');
+      const rest = params.toString();
+      navigate(`/app/ledger${rest ? `?${rest}` : ''}`, { replace: true });
+    }
+  }, [location.search]);
 
   // ===== 1. 智能体数量 =====
   const renderTotalCard = () => (
@@ -1700,82 +1708,94 @@ const Overview = () => {
                 <Space direction="vertical" size={16} style={{ width: '100%' }}>
                   <div>
                     <Text strong>订阅频率</Text>
-                    <div style={{ marginTop: 6 }}>
-                      <Radio.Group
-                        value={briefingFreq}
-                        onChange={(e) => setBriefingFreq(e.target.value)}
-                        optionType="button"
-                        buttonStyle="solid"
+                    <div style={{ marginTop: 6, display: 'flex', gap: 16 }}>
+                      <Checkbox
+                        checked={briefingFreqs.includes('daily')}
+                        onChange={(e) =>
+                          setBriefingFreqs((prev) =>
+                            e.target.checked ? [...prev, 'daily'] : prev.filter((f) => f !== 'daily'),
+                          )
+                        }
                       >
-                        <Radio.Button value="daily">每日速读</Radio.Button>
-                        <Radio.Button value="weekly">每周速读</Radio.Button>
-                      </Radio.Group>
+                        每日速读
+                      </Checkbox>
+                      <Checkbox
+                        checked={briefingFreqs.includes('weekly')}
+                        onChange={(e) =>
+                          setBriefingFreqs((prev) =>
+                            e.target.checked ? [...prev, 'weekly'] : prev.filter((f) => f !== 'weekly'),
+                          )
+                        }
+                      >
+                        每周速读
+                      </Checkbox>
                     </div>
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                      速读为轻量版,侧重异常告警/故障及相较{briefingFreq === 'daily' ? '前一日' : '前一周'}的数据变化
+                      速读为轻量版,侧重异常告警/故障及相较前一日/前一周的数据变化;支持同时配置
                     </Text>
                   </div>
 
-                  <div>
-                    <Text strong>订阅范围</Text>
-                    <div style={{ marginTop: 6 }}>
-                      <Radio.Group
-                        value={briefingScope}
-                        onChange={(e) => setBriefingScope(e.target.value)}
-                        optionType="button"
-                        buttonStyle="solid"
-                        disabled={!isPlatformAdmin}
-                      >
-                        <Radio.Button value="all">全院智能体</Radio.Button>
-                        <Radio.Button value="dept">本科室智能体</Radio.Button>
-                      </Radio.Group>
-                    </div>
-                    {!isPlatformAdmin && (
+                  {(briefingFreqs.includes('daily') || briefingFreqs.includes('weekly')) && (
+                    <div data-testid="push-day-picker">
+                      <Text strong>推送日（每日 + 每周共享）</Text>
+                      <div style={{ marginTop: 6 }}>
+                        <Checkbox.Group
+                          value={pushDays}
+                          onChange={(v) => setPushDays(v as number[])}
+                          style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}
+                        >
+                          {[
+                            { v: 1, l: '一' },
+                            { v: 2, l: '二' },
+                            { v: 3, l: '三' },
+                            { v: 4, l: '四' },
+                            { v: 5, l: '五' },
+                            { v: 6, l: '六' },
+                            { v: 0, l: '日' },
+                          ].map((d) => (
+                            <Checkbox key={d.v} value={d.v}>
+                              周{d.l}
+                            </Checkbox>
+                          ))}
+                        </Checkbox.Group>
+                      </div>
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        科室用户默认订阅「本科室智能体」
+                        多选表示多天推送,至少选 1 天;勾选的星期对每日/每周速读都生效
                       </Text>
-                    )}
-                  </div>
-
-                  <div>
-                    <Text strong>推送通道</Text>
-                    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {[
-                        { key: 'workbench', label: '工作台消息' },
-                        { key: 'email', label: '邮件' },
-                        { key: 'im', label: '钉钉 / 企微' },
-                      ].map((c) => (
-                        <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <Switch
-                            size="small"
-                            checked={briefingChannels[c.key as keyof typeof briefingChannels]}
-                            onChange={(v) =>
-                              setBriefingChannels((p) => ({ ...p, [c.key]: v }))
-                            }
-                          />
-                          <span style={{ fontSize: 13 }}>{c.label}</span>
-                        </div>
-                      ))}
                     </div>
-                  </div>
+                  )}
 
-                  <Button
-                    type="primary"
-                    icon={<RocketOutlined />}
-                    block
-                    onClick={() => {
-                      setSubDrawerOpen(false);
-                      const channelList = Object.entries(briefingChannels)
-                        .filter(([, v]) => v)
-                        .map(([k]) => ({ workbench: '工作台', email: '邮件', im: '钉钉/企微' }[k] || k))
-                        .join(' / ');
-                      message.success(
-                        `订阅已开启: ${briefingFreq === 'daily' ? '每日' : '每周'} · ${briefingScope === 'all' ? '全院' : '本科室'} · ${channelList || '无'}`,
-                      );
-                    }}
-                  >
-                    立即开启订阅
-                  </Button>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+                    <Button
+                      type="primary"
+                      icon={<RocketOutlined />}
+                      style={{ width: 200 }}
+                      disabled={briefingFreqs.length === 0 || pushDays.length === 0}
+                      onClick={() => {
+                        setSubDrawerOpen(false);
+                        const parts: string[] = [];
+                        const dayMap = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                        const fmtDays = (arr: number[]) =>
+                          arr
+                            .slice()
+                            .sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b))
+                            .map((d) => dayMap[d])
+                            .join('/');
+                        const daysText = fmtDays(pushDays);
+                        if (briefingFreqs.includes('daily')) {
+                          parts.push(`每日(${daysText})`);
+                        }
+                        if (briefingFreqs.includes('weekly')) {
+                          parts.push(`每周${daysText}`);
+                        }
+                        message.success(
+                          `订阅已开启: ${parts.join(' + ')} · ${isPlatformAdmin ? '全院' : '本科室'}`,
+                        );
+                      }}
+                    >
+                      立即开启订阅
+                    </Button>
+                  </div>
                 </Space>
               ),
             },
@@ -1797,15 +1817,44 @@ const Overview = () => {
                       marginBottom: 12,
                     }}
                   >
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      共 {subscriptionHistory.length} 条历史报告,最近 {subscriptionHistory.filter((r) => r.freq === 'daily').length} 天每日推送 +{' '}
-                      {subscriptionHistory.filter((r) => r.freq === 'weekly').length} 条周报
-                    </Text>
+                    <Space size={6}>
+                      <Checkbox
+                        checked={
+                          subscriptionHistory.length > 0 &&
+                          selectedReportIds.length === subscriptionHistory.length
+                        }
+                        indeterminate={
+                          selectedReportIds.length > 0 &&
+                          selectedReportIds.length < subscriptionHistory.length
+                        }
+                        onChange={() => {
+                          // 行为:已全选 → 全不选;否则(含 indeterminate)→ 全选
+                          const allSelected =
+                            selectedReportIds.length === subscriptionHistory.length;
+                          setSelectedReportIds(allSelected ? [] : subscriptionHistory.map((r) => r.id));
+                        }}
+                      >
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          全选
+                        </Text>
+                      </Checkbox>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        共 {subscriptionHistory.length} 条
+                        {selectedReportIds.length > 0 && ` · 已选 ${selectedReportIds.length} 条`}
+                      </Text>
+                    </Space>
                     <Button
                       size="small"
-                      type="link"
+                      type="primary"
+                      ghost
                       icon={<DownloadOutlined />}
-                      onClick={() => message.success('已订阅历史报告导出任务（演示）')}
+                      disabled={selectedReportIds.length === 0}
+                      onClick={() => {
+                        message.success(
+                          `已订阅 ${selectedReportIds.length} 条历史报告导出任务（演示）`,
+                        );
+                        setSelectedReportIds([]);
+                      }}
                     >
                       批量导出
                     </Button>
@@ -1814,104 +1863,73 @@ const Overview = () => {
                     size="small"
                     dataSource={subscriptionHistory}
                     renderItem={(item) => {
-                      const statusMeta: Record<
-                        typeof item.status,
-                        { color: string; text: string; icon: React.ReactNode }
-                      > = {
-                        delivered: { color: 'blue', text: '已送达', icon: <CheckOutlined /> },
-                        viewed: { color: 'default', text: '已查看', icon: <EyeOutlined /> },
-                        failed: { color: 'red', text: '推送失败', icon: <CloseCircleOutlined /> },
-                      };
-                      const meta = statusMeta[item.status];
+                      const checked = selectedReportIds.includes(item.id);
                       return (
                         <List.Item
                           key={item.id}
                           style={{
-                            padding: '10px 12px',
+                            padding: '8px 12px',
                             background: '#FAFAFA',
                             borderRadius: 6,
-                            marginBottom: 8,
+                            marginBottom: 6,
                             border: '1px solid #F0F0F0',
                           }}
                           actions={[
                             <Button
-                              key="view"
+                              key="export"
                               size="small"
                               type="link"
-                              icon={<EyeOutlined />}
-                              onClick={() => message.info(`查看报告: ${item.title}（演示）`)}
+                              icon={<DownloadOutlined />}
+                              onClick={() => {
+                                message.success(`已导出报告: ${item.title}`);
+                                setSelectedReportIds((prev) =>
+                                  prev.filter((id) => id !== item.id),
+                                );
+                              }}
                             >
-                              查看
+                              导出
                             </Button>,
                           ]}
                         >
                           <List.Item.Meta
                             avatar={
-                              <FileTextOutlined
-                                style={{ fontSize: 20, color: item.status === 'failed' ? '#FF4D4F' : '#1677FF' }}
+                              <Checkbox
+                                checked={checked}
+                                onChange={(e) => {
+                                  setSelectedReportIds((prev) =>
+                                    e.target.checked
+                                      ? [...prev, item.id]
+                                      : prev.filter((id) => id !== item.id),
+                                  );
+                                }}
                               />
                             }
                             title={
                               <Space size={6} wrap>
-                                <Text strong style={{ fontSize: 13 }}>
+                                <FileTextOutlined style={{ fontSize: 16, color: '#1677FF' }} />
+                                {/* 报告名称：点击进入报告详情 */}
+                                <a
+                                  onClick={() => navigate('/app/ledger-demo/report')}
+                                  style={{ fontSize: 13, fontWeight: 600 }}
+                                >
                                   {item.title}
-                                </Text>
+                                </a>
                                 <Tag color={item.freq === 'daily' ? 'geekblue' : 'purple'} style={{ margin: 0 }}>
                                   {item.freq === 'daily' ? '每日' : '每周'}
                                 </Tag>
-                                <Tag color={meta.color} icon={meta.icon} style={{ margin: 0 }}>
-                                  {meta.text}
+                                <Tag color={item.status === 'failed' ? 'red' : item.status === 'viewed' ? 'default' : 'blue'} style={{ margin: 0 }}>
+                                  {item.status === 'failed' ? '推送失败' : item.status === 'viewed' ? '已查看' : '已送达'}
                                 </Tag>
                               </Space>
                             }
                             description={
                               <div style={{ marginTop: 2 }}>
-                                <div
-                                  style={{
-                                    fontSize: 12,
-                                    color: '#595959',
-                                    marginBottom: 4,
-                                  }}
-                                >
-                                  <ClockCircleOutlined style={{ marginRight: 4 }} />
-                                  生成 {item.generatedAt}
-                                  {item.deliveredAt && ` · 送达 ${item.deliveredAt}`}
-                                </div>
-                                <ul
-                                  style={{
-                                    margin: 0,
-                                    paddingLeft: 18,
-                                    fontSize: 12,
-                                    color: '#595959',
-                                    lineHeight: 1.55,
-                                  }}
-                                >
-                                  {item.highlights.map((h, i) => (
-                                    <li key={i}>{h}</li>
-                                  ))}
-                                </ul>
-                                <div style={{ fontSize: 12, marginTop: 4 }}>
-                                  <Text type="secondary">通道：</Text>
-                                  {item.channels.map((c) => (
-                                    <Tag
-                                      key={c}
-                                      style={{ marginLeft: 2 }}
-                                      color={
-                                        c === 'workbench'
-                                          ? 'cyan'
-                                          : c === 'email'
-                                          ? 'gold'
-                                          : 'magenta'
-                                      }
-                                    >
-                                      {c === 'workbench'
-                                        ? '工作台'
-                                        : c === 'email'
-                                        ? '邮件'
-                                        : '钉钉/企微'}
-                                    </Tag>
-                                  ))}
-                                </div>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                  推送日期:
+                                  <span style={{ marginLeft: 4, color: '#262626' }}>
+                                    {item.deliveredAt || '—'}
+                                  </span>
+                                </Text>
                               </div>
                             }
                           />

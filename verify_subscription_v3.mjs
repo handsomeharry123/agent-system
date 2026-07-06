@@ -78,12 +78,12 @@ if (dailyTag + weeklyTag + deliveredTag + viewedTag + failedTag > 0) {
 
 // ============ 校验:description 已删除 ============
 log('校验:description(生成时间/送达时间/高亮列表)已删除');
-// 只在 list-item 内查找,避免匹配到 antd Tabs 的内部节点
-const listScope = '[data-testid="subscription-history"] .ant-list-item';
-const clockIcon = await page.locator(`${listScope} .anticon-clock-circle`).count();
-const generatedAt = await page.locator(`${listScope}`).filter({ hasText: '生成 ' }).count();
-const highlightsUl = await page.locator(`${listScope} ul`).count();
-const listItemMetaDescription = await page.locator(`${listScope} .ant-list-item-meta-description`).count();
+// 只在 list-item 的 meta 区域查找,排除 actions 区(包含 .ant-list-item-action)
+const metaScope = '[data-testid="subscription-history"] .ant-list-item .ant-list-item-meta';
+const clockIcon = await page.locator(`${metaScope} .anticon-clock-circle`).count();
+const generatedAt = await page.locator(`${metaScope}`).filter({ hasText: '生成 ' }).count();
+const highlightsUl = await page.locator(`${metaScope} ul`).count();
+const listItemMetaDescription = await page.locator(`${metaScope} .ant-list-item-meta-description`).count();
 log(`  clock-circle icon: ${clockIcon}  生成字样: ${generatedAt}  ul: ${highlightsUl}  meta-description: ${listItemMetaDescription} (期望全 0)`);
 if (clockIcon + generatedAt + highlightsUl + listItemMetaDescription > 0) {
   failures.push('【历史报告】仍存在 description 内容');
@@ -103,7 +103,8 @@ if (initialChecked) failures.push('【历史报告】初始全选不应已勾');
 
 // ============ 测试全选/全不选 ============
 log('点击全选');
-await selectAll.click();
+// 点击全选 Checkbox 的 input(input 在 antd Checkbox 内部)
+await selectAll.locator('input').first().click();
 await page.waitForTimeout(300);
 
 // 校验:所有报告 Checkbox 都被勾上
@@ -144,9 +145,28 @@ if (!indeterminateClass.includes('ant-checkbox-indeterminate')) {
   failures.push('【历史报告】部分选中时顶部应 indeterminate');
 }
 
-// ============ 再次点击全选 → 全部取消 ============
-log('再次点击全选 → 全部取消');
-await selectAll.click();
+// ============ 再次点击全选 → 从 indeterminate 转全选 ============
+log('再次点击全选 → indeterminate 应转为全选(6/6)');
+await selectAll.locator('input').first().click();
+await page.waitForTimeout(300);
+
+let allRechecked = true;
+for (let i = 0; i < itemTotal; i++) {
+  if (!(await itemCheckboxes.nth(i).isChecked())) {
+    allRechecked = false;
+    break;
+  }
+}
+log(`  indeterminate→全选 后所有项勾选: ${allRechecked} (期望 true)`);
+if (!allRechecked) failures.push('【历史报告】indeterminate 时点全选应转为全选');
+
+const topAfterRecheck = await selectAll.locator('input').first().isChecked();
+log(`  全选 checkbox: ${topAfterRecheck} (期望 true)`);
+if (!topAfterRecheck) failures.push('【历史报告】全选后顶部 Checkbox 应 checked');
+
+// 此时已是「全选」状态,再点一次 → 全部取消(这才走 toggle 反向)
+log('再次(第三次)点全选 → 应全不选(因为已是全选)');
+await selectAll.locator('input').first().click();
 await page.waitForTimeout(300);
 
 let noneChecked = true;
@@ -156,11 +176,11 @@ for (let i = 0; i < itemTotal; i++) {
     break;
   }
 }
-log(`  全部取消: ${noneChecked} (期望 true)`);
-if (!noneChecked) failures.push('【历史报告】点击全选后未全不选');
+log(`  第三次点后全部取消: ${noneChecked} (期望 true)`);
+if (!noneChecked) failures.push('【历史报告】已全选状态再点应全不选');
 
 const checkedAfterAllNone = await selectAll.locator('input').first().isChecked();
-log(`  全选 checkbox: ${checkedAfterAllNone} (期望 false)`);
+log(`  顶部 checkbox: ${checkedAfterAllNone} (期望 false)`);
 if (checkedAfterAllNone) failures.push('【历史报告】全不选后顶部 Checkbox 应 unchecked');
 
 // ============ 总结 ============

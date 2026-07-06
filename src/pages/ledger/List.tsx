@@ -122,8 +122,8 @@ const LedgerList = () => {
   const [subActiveTab, setSubActiveTab] = useState<'settings' | 'history'>('settings');
   // 订阅频率:多选(每日 + 每周 可同时配置)
   const [briefingFreqs, setBriefingFreqs] = useState<Array<'daily' | 'weekly'>>(['daily']);
-  // 每周推送日(0=周日,1=周一...6=周六),默认周一
-  const [weeklyDays, setWeeklyDays] = useState<number[]>([1]);
+  // 推送日(每日 + 每周共享;0=周日,1=周一...6=周六),默认周一~周五
+  const [pushDays, setPushDays] = useState<number[]>([1, 2, 3, 4, 5]);
   // 历史报告多选导出
   const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
 
@@ -845,13 +845,13 @@ const LedgerList = () => {
                     </Text>
                   </div>
 
-                  {briefingFreqs.includes('weekly') && (
-                    <div data-testid="weekly-day-picker">
-                      <Text strong>每周推送日</Text>
+                  {(briefingFreqs.includes('daily') || briefingFreqs.includes('weekly')) && (
+                    <div data-testid="push-day-picker">
+                      <Text strong>推送日（每日 + 每周共享）</Text>
                       <div style={{ marginTop: 6 }}>
                         <Checkbox.Group
-                          value={weeklyDays}
-                          onChange={(v) => setWeeklyDays(v as number[])}
+                          value={pushDays}
+                          onChange={(v) => setPushDays(v as number[])}
                           style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}
                         >
                           {[
@@ -870,37 +870,42 @@ const LedgerList = () => {
                         </Checkbox.Group>
                       </div>
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        多选表示多天推送,至少选 1 天
+                        多选表示多天推送,至少选 1 天;勾选的星期对每日/每周速读都生效
                       </Text>
                     </div>
                   )}
 
-                  <Button
-                    type="primary"
-                    icon={<RocketOutlined />}
-                    block
-                    style={{ width: '100%' }}
-                    disabled={briefingFreqs.length === 0 || (briefingFreqs.includes('weekly') && weeklyDays.length === 0)}
-                    onClick={() => {
-                      setSubDrawerOpen(false);
-                      const parts: string[] = [];
-                      if (briefingFreqs.includes('daily')) parts.push('每日');
-                      if (briefingFreqs.includes('weekly')) {
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+                    <Button
+                      type="primary"
+                      icon={<RocketOutlined />}
+                      style={{ width: 200 }}
+                      disabled={briefingFreqs.length === 0 || pushDays.length === 0}
+                      onClick={() => {
+                        setSubDrawerOpen(false);
+                        const parts: string[] = [];
                         const dayMap = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-                        const dayText = weeklyDays
-                          .slice()
-                          .sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b))
-                          .map((d) => dayMap[d])
-                          .join('/');
-                        parts.push(`每周${dayText}`);
-                      }
-                      message.success(
-                        `订阅已开启: ${parts.join(' + ')} · ${isPlatformAdmin ? '全院' : '本科室'}`,
-                      );
-                    }}
-                  >
-                    立即开启订阅
-                  </Button>
+                        const fmtDays = (arr: number[]) =>
+                          arr
+                            .slice()
+                            .sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b))
+                            .map((d) => dayMap[d])
+                            .join('/');
+                        const daysText = fmtDays(pushDays);
+                        if (briefingFreqs.includes('daily')) {
+                          parts.push(`每日(${daysText})`);
+                        }
+                        if (briefingFreqs.includes('weekly')) {
+                          parts.push(`每周${daysText}`);
+                        }
+                        message.success(
+                          `订阅已开启: ${parts.join(' + ')} · ${isPlatformAdmin ? '全院' : '本科室'}`,
+                        );
+                      }}
+                    >
+                      立即开启订阅
+                    </Button>
+                  </div>
                 </Space>
               ),
             },
@@ -981,13 +986,18 @@ const LedgerList = () => {
                           }}
                           actions={[
                             <Button
-                              key="view"
+                              key="export"
                               size="small"
                               type="link"
-                              icon={<EyeOutlined />}
-                              onClick={() => message.info(`查看报告: ${item.title}（演示）`)}
+                              icon={<DownloadOutlined />}
+                              onClick={() => {
+                                message.success(`已导出报告: ${item.title}`);
+                                setSelectedReportIds((prev) =>
+                                  prev.filter((id) => id !== item.id),
+                                );
+                              }}
                             >
-                              查看
+                              导出
                             </Button>,
                           ]}
                         >
@@ -1007,10 +1017,33 @@ const LedgerList = () => {
                             title={
                               <Space size={6} wrap>
                                 <FileTextOutlined style={{ fontSize: 16, color: '#1677FF' }} />
-                                <Text strong style={{ fontSize: 13 }}>
+                                {/* 报告名称：点击进入报告详情 */}
+                                <a
+                                  onClick={() => navigate('/app/ledger-demo/report')}
+                                  style={{ fontSize: 13, fontWeight: 600 }}
+                                >
                                   {item.title}
-                                </Text>
+                                </a>
+                                <Tag color={item.freq === 'daily' ? 'geekblue' : 'purple'} style={{ margin: 0 }}>
+                                  {item.freq === 'daily' ? '每日' : '每周'}
+                                </Tag>
+                                <Tag
+                                  color={item.status === 'failed' ? 'red' : item.status === 'viewed' ? 'default' : 'blue'}
+                                  style={{ margin: 0 }}
+                                >
+                                  {item.status === 'failed' ? '推送失败' : item.status === 'viewed' ? '已查看' : '已送达'}
+                                </Tag>
                               </Space>
+                            }
+                            description={
+                              <div style={{ marginTop: 2 }}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                  推送日期:
+                                  <span style={{ marginLeft: 4, color: '#262626' }}>
+                                    {item.deliveredAt || '—'}
+                                  </span>
+                                </Text>
+                              </div>
                             }
                           />
                         </List.Item>

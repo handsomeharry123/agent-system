@@ -257,9 +257,11 @@ export const StatusBubbleV31: React.FC<StatusBubbleProps> = ({
     return () => window.clearTimeout(tick);
   }, [paused, onClose, autoCollapseMs]);
 
-  // 跟随 anchor 定位: 气泡在机器人正上方,水平居中对齐 robot
-  //   - 让 bubble 底边紧贴 robot 顶,水平 bubble 中心 ≈ robot 中心
-  //   - 距离太近时 (bubble 比 robot 高很多且顶部超出视口) 做夹紧
+  // 跟随 anchor 定位: 气泡在机器人**左上角**(右下角对齐机器人左上角)
+  //   - 与接入中心 AgentAssistant 的 getRobotBubblePlacement 公式保持一致
+  //   - 水平:bubble.right = robot.left - gap(气泡在机器人左侧)
+  //   - 垂直:bubble.bottom = robot.top - gap(气泡底部对齐机器人顶部)
+  //   - 视口夹紧避免超出
   useEffect(() => {
     const compute = () => {
       if (!anchorRef.current || !bubbleRef.current) return;
@@ -268,14 +270,12 @@ export const StatusBubbleV31: React.FC<StatusBubbleProps> = ({
       const bubbleH = bubbleRef.current.offsetHeight || 220;
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const gapY = 6; // bubble 底边到 robot 顶的距离
-      const margin = 16;
-      // 水平:让 bubble 中心对齐 robot 中心(在视口允许范围内)
-      const robotCenterX = rect.left + rect.width / 2;
-      const desiredLeft = robotCenterX - bubbleW / 2;
-      // 垂直:bubble 底边 = robot.top - gapY
-      const desiredTop = rect.top - gapY - bubbleH;
-      const left = Math.max(margin, Math.min(desiredLeft, vw - bubbleW - margin));
+      const gap = 12; // bubble 右/下边到 robot 左/上边的距离
+      const margin = 8;
+      const width = Math.min(bubbleW, vw - margin * 2);
+      const desiredLeft = rect.left - gap - width;
+      const desiredTop = rect.top - gap - bubbleH;
+      const left = Math.max(margin, Math.min(desiredLeft, vw - width - margin));
       const top = Math.max(margin, Math.min(desiredTop, vh - bubbleH - margin));
       setPos({ left, top });
     };

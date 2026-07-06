@@ -2259,12 +2259,12 @@ export const getExpiringAuthorizations = (list: LedgerAgent[] = getVisibleAgents
 // 订阅抽屉 → 历史报告 Tab：按订阅设置每天/每周推送的速读报告记录
 export interface SubscriptionReportRecord {
   id: string; // 报告 ID
-  title: string; // 报告名称
+  title: string; // 报告名称（不带日期前缀；列表展示用「报告名称 + 推送日期」两列）
   freq: 'daily' | 'weekly'; // 订阅频率
   scope: 'all' | 'dept'; // 订阅范围
   channels: Array<'workbench' | 'email' | 'im'>; // 推送通道
-  generatedAt: string; // 生成时间 YYYY-MM-DD HH:mm
-  deliveredAt: string; // 送达时间 YYYY-MM-DD HH:mm
+  generatedAt: string; // 生成时间 YYYY-MM-DD HH:mm:ss
+  deliveredAt: string; // 推送日期 YYYY-MM-DD HH:mm:ss（列表展示「推送日期」字段）
   highlights: string[]; // 报告要点（速读核心结论）
   status: 'delivered' | 'viewed' | 'failed'; // 推送状态
 }
@@ -2275,12 +2275,12 @@ export const getSubscriptionHistoryReports = (): SubscriptionReportRecord[] => {
   return [
     {
       id: 'BR-2026-0706-D',
-      title: `${now.format('YYYY-MM-DD')} 全院台账速读`,
+      title: '全院台账速读',
       freq: 'daily',
       scope: 'all',
       channels: ['workbench', 'email'],
-      generatedAt: now.format('YYYY-MM-DD 08:00'),
-      deliveredAt: now.format('YYYY-MM-DD 08:01'),
+      generatedAt: now.format('YYYY-MM-DD 08:00:00'),
+      deliveredAt: now.format('YYYY-MM-DD 08:01:00'),
       highlights: [
         '本日新增 2 例告警（影像科 PACS 链路抖动 ×1、内分泌科 LLM 调用超时 ×1）',
         '智能体总调用量 238.63 万,环比前日 +3.2%',
@@ -2290,12 +2290,12 @@ export const getSubscriptionHistoryReports = (): SubscriptionReportRecord[] => {
     },
     {
       id: 'BR-2026-0705-D',
-      title: `${now.subtract(1, 'day').format('YYYY-MM-DD')} 全院台账速读`,
+      title: '全院台账速读',
       freq: 'daily',
       scope: 'all',
       channels: ['workbench', 'email'],
-      generatedAt: now.subtract(1, 'day').format('YYYY-MM-DD 08:00'),
-      deliveredAt: now.subtract(1, 'day').format('YYYY-MM-DD 08:02'),
+      generatedAt: now.subtract(1, 'day').format('YYYY-MM-DD 08:00:00'),
+      deliveredAt: now.subtract(1, 'day').format('YYYY-MM-DD 08:02:00'),
       highlights: [
         '本日新增 1 例故障（心内科 GPU 节点内存告警）,已自动重启',
         '调用量较前日 -1.4%,处于正常波动区间',
@@ -2305,12 +2305,12 @@ export const getSubscriptionHistoryReports = (): SubscriptionReportRecord[] => {
     },
     {
       id: 'BR-2026-0704-D',
-      title: `${now.subtract(2, 'day').format('YYYY-MM-DD')} 全院台账速读`,
+      title: '全院台账速读',
       freq: 'daily',
       scope: 'all',
       channels: ['workbench', 'email'],
-      generatedAt: now.subtract(2, 'day').format('YYYY-MM-DD 08:00'),
-      deliveredAt: now.subtract(2, 'day').format('YYYY-MM-DD 08:01'),
+      generatedAt: now.subtract(2, 'day').format('YYYY-MM-DD 08:00:00'),
+      deliveredAt: now.subtract(2, 'day').format('YYYY-MM-DD 08:01:00'),
       highlights: [
         '本日无新增告警与故障',
         '影像科智能体调用量环比 +8.6%,疑似与本周体检高峰相关',
@@ -2320,11 +2320,11 @@ export const getSubscriptionHistoryReports = (): SubscriptionReportRecord[] => {
     },
     {
       id: 'BR-2026-0703-D',
-      title: `${now.subtract(3, 'day').format('YYYY-MM-DD')} 全院台账速读`,
+      title: '全院台账速读',
       freq: 'daily',
       scope: 'all',
       channels: ['workbench'],
-      generatedAt: now.subtract(3, 'day').format('YYYY-MM-DD 08:00'),
+      generatedAt: now.subtract(3, 'day').format('YYYY-MM-DD 08:00:00'),
       deliveredAt: '',
       highlights: [
         '本日邮件通道投递失败（邮件服务临时不可用）,已回退至工作台消息',
@@ -2334,12 +2334,12 @@ export const getSubscriptionHistoryReports = (): SubscriptionReportRecord[] => {
     },
     {
       id: 'BR-2026-0629-W',
-      title: `${now.subtract(1, 'week').startOf('week').add(0, 'day').format('YYYY-MM-DD')} ~ ${now.subtract(1, 'week').endOf('week').format('YYYY-MM-DD')} 全院台账周报`,
+      title: '全院台账周报',
       freq: 'weekly',
       scope: 'all',
       channels: ['workbench', 'email'],
-      generatedAt: now.subtract(1, 'week').endOf('week').format('YYYY-MM-DD 09:00'),
-      deliveredAt: now.subtract(1, 'week').endOf('week').format('YYYY-MM-DD 09:02'),
+      generatedAt: now.subtract(1, 'week').endOf('week').format('YYYY-MM-DD 09:00:00'),
+      deliveredAt: now.subtract(1, 'week').endOf('week').format('YYYY-MM-DD 09:02:00'),
       highlights: [
         '本周新增告警 7 例（环比 -25%）,其中已恢复 6 例',
         '智能体数量净增 4 个（准入通过 3 / 下线归档 1）',
@@ -2349,12 +2349,12 @@ export const getSubscriptionHistoryReports = (): SubscriptionReportRecord[] => {
     },
     {
       id: 'BR-2026-0622-W',
-      title: `${now.subtract(2, 'week').startOf('week').format('YYYY-MM-DD')} ~ ${now.subtract(2, 'week').endOf('week').format('YYYY-MM-DD')} 全院台账周报`,
+      title: '全院台账周报',
       freq: 'weekly',
       scope: 'all',
       channels: ['workbench', 'email'],
-      generatedAt: now.subtract(2, 'week').endOf('week').format('YYYY-MM-DD 09:00'),
-      deliveredAt: now.subtract(2, 'week').endOf('week').format('YYYY-MM-DD 09:01'),
+      generatedAt: now.subtract(2, 'week').endOf('week').format('YYYY-MM-DD 09:00:00'),
+      deliveredAt: now.subtract(2, 'week').endOf('week').format('YYYY-MM-DD 09:01:00'),
       highlights: [
         '本周新增告警 12 例（环比 +20%）,影像科 PACS 链路抖动为主要原因',
         '智能体覆盖率维持 100%,本科室新增 1 个「眼科 AI 辅助阅片」',

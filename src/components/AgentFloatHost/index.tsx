@@ -193,7 +193,8 @@ export const AgentFloatHost: React.FC = () => {
     navigate('/app/ledger-demo/report');
   };
   const handleSubscribeBriefing = () => {
-    navigate('/app/ledger-demo/report?openSubscribe=1');
+    // V2：跳台账总览页 + 触发抽屉打开(由 index.tsx 监听 ?openSubscribe=1)
+    navigate('/app/ledger?openSubscribe=1');
   };
   const handleViewDetail = () => {
     window.dispatchEvent(
