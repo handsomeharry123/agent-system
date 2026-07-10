@@ -20,6 +20,8 @@ import {
   ApiOutlined,
   ArrowUpOutlined,
   AudioOutlined,
+  DatabaseOutlined,
+  FileAddOutlined,
   PaperClipOutlined,
   PlusOutlined,
   SafetyCertificateOutlined,
@@ -73,7 +75,24 @@ type SceneTag = {
   prompt: string;
 };
 const sceneTags: SceneTag[] = [
-  { key: 'register-requirement', label: '登记需求', icon: <SafetyCertificateOutlined />, prompt: '请帮我梳理本院智能体的等级保护定级建议' },
+  {
+    key: 'register-requirement',
+    label: '登记需求',
+    icon: <SafetyCertificateOutlined />,
+    prompt: '请帮我登记一个智能体建设需求',
+  },
+  {
+    key: 'access-apply',
+    label: '接入申请',
+    icon: <FileAddOutlined />,
+    prompt: '帮我查看待审批的智能体接入申请',
+  },
+  {
+    key: 'ledger-query',
+    label: '台账查询',
+    icon: <DatabaseOutlined />,
+    prompt: '按科室统计全院已上线智能体的数量和分类',
+  },
 ];
 
 /* =========================================================
@@ -189,6 +208,16 @@ type RequirementFlow = {
   slots: RequirementSlots;
 };
 
+type LedgerFlow = {
+  sessionId: string;
+};
+
+const ledgerRecommendedQuestions = [
+  '帮我生成一份今日的全院智能体管理情况报告',
+  '我想要查看糖尿病随访管理助手的 360 画像',
+  '目前智能体的告警情况',
+];
+
 /* =========================================================
  * 主页组件
  * ========================================================= */
@@ -208,6 +237,7 @@ const HomePage = () => {
     content: string;
     module?: string;
     link?: { to: string; text: string };
+    quickActions?: string[];
     time: string;
   };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -218,6 +248,7 @@ const HomePage = () => {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionConversations, setSessionConversations] = useState<Record<string, ChatMessage[]>>({});
   const [requirementFlow, setRequirementFlow] = useState<RequirementFlow | null>(null);
+  const [ledgerFlow, setLedgerFlow] = useState<LedgerFlow | null>(null);
   /** 是否处于「新建任务」视图;切换到历史会话 / 自动化执行记录后置 false,场景标签随之隐藏 */
   const [isNewTaskView, setIsNewTaskView] = useState(true);
 
@@ -264,6 +295,7 @@ const HomePage = () => {
     ]);
     setActiveSessionId(null);
     setRequirementFlow(null);
+    setLedgerFlow(null);
     setIsNewTaskView(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role]);
@@ -324,12 +356,16 @@ const HomePage = () => {
   const handleOpenConnector = useCallback(() => {
     setMiddleView('connector');
     setActiveSessionId(null);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
   }, []);
 
   /* 与连接器一致，重复点击仍保持自动化任务列表。 */
   const handleOpenAutoTasks = useCallback(() => {
     setMiddleView('auto-tasks');
     setActiveSessionId(null);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
   }, []);
 
   const handleBackToChat = useCallback(() => {
@@ -341,6 +377,7 @@ const HomePage = () => {
     setMiddleView('overview');
     setActiveSessionId(null);
     setRequirementFlow(null);
+    setLedgerFlow(null);
     setMessages([
       {
         id: `a-${Date.now()}`,
@@ -371,8 +408,13 @@ const HomePage = () => {
     setActiveSessionId(id);
     if (id.startsWith('req-')) {
       setRequirementFlow((prev) => (prev?.sessionId === id ? prev : null));
+      setLedgerFlow(null);
+    } else if (id.startsWith('ledger-')) {
+      setLedgerFlow({ sessionId: id });
+      setRequirementFlow(null);
     } else {
       setRequirementFlow(null);
+      setLedgerFlow(null);
     }
     setIsNewTaskView(false);
     window.setTimeout(() => {
@@ -394,6 +436,7 @@ const HomePage = () => {
     setDraft('');
     setActiveSessionId(null);
     setRequirementFlow(null);
+    setLedgerFlow(null);
     setIsNewTaskView(false);
   }, []);
 
@@ -416,6 +459,39 @@ const HomePage = () => {
     setExtraSessions((prev) => [newSession, ...prev]);
     setActiveSessionId(sessionId);
     setRequirementFlow({ sessionId, step: 'n0', slots: {} });
+    setLedgerFlow(null);
+    setMessages([opening]);
+    setDraft('');
+    setIsNewTaskView(false);
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        '[data-testid="home-v1-input"] textarea',
+      );
+      el?.focus();
+    }, 60);
+  }, []);
+
+  const startLedgerQuery = useCallback(() => {
+    const sessionId = `ledger-${Date.now()}`;
+    const newSession: SessionEntry = {
+      id: sessionId,
+      title: '台账查询',
+      updatedAt: '刚刚',
+    };
+    const opening: ChatMessage = {
+      id: `ledger-a-${Date.now()}`,
+      role: 'assistant',
+      content: buildLedgerOpening(),
+      module: '台账查询',
+      quickActions: ledgerRecommendedQuestions,
+      time: nowStr(),
+    };
+
+    setMiddleView('overview');
+    setExtraSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(sessionId);
+    setRequirementFlow(null);
+    setLedgerFlow({ sessionId });
     setMessages([opening]);
     setDraft('');
     setIsNewTaskView(false);
@@ -491,6 +567,26 @@ const HomePage = () => {
         setLoading(false);
         return;
       }
+      if (ledgerFlow && ledgerFlow.sessionId === activeSessionId) {
+        const next = getLedgerReply(text, role);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `ledger-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: next.reply,
+            module: next.module,
+            link: next.link,
+            quickActions: next.quickActions,
+            time: nowStr(),
+          },
+        ]);
+        setExtraSessions((prev) =>
+          prev.map((s) => (s.id === ledgerFlow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+        );
+        setLoading(false);
+        return;
+      }
       const r = pickReply(text);
       setMessages((prev) => [
         ...prev,
@@ -514,6 +610,10 @@ const HomePage = () => {
   const handleSceneTagClick = (tag: SceneTag) => {
     if (tag.key === 'register-requirement') {
       startRequirementRegistration();
+      return;
+    }
+    if (tag.key === 'ledger-query') {
+      startLedgerQuery();
       return;
     }
     handleSend(tag.prompt);
@@ -665,7 +765,14 @@ const HomePage = () => {
           {messages.length === 0 ? (
             <Empty description="暂无对话" style={{ marginTop: 80 }} />
           ) : (
-            messages.map((m) => <MessageBubble key={m.id} msg={m} navigate={navigate} />)
+            messages.map((m) => (
+              <MessageBubble
+                key={m.id}
+                msg={m}
+                navigate={navigate}
+                onQuickAction={handleSend}
+              />
+            ))
           )}
           {loading && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 10 }}>
@@ -931,7 +1038,15 @@ const HomePage = () => {
 /* =========================================================
  * 子组件:消息气泡
  * ========================================================= */
-const MessageBubble = ({ msg, navigate }: { msg: any; navigate: (to: string) => void }) => {
+const MessageBubble = ({
+  msg,
+  navigate,
+  onQuickAction,
+}: {
+  msg: any;
+  navigate: (to: string) => void;
+  onQuickAction?: (text: string) => void;
+}) => {
   const isUser = msg.role === 'user';
   return (
     <div
@@ -1004,6 +1119,21 @@ const MessageBubble = ({ msg, navigate }: { msg: any; navigate: (to: string) => 
               </Button>
             </div>
           )}
+          {!isUser && Array.isArray(msg.quickActions) && msg.quickActions.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {msg.quickActions.map((action: string) => (
+                <Button
+                  key={action}
+                  size="small"
+                  style={{ borderRadius: 999, fontSize: 11, height: 26 }}
+                  onClick={() => onQuickAction?.(action)}
+                  data-testid="home-v1-ledger-quick-action"
+                >
+                  {action}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
         <div
           style={{
@@ -1038,6 +1168,182 @@ function buildGreeting(role: '信息科管理员' | '科室管理员', userName?
 
 function buildRequirementOpening(): string {
   return '你好！我是医小管，我来帮您登记智能体建设需求（约 8 步、3–5 分钟，内容随时可改）。\n\n请用一两句话描述：您想建设一个什么样的智能体、主要解决什么问题？';
+}
+
+function buildLedgerOpening(): string {
+  return `你好，我是医小管。台账相关问题都可以问我。
+
+你可以直接问全院/本科室智能体家底、运行指标、告警情况，也可以查看某个智能体的 360 画像。`;
+}
+
+function getLedgerReply(
+  text: string,
+  role: '信息科管理员' | '科室管理员',
+): {
+  module: string;
+  reply: string;
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  const scope = role === '信息科管理员' ? '全院' : '本科室';
+
+  if (/排班|挂号|天气|新闻|请假|报销|采购|工资|医保结算/.test(normalized)) {
+    return {
+      module: '台账查询 / 跑偏拉回',
+      reply: `我们先看台账，稍后再为您解决此问题。\n\n台账这边还需要看什么？例如智能体数量、告警情况、运行趋势、360 画像或管理情况报告。`,
+      quickActions: ledgerRecommendedQuestions,
+    };
+  }
+
+  if (/明年|未来|预测|能到多少|还没接入|外部平台|患者隐私明文|API ?key|密钥/.test(normalized)) {
+    return {
+      module: '台账查询 / 超范围',
+      reply:
+        '问题超出平台现有信息，我们将持续优化完善哟~\n\n目前我能提供的是已纳管智能体的**近 30 天运行趋势**、**历史调用量**、**告警清单**和**360 画像**。需要我切到哪个方向？',
+      quickActions: ['查看近 30 天运行趋势', '查看当前告警情况', '查看某智能体 360 画像'],
+    };
+  }
+
+  if (/报告|汇报|导出|管理情况|速读|订阅/.test(normalized)) {
+    return {
+      module: '台账查询 / 管理情况报告',
+      reply: `已生成《智能体管理情况报告》草稿（${scope} · 今日）。
+
+报告包含五个模块：
+
+1. 规模与分布：已纳管智能体 **48 个**，覆盖科室 **18/24**，覆盖率 **75%**
+2. 运行与调用：今日调用 **12,348 次**，正常运行率 **98.6%**
+3. 异常告警与故障：今日告警 **8 次**，其中 P0 **1 次**、P1 **2 次**
+4. 风险分级：高度关注 **3 个**，中度关注 **9 个**，一般关注 **36 个**
+5. 准入评测进度：本月评测 **15 个**，通过率 **73.3%**
+
+草稿已进入编辑页，可在线编辑、批注、导出 Word/PDF。也可以订阅「每日/每周台账速读」。`,
+      link: { to: '/app/ledger-demo/report', text: '打开报告草稿' },
+      quickActions: ['订阅每周台账速读', '导出 PDF', '查看告警清单'],
+    };
+  }
+
+  if (/风险分级|高度关注|中度关注|一般关注/.test(normalized)) {
+    return {
+      module: '台账查询 / 风险分级',
+      reply:
+        '当前风险分级如下：\n\n- 高度关注：**3 个**，占比 6.25%，主要集中在连续告警与评测低分场景\n- 中度关注：**9 个**，占比 18.75%，主要为接口抖动、时延偏高\n- 一般关注：**36 个**，占比 75%，运行平稳\n\n口径：已纳管智能体的初步/复核风险分级，只呈现不改判。可继续下钻高度关注清单或查看单个智能体风险依据。',
+      link: { to: '/app/ledger/list', text: '查看风险分级清单' },
+      quickActions: ['查看高度关注清单', '查看风险依据', '生成今日全院报告'],
+    };
+  }
+
+  if (/对比同类|同类智能体|同类对比/.test(normalized)) {
+    return {
+      module: '台账查询 / 同类对比',
+      reply:
+        '已按「慢病随访类智能体」进行同类对比：\n\n- 糖尿病随访管理助手：成功率 **99.1%**，平均时延 **320ms**，准入评测 **88 分**\n- 高血压随访助手：成功率 **98.7%**，平均时延 **360ms**，准入评测 **86 分**\n- 肿瘤随访助手：成功率 **98.2%**，平均时延 **410ms**，准入评测 **84 分**\n\n结论：糖尿病随访管理助手运行表现优于同类均值，主要短板是 LIS 连接偶发抖动。',
+      link: { to: '/app/ledger/profile/0503-0001', text: '查看同类对比详情' },
+    };
+  }
+
+  if (/画像|360|糖尿病|随访|0503|某智能体|智能导诊|处方审核|影像分析/.test(normalized)) {
+    const agentName = /导诊/.test(normalized)
+      ? '智能导诊系统'
+      : /处方/.test(normalized)
+        ? '处方审核系统'
+        : /影像/.test(normalized)
+          ? '影像分析平台'
+          : '糖尿病随访管理助手';
+    return {
+      module: '台账查询 / 360 画像',
+      reply: `为您找到【0503-0001 ${agentName} · v2.1】，这是它的 360 画像：
+
+- 实体信息：所属科室「内分泌科」，诊疗环节「出院后随访」，来源「合作研发」，供应商「智医科技」
+- 接入方式：技术 API；API key：**密文展示，不外泄**
+- 关联资源拓扑：对接 HIS、LIS、随访管理库；其中 LIS 近 24h 有 1 次连接抖动
+- 准入评测：总分 **88 分**；数据安全 91、模型安全 86、权限合规 89；近 3 次评测趋势稳定
+- 运行监测：近 30 天调用 **8.2k**，成功率 **99.1%**，平均时延 **320ms**，在线状态「正常」
+
+需要继续看**风险依据**、**资源明细**、**运行趋势**，还是**对比同类智能体**？`,
+      link: { to: '/app/ledger/profile/0503-0001', text: '查看完整 360 画像' },
+      quickActions: ['风险依据', '资源明细', '运行趋势', '对比同类智能体'],
+    };
+  }
+
+  if (/风险依据|为什么.*风险|处置/.test(normalized)) {
+    return {
+      module: '台账查询 / 画像下钻',
+      reply:
+        '风险依据如下：\n\n- 近 30 天出现 **2 次**资源连接抖动，影响范围较小\n- 最近一次准入评测「模型安全」维度为 **86 分**，低于同类均值 2 分\n- 未发现越权调用；敏感配置均为密文托管\n\n建议：优先复核 LIS 连接稳定性，并在下次评测前补充异常回退策略。',
+      link: { to: '/app/ledger/profile/0503-0001', text: '进入画像风险页' },
+    };
+  }
+
+  if (/资源明细|对接.*系统|拓扑|HIS|LIS/.test(normalized)) {
+    return {
+      module: '台账查询 / 资源拓扑',
+      reply:
+        '资源明细如下：\n\n- HIS：读取患者基础信息、就诊记录，状态正常\n- LIS：读取检验指标，近 24h 有 1 次连接抖动\n- 随访管理库：写入随访计划和执行结果，状态正常\n- 消息网关：推送随访提醒，状态正常\n\nAPI key 与连接密钥均按平台安全规则密文展示。',
+      link: { to: '/app/resource-center/resources', text: '查看资源明细' },
+    };
+  }
+
+  if (/趋势|用得怎样|调用趋势|近 ?30 ?天/.test(normalized)) {
+    return {
+      module: '台账查询 / 运行趋势',
+      reply:
+        '近 30 天运行趋势：\n\n- 调用量：**8.2k**，较上个 30 天增长 **12.4%**\n- 成功率：**99.1%**，整体稳定\n- 平均时延：**320ms**，P95 为 **710ms**\n- 高峰时段：工作日 09:00–11:00、14:00–16:00\n\n可继续下钻到失败明细、慢调用样本或按科室使用排行。',
+      link: { to: '/app/monitoring/business', text: '查看运行监控' },
+    };
+  }
+
+  if (/告警|异常|故障|P0|P1/.test(normalized)) {
+    return {
+      module: '台账查询 / 总体指标',
+      reply: `今日异常告警 **8 次**。
+
+统计口径：${scope}已纳管智能体，接入运行后产生的告警；时间范围为今日 00:00 至当前。本周 **39 次**，本月 **152 次**。
+
+下钻方向：
+
+- 点击 **告警 8 次** 可查看告警清单
+- 点击 **P0 1 次** 可查看紧急故障
+- 点击 **处方审核系统超时** 可查看关联智能体画像
+
+需要我据此生成《智能体管理情况报告》吗？图文并茂，可编辑导出。`,
+      link: { to: '/app/monitoring/alert-events', text: '查看告警清单' },
+      quickActions: ['生成今日全院报告', '查看 P0 告警', '查看处方审核系统 360 画像'],
+    };
+  }
+
+  if (/数量|家底|总览|概况|科室|覆盖率|调用量|分类|分布|已上线|正常运行率|新增/.test(normalized)) {
+    return {
+      module: '台账查询 / 总体指标',
+      reply: `${scope}智能体台账概况如下：
+
+1. 直答结论：已纳管智能体 **48 个**，覆盖科室 **18/24**，科室覆盖率 **75%**；今日总调用量 **12,348 次**，正常运行率 **98.6%**
+2. 统计口径：已审核纳管智能体；时间范围为截至今日，调用与运行指标为今日 00:00 至当前
+3. 下钻入口：可点 **智能体 48 个** 看清单，点 **科室覆盖率 75%** 看科室分布，点 **今日调用 12,348 次** 看运行排行
+4. 报告引导：需要我据此生成《智能体管理情况报告》吗？图文并茂，可在线编辑并导出 Word/PDF
+
+科室分布 TOP3：影像科 12 个、检验科 8 个、心内科 6 个。诊疗环节以辅助诊断、辅助检查、用药审核为主。`,
+      link: { to: '/app/ledger/list', text: '查看台账清单' },
+      quickActions: ['生成今日全院报告', '查看科室分布', '查看风险分级'],
+    };
+  }
+
+  if (/看哪个|哪个智能体|不确定|随便/.test(normalized)) {
+    return {
+      module: '台账查询 / 澄清',
+      reply:
+        '请问看哪个智能体？可报名称或编号，例如「糖尿病随访管理助手」「0503-0001」「处方审核系统」。',
+      quickActions: ['糖尿病随访管理助手 360 画像', '处方审核系统 360 画像', '智能导诊系统 360 画像'],
+    };
+  }
+
+  return {
+    module: '台账查询 / 澄清',
+    reply:
+      '我可以查台账总体指标、生成管理情况报告、查看当前告警，或打开某个智能体的 360 画像。您想看哪一类？',
+    quickActions: ledgerRecommendedQuestions,
+  };
 }
 
 function normalizeDepartment(text: string): string {
