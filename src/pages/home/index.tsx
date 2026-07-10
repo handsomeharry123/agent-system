@@ -212,6 +212,42 @@ type LedgerFlow = {
   sessionId: string;
 };
 
+type AccessStep =
+  | 'collectMaterial'
+  | 'agentName'
+  | 'agentNameRetry'
+  | 'department'
+  | 'clinicStage'
+  | 'confirmFunction'
+  | 'connectivityFix'
+  | 'materialConfirm'
+  | 'summary'
+  | 'done';
+
+type AccessSlots = {
+  agentName?: string;
+  version?: string;
+  department?: string;
+  departmentCode?: string;
+  clinicStage?: string;
+  functionDescription?: string;
+  source?: string;
+  vendor?: string;
+  contact?: string;
+  phone?: string;
+  accessMethod?: string;
+  endpoint?: string;
+  apiKeyMasked?: string;
+  connectivity?: string;
+  materials?: string[];
+};
+
+type AccessFlow = {
+  sessionId: string;
+  step: AccessStep;
+  slots: AccessSlots;
+};
+
 const ledgerRecommendedQuestions = [
   '帮我生成一份今日的全院智能体管理情况报告',
   '我想要查看糖尿病随访管理助手的 360 画像',
@@ -249,6 +285,7 @@ const HomePage = () => {
   const [sessionConversations, setSessionConversations] = useState<Record<string, ChatMessage[]>>({});
   const [requirementFlow, setRequirementFlow] = useState<RequirementFlow | null>(null);
   const [ledgerFlow, setLedgerFlow] = useState<LedgerFlow | null>(null);
+  const [accessFlow, setAccessFlow] = useState<AccessFlow | null>(null);
   /** 是否处于「新建任务」视图;切换到历史会话 / 自动化执行记录后置 false,场景标签随之隐藏 */
   const [isNewTaskView, setIsNewTaskView] = useState(true);
 
@@ -296,6 +333,7 @@ const HomePage = () => {
     setActiveSessionId(null);
     setRequirementFlow(null);
     setLedgerFlow(null);
+    setAccessFlow(null);
     setIsNewTaskView(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role]);
@@ -358,6 +396,7 @@ const HomePage = () => {
     setActiveSessionId(null);
     setRequirementFlow(null);
     setLedgerFlow(null);
+    setAccessFlow(null);
   }, []);
 
   /* 与连接器一致，重复点击仍保持自动化任务列表。 */
@@ -366,6 +405,7 @@ const HomePage = () => {
     setActiveSessionId(null);
     setRequirementFlow(null);
     setLedgerFlow(null);
+    setAccessFlow(null);
   }, []);
 
   const handleBackToChat = useCallback(() => {
@@ -378,6 +418,7 @@ const HomePage = () => {
     setActiveSessionId(null);
     setRequirementFlow(null);
     setLedgerFlow(null);
+    setAccessFlow(null);
     setMessages([
       {
         id: `a-${Date.now()}`,
@@ -409,12 +450,19 @@ const HomePage = () => {
     if (id.startsWith('req-')) {
       setRequirementFlow((prev) => (prev?.sessionId === id ? prev : null));
       setLedgerFlow(null);
+      setAccessFlow(null);
     } else if (id.startsWith('ledger-')) {
       setLedgerFlow({ sessionId: id });
       setRequirementFlow(null);
+      setAccessFlow(null);
+    } else if (id.startsWith('access-')) {
+      setAccessFlow((prev) => (prev?.sessionId === id ? prev : { sessionId: id, step: 'collectMaterial', slots: {} }));
+      setRequirementFlow(null);
+      setLedgerFlow(null);
     } else {
       setRequirementFlow(null);
       setLedgerFlow(null);
+      setAccessFlow(null);
     }
     setIsNewTaskView(false);
     window.setTimeout(() => {
@@ -437,6 +485,7 @@ const HomePage = () => {
     setActiveSessionId(null);
     setRequirementFlow(null);
     setLedgerFlow(null);
+    setAccessFlow(null);
     setIsNewTaskView(false);
   }, []);
 
@@ -460,6 +509,7 @@ const HomePage = () => {
     setActiveSessionId(sessionId);
     setRequirementFlow({ sessionId, step: 'n0', slots: {} });
     setLedgerFlow(null);
+    setAccessFlow(null);
     setMessages([opening]);
     setDraft('');
     setIsNewTaskView(false);
@@ -492,6 +542,40 @@ const HomePage = () => {
     setActiveSessionId(sessionId);
     setRequirementFlow(null);
     setLedgerFlow({ sessionId });
+    setAccessFlow(null);
+    setMessages([opening]);
+    setDraft('');
+    setIsNewTaskView(false);
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        '[data-testid="home-v1-input"] textarea',
+      );
+      el?.focus();
+    }, 60);
+  }, []);
+
+  const startAccessApplication = useCallback(() => {
+    const sessionId = `access-${Date.now()}`;
+    const newSession: SessionEntry = {
+      id: sessionId,
+      title: '接入申请',
+      updatedAt: '刚刚',
+    };
+    const opening: ChatMessage = {
+      id: `access-a-${Date.now()}`,
+      role: 'assistant',
+      content: buildAccessOpening(),
+      module: '接入申请',
+      quickActions: ['上传技术规格书.docx，并口述产品说明', '文字描述糖尿病随访助手', '我先口述材料内容'],
+      time: nowStr(),
+    };
+
+    setMiddleView('overview');
+    setExtraSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(sessionId);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
+    setAccessFlow({ sessionId, step: 'collectMaterial', slots: {} });
     setMessages([opening]);
     setDraft('');
     setIsNewTaskView(false);
