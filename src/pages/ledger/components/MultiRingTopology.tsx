@@ -230,7 +230,7 @@ export const MultiRingTopology: React.FC<MultiRingTopologyProps> = ({
               </defs>
 
               {/* === 装饰环(交错实线 / 虚线,半径略大于节点半径) === */}
-              {decorationRadii.map((r, i) => {
+              {TOPO_THEME.decorationRadii.map((r, i) => {
                 const isSolid = i % 2 === 0;
                 return (
                   <ellipse
@@ -252,8 +252,8 @@ export const MultiRingTopology: React.FC<MultiRingTopologyProps> = ({
               <ellipse
                 cx={cx}
                 cy={cy}
-                rx={decorationRadii[decorationRadii.length - 1] * 1.18}
-                ry={decorationRadii[decorationRadii.length - 1]}
+                rx={TOPO_THEME.decorationRadii[TOPO_THEME.decorationRadii.length - 1] * 1.18}
+                ry={TOPO_THEME.decorationRadii[TOPO_THEME.decorationRadii.length - 1]}
                 fill="none"
                 stroke={TOPO_THEME.normal}
                 strokeWidth={0.8}
@@ -280,7 +280,7 @@ export const MultiRingTopology: React.FC<MultiRingTopologyProps> = ({
                     const dist = Math.hypot(x - cx, y - cy);
                     if (
                       dist < 60 ||
-                      dist > decorationRadii[decorationRadii.length - 1] + 20
+                      dist > TOPO_THEME.decorationRadii[TOPO_THEME.decorationRadii.length - 1] + 20
                     ) {
                       return null;
                     }
