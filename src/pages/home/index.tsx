@@ -671,6 +671,27 @@ const HomePage = () => {
         setLoading(false);
         return;
       }
+      if (accessFlow && accessFlow.sessionId === activeSessionId && accessFlow.step !== 'done') {
+        const next = getAccessNext(accessFlow, text);
+        setMessages((prev) => [
+          ...prev,
+          ...next.replies.map((content, index) => ({
+            id: `access-a-${Date.now()}-${index}`,
+            role: 'assistant' as const,
+            content,
+            module: '接入申请',
+            link: index === next.replies.length - 1 ? next.link : undefined,
+            quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
+            time: nowStr(),
+          })),
+        ]);
+        setAccessFlow(next.flow);
+        setExtraSessions((prev) =>
+          prev.map((s) => (s.id === next.flow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+        );
+        setLoading(false);
+        return;
+      }
       const r = pickReply(text);
       setMessages((prev) => [
         ...prev,
@@ -698,6 +719,10 @@ const HomePage = () => {
     }
     if (tag.key === 'ledger-query') {
       startLedgerQuery();
+      return;
+    }
+    if (tag.key === 'access-apply') {
+      startAccessApplication();
       return;
     }
     handleSend(tag.prompt);
@@ -1258,6 +1283,213 @@ function buildLedgerOpening(): string {
   return `你好，我是医小管。台账相关问题都可以问我。
 
 你可以直接问全院/本科室智能体家底、运行指标、告警情况，也可以查看某个智能体的 360 画像。`;
+}
+
+function buildAccessOpening(): string {
+  return '你好！我是医小管。把产品说明书 / 技术规格书发给我（支持 PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮你进行智能体接入信息注册申请～';
+}
+
+function buildAccessFunctionDescription(): string {
+  return '面向出院及门诊糖尿病患者提供随访服务，读取患者基础信息、诊疗记录、检验指标与随访计划，自动生成随访任务、健康提醒与异常风险提示，并向责任医生输出结构化随访报告与风险提醒。';
+}
+
+function getAccessNext(
+  flow: AccessFlow,
+  text: string,
+): {
+  flow: AccessFlow;
+  replies: string[];
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  const slots: AccessSlots = { ...flow.slots };
+  const yes = /确认|可以|没问题|就用|提交|无误|通过|好/.test(normalized);
+
+  if (/排班|台账|告警|报告|先查|天气|新闻/.test(normalized) && flow.step !== 'summary') {
+    return {
+      flow,
+      replies: ['我们先来完成智能体接入注册申请，稍后再为您解决此问题。\n\n当前请继续提供或确认接入注册所需信息。'],
+    };
+  }
+
+  switch (flow.step) {
+    case 'collectMaterial': {
+      slots.version = /1\.0|1\.1|2\.0|2\.1|v2\.1/i.test(normalized) ? '2.1' : '2.1';
+      slots.source = /合作|第三方/.test(normalized) ? '合作研发' : '合作研发';
+      slots.vendor = /健康|科技|公司/.test(normalized) ? '智医健康科技有限公司' : '智医健康科技有限公司';
+      slots.contact = /陈明/.test(normalized) ? '陈明' : '陈明';
+      slots.phone = normalized.match(/\d{11}/)?.[0] ?? '13812345678';
+      slots.accessMethod = /SDK/i.test(normalized) ? 'SDK' : /OTel/i.test(normalized) ? 'OTel' : 'API';
+      slots.endpoint = 'https://api.xxhealth.com/dm-followup/v2';
+      slots.apiKeyMasked = '********';
+      slots.functionDescription = buildAccessFunctionDescription();
+      slots.materials = ['技术规格书.docx（已解析，需转 PDF 留存）'];
+      return {
+        flow: { ...flow, step: 'agentName', slots },
+        replies: [
+          `收到，正在识别……
+
+我已自动填充：
+
+- 智能体版本：${slots.version}
+- 功能描述：${slots.functionDescription}
+- 来源：${slots.source}
+- 供应商：${slots.vendor}
+- 技术联系人：${slots.contact}
+- 联系方式：${slots.phone}
+- 接入方式：${slots.accessMethod}
+- 接口地址：${slots.endpoint}
+- API key：${slots.apiKeyMasked}（已密文保存）
+
+仍缺失：智能体名称、所属科室、诊疗环节；另外产品说明书尚未提供，我后面可依据已填字段自动生成 PDF。
+
+先确认智能体名称——请问它叫什么？（2–20 个字符）`,
+        ],
+        quickActions: ['糖尿病随访助手', '内分泌糖尿病随访管理助手'],
+      };
+    }
+    case 'agentName': {
+      const name = normalized.replace(/[。.!！]/g, '');
+      if (/糖尿病随访助手$/.test(name) || name === '糖尿病随访助手') {
+        return {
+          flow: { ...flow, step: 'agentNameRetry', slots },
+          replies: ['“糖尿病随访助手”查重发现此名称已被使用，请重新命名。'],
+          quickActions: ['内分泌糖尿病随访管理助手'],
+        };
+      }
+      slots.agentName = name.slice(0, 20) || '内分泌糖尿病随访管理助手';
+      return {
+        flow: { ...flow, step: 'department', slots },
+        replies: [`“${slots.agentName}”（${slots.agentName.length}/20）可用，已记录。\n\n所属科室请选择或报出：【0503 内分泌科】【0504 内分泌代谢科】。`],
+        quickActions: ['0503 内分泌科', '0504 内分泌代谢科'],
+      };
+    }
+    case 'agentNameRetry': {
+      slots.agentName = normalized.replace(/[。.!！]/g, '').slice(0, 20) || '内分泌糖尿病随访管理助手';
+      return {
+        flow: { ...flow, step: 'department', slots },
+        replies: [`“${slots.agentName}”（${slots.agentName.length}/20）可用，已记录。\n\n所属科室请选择或报出：【0503 内分泌科】【0504 内分泌代谢科】。`],
+        quickActions: ['0503 内分泌科', '0504 内分泌代谢科'],
+      };
+    }
+    case 'department': {
+      slots.departmentCode = /0504/.test(normalized) ? '0504' : '0503';
+      slots.department = slots.departmentCode === '0504' ? '内分泌代谢科' : '内分泌科';
+      return {
+        flow: { ...flow, step: 'clinicStage', slots },
+        replies: ['诊疗环节请选：【导诊分诊】【预问诊】【预约挂号】【辅助检查】【辅助诊断】【辅助治疗】【住院】【手术】【其他】（可点、可说、可打字）。'],
+        quickActions: ['其他：出院后随访管理', '辅助治疗', '辅助诊断'],
+      };
+    }
+    case 'clinicStage': {
+      slots.clinicStage = /其他|随访/.test(normalized) ? '其他（出院后随访管理）' : normalized.slice(0, 20);
+      return {
+        flow: { ...flow, step: 'confirmFunction', slots },
+        replies: [
+          `【功能描述确认卡】
+
+${slots.functionDescription}
+
+（${slots.functionDescription?.length ?? 0}/500）
+
+技术联系人“${slots.contact}”、联系方式 ${slots.phone}、接入方式 ${slots.accessMethod}、接口地址、来源“${slots.source}”、供应商“${slots.vendor}”均已识别，稍后汇总一并确认。
+
+确认吗？（点【确认】、说“确认”或打字均可）`,
+        ],
+        quickActions: ['确认', '修改功能描述'],
+      };
+    }
+    case 'confirmFunction': {
+      if (!yes) {
+        slots.functionDescription = normalized.slice(0, 500);
+      }
+      slots.connectivity = '失败：认证不通过（401）';
+      return {
+        flow: { ...flow, step: 'connectivityFix', slots },
+        replies: [
+          `正在对接口地址 ${slots.endpoint} 发起联通测试……
+
+测试失败：认证不通过（401）。请核对 API key。`,
+        ],
+        quickActions: ['key 尾号改成 a9f2，重测'],
+      };
+    }
+    case 'connectivityFix': {
+      slots.apiKeyMasked = '********a9f2';
+      slots.connectivity = '通过（320ms）';
+      return {
+        flow: { ...flow, step: 'materialConfirm', slots },
+        replies: [
+          `已更新 API key（仍密文保存），重新测试通过，响应正常（耗时 320ms）。
+
+字段已齐。核验备案材料：
+
+- 技术规格书：已上传，内容达标，将转为 PDF 留存
+- 产品说明书：尚未提供
+
+我已依据已填字段自动生成《产品说明书（自动生成）.pdf》，含产品名称、简介、主要功能、开发单位及技术联系人、产品版本。请预览确认，可以回复“就用它”；要改就说改哪儿。`,
+        ],
+        quickActions: ['就用它', '修改产品简介'],
+      };
+    }
+    case 'materialConfirm': {
+      slots.materials = ['技术规格书.pdf（由上传材料转换）', '产品说明书（自动生成）.pdf'];
+      return {
+        flow: { ...flow, step: 'summary', slots },
+        replies: [buildAccessSummary(slots)],
+        quickActions: ['确认提交', '修改接口地址', '修改联系人'],
+      };
+    }
+    case 'summary': {
+      if (/修改/.test(normalized)) {
+        return {
+          flow: { ...flow, step: 'summary', slots },
+          replies: ['演示版已收到修改诉求。为快速走通接入申请，请直接回复“确认提交”；如需完整字段编辑，我可以继续扩展该分支。'],
+          quickActions: ['确认提交'],
+        };
+      }
+      return {
+        flow: { ...flow, step: 'done', slots },
+        replies: [
+          `接入注册申请已提交！
+
+- 智能体编号：${slots.departmentCode ?? '0503'}-0001（按“科室编号-准入顺序号”自动生成）
+- 名称：${slots.agentName ?? '内分泌糖尿病随访管理助手'}
+- 版本：${slots.version ?? '2.1'}
+
+本次接入注册申请到此完成，感谢您的办理！`,
+        ],
+        link: { to: '/app/agent-center', text: '查看接入申请' },
+      };
+    }
+    default:
+      return {
+        flow,
+        replies: ['接入注册申请已完成，本场景结束。'],
+      };
+  }
+}
+
+function buildAccessSummary(slots: AccessSlots): string {
+  return `都齐了，核对一遍：
+
+- 名称：${slots.agentName ?? '内分泌糖尿病随访管理助手'}
+- 版本：${slots.version ?? '2.1'}
+- 所属科室：${slots.departmentCode ?? '0503'} ${slots.department ?? '内分泌科'}
+- 诊疗环节：${slots.clinicStage ?? '其他（出院后随访管理）'}
+- 功能描述：${slots.functionDescription ?? buildAccessFunctionDescription()}
+- 来源：${slots.source ?? '合作研发'}
+- 供应商：${slots.vendor ?? '智医健康科技有限公司'}
+- 技术联系人：${slots.contact ?? '陈明'}
+- 联系方式：${slots.phone ?? '13812345678'}
+- 接入方式：${slots.accessMethod ?? 'API'}
+- 接口地址：${slots.endpoint ?? 'https://api.xxhealth.com/dm-followup/v2'}
+- API key：********
+- 备案材料：${(slots.materials ?? ['技术规格书.pdf（由上传材料转换）', '产品说明书（自动生成）.pdf']).join('、')}
+- 联通测试：${slots.connectivity ?? '通过（320ms）'}
+
+哪项要改直接说/点，没问题就说“提交”或点【确认提交】。`;
 }
 
 function getLedgerReply(
