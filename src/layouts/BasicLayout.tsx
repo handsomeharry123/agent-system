@@ -15,6 +15,11 @@ import { useTheme } from '../hooks/useTheme';
 import { THEME_LABELS, type ThemeKey } from '../theme/themeConfig';
 import { useDemoSettings } from '../hooks/useDemoSettings';
 import { resolveMenu, masterMenu, isModuleVisible, isSubPageVisible } from '../config/masterMenu';
+import {
+  getSiderCollapsed,
+  setSiderCollapsed,
+  subscribeSiderCollapsed,
+} from '../hooks/useSiderCollapsed';
 import { DemoSettingsPanel } from '../components/DemoFloatButton';
 // V1 智能化升级（§3.1.1）：全局「智能填写助手」悬浮入口 + 对话浮层
 import AgentAssistant from '../pages/agent-center/smart/AgentAssistant';
@@ -34,7 +39,12 @@ const isDemoModeEnabled = (): boolean => {
 const BasicLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
+  // Sider 折叠状态由全局订阅器驱动(HomeSidebarV2 等子组件可通过 setSiderCollapsed 触发)。
+  const [collapsed, setCollapsedState] = useState<boolean>(getSiderCollapsed());
+  useEffect(() => {
+    const unsubscribe = subscribeSiderCollapsed((next) => setCollapsedState(next));
+    return unsubscribe;
+  }, []);
   const [demoPanelOpen, setDemoPanelOpen] = useState(false);
   const { currentUser } = useAuth();
   const { themeKey, setThemeKey } = useTheme();
@@ -283,7 +293,10 @@ const BasicLayout = () => {
       }
       menuDataRender={() => filteredMenuItems as any}
       collapsed={collapsed}
-      onCollapse={setCollapsed}
+      onCollapse={(next) => {
+        setCollapsedState(next);
+        setSiderCollapsed(next);
+      }}
       siderWidth={240}
       layout="mix"
       contentWidth="Fluid"

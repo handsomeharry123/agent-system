@@ -1224,8 +1224,10 @@ const AgentAssistant = () => {
           className="agent-welcome-bubble"
           data-testid="material-offer-bubble"
           style={{
-            ...getRobotBubblePlacement(pos, materialOfferH ?? 180),
+            ...getRobotBubblePlacement(pos, materialOfferH ?? 220),
             position: 'fixed',
+            bottom: 'auto',
+            right: 'auto',
             width: 'min(360px, calc(100vw - 32px))',
             maxWidth: 360,
             transform: 'none',
@@ -1236,29 +1238,33 @@ const AgentAssistant = () => {
             zIndex: 1000,
             background: '#FFFFFF',
             color: '#1F1F1F',
-            padding: '10px 14px 12px',
+            padding: '10px 12px',
             borderRadius: 12,
-            fontSize: 13,
-            lineHeight: 1.6,
+            fontSize: 12,
+            lineHeight: 1.5,
             border: '1px solid #91CAFF',
             boxShadow: '0 8px 24px rgba(22, 119, 255, 0.18)',
             boxSizing: 'border-box',
             overflowWrap: 'break-word',
             wordBreak: 'break-word',
+            display: 'inline-flex',
+            flexDirection: 'column',
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <strong style={{ color: '#1677FF', fontSize: 13 }}>医小管</strong>
-          <span
-            style={{ marginLeft: 4, display: 'inline-block', marginTop: 4 }}
-            data-testid="material-offer-bubble-content"
-          >
-            {`检测到当前「备案材料」还缺少${materialOffer.missingCategories.map((k) => (k === 'product' ? '产品说明书' : '技术规格书')).join(' / ')}，我可依据你已填写的信息自动生成，需要现在生成吗？`}
-          </span>
-          <Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 8, marginBottom: 10 }}>
+          <div>
+            <strong style={{ color: '#1677FF', fontSize: 13 }}>医小管</strong>
+            <span
+              style={{ marginLeft: 4 }}
+              data-testid="material-offer-bubble-content"
+            >
+              {`检测到当前「备案材料」还缺少${materialOffer.missingCategories.map((k) => (k === 'product' ? '产品说明书' : '技术规格书')).join(' / ')}，我可依据你已填写的信息自动生成，需要现在生成吗？`}
+            </span>
+          </div>
+          <Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 6 }}>
             我会仅基于当前表单已填信息与已上传材料生成，完成后自动归档到「备案材料」。
           </Text>
-          <Space size={8} wrap>
+          <Space size={8} wrap style={{ marginTop: 8 }}>
             {materialOffer.missingCategories.includes('product') && (
               <Button
                 size="small"

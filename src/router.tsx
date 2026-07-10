@@ -17,7 +17,14 @@ import Register from './pages/portal/Register';
 import HomePage from './pages/home';
 import Workbench from './pages/home/Workbench';
 import Dashboard from './pages/home/Dashboard';
+import AutoTaskForm from './pages/home/AutoTaskForm';
 import RoleBasedRedirect from './components/RoleBasedRedirect';
+
+// Pages - Agent Needs（V1.0 智能体建设需求管理：需求管理列表 / 草稿 / 生成需求 / 详情 / 文档预览）
+import AgentNeeds from './pages/agent-needs/index';
+import AgentNeedForm from './pages/agent-needs/NeedForm';
+import AgentNeedDetail from './pages/agent-needs/Detail';
+import AgentNeedDoc from './pages/agent-needs/DocPreview';
 
 // Pages - Agent Center（V2.2：注册管理下分 4 个下转路由页）
 import AgentCenter from './pages/agent-center/index';
@@ -151,9 +158,28 @@ const routes: RouteObject[] = [
           { path: 'overview', element: <HomePage /> },
           { path: 'workbench', element: <Workbench /> },
           { path: 'dashboard', element: <Dashboard /> },
+          // 两个工作台入口必须由 HomePage 承载，避免直接路由只渲染裸列表、丢失第二层功能栏。
+          { path: 'connector', element: <HomePage /> },
+          { path: 'auto-tasks', element: <HomePage /> },
+          { path: 'auto-tasks/new', element: <AutoTaskForm /> },
         ],
       },
       // Agent Center（V2.2：注册管理下分 4 个下转路由页）
+      {
+        path: 'agent-needs',
+        children: [
+          // 1.1 需求管理页 + 1.3 草稿页（顶部 Tab 切换，默认「需求管理列表」）
+          { index: true, element: <AgentNeeds /> },
+          // 1.2 生成需求页
+          { path: 'create', element: <AgentNeedForm /> },
+          // 1.2 编辑草稿（带入草稿全部字段）
+          { path: 'edit/:id', element: <AgentNeedForm /> },
+          // 1.4 需求详情页（只读 + 最新匹配结果）
+          { path: 'detail/:id', element: <AgentNeedDetail /> },
+          // 需求文档在线预览（可下载 Word / PDF）
+          { path: 'doc/:id', element: <AgentNeedDoc /> },
+        ],
+      },
       {
         path: 'agent-center',
         children: [

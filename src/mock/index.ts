@@ -5,6 +5,7 @@ export * from './seed';
 export * from './audit';
 export * from './evaluation';
 export * from './ledger';
+export * from './connectors';
 
 import { mockAgents, starAgents } from './agents';
 import { mockUsers } from './users';

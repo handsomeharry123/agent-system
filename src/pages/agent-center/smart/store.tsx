@@ -1043,11 +1043,12 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
       syncUploadedFile,
       applyPrefill,
       acknowledgePrefill,
+      setMaterialOffer,
     };
     return () => {
       delete (window as any).__smartDraft;
     };
-  }, [addMessage, pushWelcomeGreeting, pushHistoricalPlans, syncUploadedFile, applyPrefill, acknowledgePrefill]);
+  }, [addMessage, pushWelcomeGreeting, pushHistoricalPlans, syncUploadedFile, applyPrefill, acknowledgePrefill, setMaterialOffer]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };

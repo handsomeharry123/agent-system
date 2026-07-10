@@ -1,5 +1,6 @@
 import {
   HomeOutlined,
+  BulbOutlined,
   RobotOutlined,
   DatabaseOutlined,
   ExperimentOutlined,
@@ -32,6 +33,7 @@ import type { ReactNode } from 'react';
 export type ModuleKey =
   | 'home'
   | 'workbench'
+  | 'agent-needs'
   | 'agent-center'
   | 'ledger'
   | 'resource-center'
@@ -70,8 +72,9 @@ export const masterMenu: MasterModule[] = [
     name: '首页',
     path: '/app/home/overview',
     icon: <HomeOutlined />,
+    // V1.0 PRD：首页为对话式统一入口(医小管落地页),信息科管理员 + 科室管理员都应可见
     defaultVisible: true,
-    defaultRoleVisible: 'itAdmin',
+    defaultRoleVisible: 'both',
   },
   {
     key: 'workbench',
@@ -80,6 +83,17 @@ export const masterMenu: MasterModule[] = [
     icon: <HomeOutlined />,
     // 默认演示不展示工作台（用户可在右下角"演示操作"中按需开启）
     defaultVisible: false,
+    defaultRoleVisible: 'both',
+  },
+  // 智能体建设需求管理（V1.0）：业务方手动录入标准化建设需求 + 与已纳管智能体智能化匹配 TOP3
+  //   - 位于「首页」与「智能体接入中心」之间；仅一级入口、无二级菜单
+  //   - 面向院内所有已认证用户（信息科 IT 管理员 / 科室管理员 / 普通业务用户）
+  {
+    key: 'agent-needs',
+    name: '智能体建设需求管理',
+    path: '/app/agent-needs',
+    icon: <BulbOutlined />,
+    defaultVisible: true,
     defaultRoleVisible: 'both',
   },
   {
