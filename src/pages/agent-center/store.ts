@@ -22,6 +22,41 @@ const ROLE_DEPT = '科室管理员';
 
 const initialRecords: AccessRecord[] = [
   {
+    id: 'acc-xg-001',
+    name: '超声检查预约助手',
+    agentCode: '0601-0001',
+    version: '1.0',
+    department: '超声医学科',
+    clinicalStage: '辅助检查',
+    source: '合作研发',
+    supplier: '智医健康科技有限公司',
+    contactName: '陈明',
+    contactPhone: '13800138000',
+    type: '导诊分诊',
+    description:
+      '面向门诊及住院患者，读取检查预约系统、HIS 与 EMR 中的患者基础信息、检查项目、医生医嘱、可预约时段和检查注意事项，自动完成超声检查预约，并向患者输出预约时间、检查地点、注意事项和改约提醒。',
+    applicant: 'admin',
+    applicantRole: ROLE_ADMIN,
+    attachments: [
+      { name: '产品说明书（自动生成）.pdf', size: '1.2 MB', url: '#' },
+      { name: '技术规格书.pdf', size: '1.8 MB', url: '#' },
+    ],
+    accessMode: 'API',
+    apiEndpoint: 'https://api.hospital.local/agent/access/v1',
+    apiKey: '********',
+    connectionTested: true,
+    connectionStatus: 'success',
+    connectionMessage: '通过（320ms，接口响应正常）',
+    status: '待审核',
+    lastEditTime: '2026-07-13 13:32:00',
+    submitTime: '2026-07-13 13:32:00',
+    auditHistory: [
+      { label: '智能识别接入材料', time: '2026-07-13 13:31:00', status: 'finish', operator: '医小管' },
+      { label: '联通测试通过', time: '2026-07-13 13:31:20', status: 'finish', desc: '接口 320ms 返回 200' },
+      { label: '提交注册申请', time: '2026-07-13 13:32:00', status: 'finish', operator: 'admin' },
+    ],
+  },
+  {
     id: 'acc-001',
     name: '心电图智能辅助诊断',
     agentCode: 'XN-0001',

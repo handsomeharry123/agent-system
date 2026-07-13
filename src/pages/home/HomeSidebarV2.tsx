@@ -17,6 +17,7 @@ import {
   CaretRightOutlined,
   ClockCircleOutlined,
   CloseOutlined,
+  LoadingOutlined,
   MenuFoldOutlined,
   PlusOutlined,
   SearchOutlined,
@@ -54,6 +55,8 @@ export interface AutoTaskSubRun {
   summary?: string;
   /** 是否已归档；旧 mock 未提供时由相对执行时间兼容判断 */
   archived?: boolean;
+  /** 侧栏尾部状态:生成中显示转圈,有新回复显示圆点,其余显示 updatedAt */
+  activityStatus?: 'generating' | 'newReply';
 }
 
 export interface AutoTask {
@@ -73,6 +76,8 @@ export interface SessionEntry {
   id: string;
   title: string;
   updatedAt: string;
+  /** 侧栏尾部状态:生成中显示转圈,有新回复显示圆点,其余显示 updatedAt */
+  activityStatus?: 'generating' | 'newReply';
 }
 
 export interface ChatMessage {
@@ -93,9 +98,9 @@ export const initialAutoTasks: AutoTask[] = [
     enabled: true,
     frequencyDesc: '每天 09:00',
     runs: [
-      { id: 't1-r1', name: '今日全院智能体运行情况报告-2026-07-08-08-30-00', updatedAt: '刚刚', status: '成功', enabled: true, nextRunIn: '约 24 小时后执行', summary: '全院 48 个智能体今日调用 12,348 次,成功率 99.2%' },
-      { id: 't1-r2', name: '今日全院智能体运行情况报告-2026-07-07-08-30-00', updatedAt: '1 天前', status: '成功', enabled: true, nextRunIn: '约 24 小时后执行', summary: '全院 48 个智能体昨日调用 11,902 次,成功率 99.0%' },
-      { id: 't1-r3', name: '今日全院智能体运行情况报告-2026-07-06-08-30-00', updatedAt: '2 天前', status: '成功', enabled: true, nextRunIn: '约 24 小时后执行', summary: '全院 47 个智能体前日调用 11,580 次,成功率 99.1%' },
+      { id: 't1-r1', name: '今日全院智能体运行情况报告-2026-07-08-08-30-00', updatedAt: '刚刚', status: '成功', enabled: true, nextRunIn: '约 24 小时后执行', summary: '全院 48 个智能体今日调用 12,348 次,成功率 99.2%', activityStatus: 'newReply' },
+      { id: 't1-r2', name: '今日全院智能体运行情况报告-2026-07-07-08-30-00', updatedAt: '1 天前', status: '成功', enabled: true, nextRunIn: '约 24 小时后执行', summary: '全院 48 个智能体昨日调用 11,902 次,成功率 99.0%', activityStatus: 'newReply' },
+      { id: 't1-r3', name: '今日全院智能体运行情况报告-2026-07-06-08-30-00', updatedAt: '2 天前', status: '成功', enabled: true, nextRunIn: '约 24 小时后执行', summary: '全院 47 个智能体前日调用 11,580 次,成功率 99.1%', activityStatus: 'generating' },
     ],
   },
   {
@@ -201,31 +206,34 @@ export const sessionHistoryMocks: Record<string, ChatMessage[]> = {
   ],
 };
 
+export const buildRunHistoryMock = (task: AutoTask, run: AutoTaskSubRun): ChatMessage[] => [
+  {
+    id: `${run.id}-u1`,
+    role: 'user',
+    content: `查看自动化任务「${task.name}」本次执行结果`,
+    time: run.updatedAt,
+  },
+  {
+    id: `${run.id}-a1`,
+    role: 'assistant',
+    content:
+      `**执行状态：${run.status}**\n\n${run.summary ?? '本次任务已执行完成，暂无结果摘要。'}\n\n` +
+      `- 执行记录：${run.name}\n- 触发规则：${task.frequencyDesc}\n- 下次执行：${run.nextRunIn ?? '待调度'}`,
+    module: '自动化任务执行结果',
+    time: run.updatedAt,
+  },
+];
+
 /* 每条自动化执行记录对应一组可恢复的 mock 对话 */
 export const runHistoryMocks: Record<string, ChatMessage[]> = Object.fromEntries(
   initialAutoTasks.flatMap((task) =>
-    task.runs.map((run) => [
-      run.id,
-      [
-        {
-          id: `${run.id}-u1`,
-          role: 'user' as const,
-          content: `查看自动化任务「${task.name}」本次执行结果`,
-          time: run.updatedAt,
-        },
-        {
-          id: `${run.id}-a1`,
-          role: 'assistant' as const,
-          content:
-            `**执行状态：${run.status}**\n\n${run.summary ?? '本次任务已执行完成，暂无结果摘要。'}\n\n` +
-            `- 执行记录：${run.name}\n- 触发规则：${task.frequencyDesc}\n- 下次执行：${run.nextRunIn ?? '待调度'}`,
-          module: '自动化任务执行结果',
-          time: run.updatedAt,
-        },
-      ],
-    ]),
+    task.runs.map((run) => [run.id, buildRunHistoryMock(task, run)]),
   ),
 );
+
+export const ensureRunHistoryMock = (task: AutoTask, run: AutoTaskSubRun) => {
+  runHistoryMocks[run.id] = buildRunHistoryMock(task, run);
+};
 
 /* =========================================================
  * 子组件:Section 标题
@@ -354,6 +362,44 @@ const HighlightRow = ({
   );
 };
 
+const ActivityIndicator = ({
+  status,
+  fallback,
+}: {
+  status?: 'generating' | 'newReply';
+  fallback: string;
+}) => {
+  if (status === 'generating') {
+    return (
+      <LoadingOutlined
+        aria-label="智能体正在生成"
+        style={{ color: '#18C8A5', fontSize: 13, flexShrink: 0 }}
+      />
+    );
+  }
+
+  if (status === 'newReply') {
+    return (
+      <span
+        aria-label="智能体有新回复"
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: '50%',
+          background: '#18C8A5',
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  return (
+    <Text type="secondary" style={{ fontSize: 11, flexShrink: 0, whiteSpace: 'nowrap' }}>
+      {fallback}
+    </Text>
+  );
+};
+
 /* =========================================================
  * 主组件
  * ========================================================= */
@@ -375,9 +421,13 @@ interface Props {
   sessions?: SessionEntry[];
   /** 外部切换/创建会话后，同步侧栏高亮 */
   activeSessionId?: string | null;
+  /** 当前正在生成回复的历史会话;优先显示转圈 */
+  generatingSessionId?: string | null;
+  /** 已生成新回复但仍需提示的历史会话 */
+  newReplySessionIds?: Set<string>;
 }
 
-const HomeSidebarV2 = ({ onNewTask, onRestoreSession, onRestoreRun, initialActiveKey = 'new', onAutoTaskCreated, onOpenConnector, onOpenAutoTasks, autoTasks = initialAutoTasks, sessions: sessionsProp, activeSessionId }: Props) => {
+const HomeSidebarV2 = ({ onNewTask, onRestoreSession, onRestoreRun, initialActiveKey = 'new', onAutoTaskCreated, onOpenConnector, onOpenAutoTasks, autoTasks = initialAutoTasks, sessions: sessionsProp, activeSessionId, generatingSessionId, newReplySessionIds }: Props) => {
   const navigate = useNavigate();
   const sessions = sessionsProp ?? initialSessions;
 
@@ -542,6 +592,12 @@ const HomeSidebarV2 = ({ onNewTask, onRestoreSession, onRestoreRun, initialActiv
                 {sessions.map((s) => {
                   const sessionKey = `session-${s.id}`;
                   const isActive = activeKey === sessionKey;
+                  const activityStatus =
+                    generatingSessionId === s.id
+                      ? 'generating'
+                      : newReplySessionIds?.has(s.id)
+                        ? 'newReply'
+                        : s.activityStatus;
                   return (
                     <HighlightRow
                       key={s.id}
@@ -574,12 +630,7 @@ const HomeSidebarV2 = ({ onNewTask, onRestoreSession, onRestoreRun, initialActiv
                         >
                           {s.title}
                         </Text>
-                        <Text
-                          type="secondary"
-                          style={{ fontSize: 11, flexShrink: 0, whiteSpace: 'nowrap' }}
-                        >
-                          {s.updatedAt}
-                        </Text>
+                        <ActivityIndicator status={activityStatus} fallback={s.updatedAt} />
                       </span>
                     </HighlightRow>
                   );
@@ -686,12 +737,7 @@ const HomeSidebarV2 = ({ onNewTask, onRestoreSession, onRestoreRun, initialActiv
                                   >
                                     {r.name}
                                   </Text>
-                                  <Text
-                                    type="secondary"
-                                    style={{ fontSize: 10, flexShrink: 0, whiteSpace: 'nowrap' }}
-                                  >
-                                    {r.updatedAt}
-                                  </Text>
+                                  <ActivityIndicator status={r.activityStatus} fallback={r.updatedAt} />
                                 </span>
                               </HighlightRow>
                             );

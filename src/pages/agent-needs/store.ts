@@ -33,6 +33,34 @@ const withMatch = (n: BuildNeed): BuildNeed => {
 };
 
 const initialNeeds: BuildNeed[] = [
+  {
+    id: '143',
+    serialNo: 143,
+    title: '超声检查智能预约与检前指导助手',
+    department: '超声医学科',
+    reason:
+      '目前超声检查预约主要依赖人工沟通，患者经常不清楚检查前准备要求，容易漏检或反复咨询，导致预约效率低、患者等待时间长。建设该智能体后，可提升预约效率、减少人工电话沟通和患者等待时间，并降低检前准备遗漏率。',
+    proposer: '敏敏',
+    contactPhone: '13800138000',
+    clinicalStage: '辅助检查',
+    functionDesc:
+      '面向门诊和住院患者提供超声检查预约与检前指导服务。系统根据检查项目、医生医嘱、可预约时段和检查注意事项，自动完成超声检查预约，并向患者输出预约时间、检查地点、检前注意事项和改约提醒。',
+    resources: ['业务系统', '模型'],
+    urgency: '中',
+    status: '已提交',
+    applicant: 'admin',
+    submitTime: '2026-07-10 11:16',
+    lastUpdateTime: '2026-07-10 11:16',
+    matchResult: {
+      topScore: 82,
+      matchedAt: '2026-07-10 11:16',
+      top: [
+        { agentCode: 'AGT-0087', agentName: '检查预约调度助手', agentId: 'agent-appointment', score: 82 },
+        { agentCode: 'AGT-0102', agentName: '患者服务通知助手', agentId: 'agent-notice', score: 64 },
+        { agentCode: 'AGT-0056', agentName: '门诊智能预问诊助手', agentId: 'agent-preinquiry', score: 41 },
+      ],
+    },
+  },
   withMatch({
     id: 'need-001',
     serialNo: 1,

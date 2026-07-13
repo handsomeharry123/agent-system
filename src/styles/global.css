@@ -769,6 +769,10 @@ body[data-app-theme='tech'] ::-webkit-scrollbar-thumb {
 }
 body[data-app-theme='tech'] ::-webkit-scrollbar-track { background: transparent; }
 
+.home-v1-scene-tag-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   body[data-app-theme='tech']::before { animation: none !important; }
 }

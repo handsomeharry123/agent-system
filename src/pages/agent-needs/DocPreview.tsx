@@ -4,7 +4,7 @@
  * 在线预览系统基于该条需求渲染的标准化需求文档，支持下载 Word / PDF。
  * 文档 HTML 由 docExport.buildNeedDocHtml 生成（预览与导出共用同一模板）。
  */
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Card, Empty, Space, message } from 'antd';
 import { FilePdfOutlined, FileWordOutlined } from '@ant-design/icons';
@@ -18,6 +18,25 @@ const NeedDocPreview = () => {
   const needs = useNeeds();
   const need = useMemo(() => needs.find((n) => n.id === id), [needs, id]);
   const docRef = useRef<HTMLDivElement>(null);
+  const downloadParam = new URLSearchParams(window.location.search).get('download');
+  const downloadPdfRequested = downloadParam === '1' || downloadParam === 'pdf';
+
+  useEffect(() => {
+    if (!need || !downloadPdfRequested) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const el = docRef.current?.querySelector<HTMLElement>('.need-doc');
+      if (!el || cancelled) return;
+      await exportNeedPdf(el, `需求文档-${need.title}`);
+      if (!cancelled) {
+        message.success('已开始下载 PDF 文档');
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [downloadPdfRequested, need]);
 
   if (!need) {
     return (

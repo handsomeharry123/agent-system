@@ -746,13 +746,19 @@ const AgentAssistant = () => {
   // V2.6 修复(2026-07-03):台账页面(/app/ledger 与 /app/ledger/*)由 AgentFloatHost
   //   独家负责机器人 icon + 气泡 + 对话窗口,接入中心 AgentAssistant 在该路径家族下
   //   整体隐藏(连浮层/气泡 DOM 都不挂),避免右下角出现「两个机器人」视觉重复。
+  // 首页模块(/app/home 与 /app/home/*)自身已经承载医小管工作台,不展示右下角全局入口。
   //   ⚠️ 此 early return 必须在所有 hooks 之后,避免 React 18 StrictMode 下
   //   hooks 顺序漂移(参考 [[alert-event-list-pending-assign-hooks-crash]] 教训)。
-  const isLedgerPath = useMemo(() => {
+  const shouldHideFloatEntry = useMemo(() => {
     const p = location.pathname;
-    return p === '/app/ledger' || p.startsWith('/app/ledger/');
+    return (
+      p === '/app/ledger' ||
+      p.startsWith('/app/ledger/') ||
+      p === '/app/home' ||
+      p.startsWith('/app/home/')
+    );
   }, [location.pathname]);
-  if (isLedgerPath) return null;
+  if (shouldHideFloatEntry) return null;
 
   return (
     <>

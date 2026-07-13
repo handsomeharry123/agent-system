@@ -35,7 +35,7 @@ import {
   TimePicker,
   Typography,
 } from 'antd';
-import HomeSidebarV2, { initialAutoTasks, type AutoTask } from './HomeSidebarV2';
+import HomeSidebarV2, { ensureRunHistoryMock, initialAutoTasks, type AutoTask } from './HomeSidebarV2';
 import ModelSelector from './ModelSelector';
 import { getAutoTaskTemplate } from './autoTaskTemplates';
 
@@ -201,6 +201,7 @@ const AutoTaskForm = () => {
 
     /* 同步写入 HomeSidebarV2 暴露的 mock,保持侧栏列表与本页一致 */
     initialAutoTasks.unshift(newTask);
+    ensureRunHistoryMock(newTask, newTask.runs[0]);
 
     message.success(`保存成功：${values.name}`);
     navigate('/app/home/auto-tasks');

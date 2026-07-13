@@ -14,7 +14,7 @@
  *     第二层「历史会话」点击 → 重置 messages 载入该会话 mock 历史;
  *     第二层「新建任务」点击 → 重置 messages 注入问候语 + 聚焦输入框。
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   AlertOutlined,
@@ -26,8 +26,10 @@ import {
   DatabaseOutlined,
   ExperimentOutlined,
   FileAddOutlined,
+  LeftOutlined,
   PaperClipOutlined,
   PlusOutlined,
+  RightOutlined,
   SafetyCertificateOutlined,
   StopOutlined,
   UserOutlined,
@@ -36,6 +38,7 @@ import {
   Avatar,
   Button,
   Card,
+  Checkbox,
   Col,
   Drawer,
   Dropdown,
@@ -99,6 +102,7 @@ import {
 } from '../../mock/ledger';
 import AgentRobotIcon from '../agent-center/smart/AgentRobotIcon';
 import HomeSidebarV2, {
+  buildRunHistoryMock,
   initialAutoTasks,
   initialSessions,
   runHistoryMocks,
@@ -122,6 +126,19 @@ type SceneTag = {
   icon: React.ReactNode;
   prompt: string;
 };
+type BusinessSceneKey =
+  | 'register-requirement'
+  | 'access-apply'
+  | 'access-audit'
+  | 'ledger-query'
+  | 'resource-register'
+  | 'resource-apply'
+  | 'resource-audit'
+  | 'evaluation-create'
+  | 'evaluation-audit'
+  | 'monitor-info'
+  | 'alert-rule-config';
+
 const sceneTags: SceneTag[] = [
   {
     key: 'register-requirement',
@@ -151,13 +168,13 @@ const sceneTags: SceneTag[] = [
     key: 'resource-register',
     label: '资源注册',
     icon: <DatabaseOutlined />,
-    prompt: '我想注册医院资源中心资源',
+    prompt: '帮我登记一套新的 HIS 业务系统为可访问资源',
   },
   {
     key: 'resource-apply',
     label: '资源申请',
     icon: <AppstoreOutlined />,
-    prompt: '我想申请一个新资源（含算力 / 存储 / 模型 / 接口）的使用权限',
+    prompt: '为病历质控智能体申请访问 EMR 电子病历系统的只读权限',
   },
   {
     key: 'resource-audit',
@@ -183,7 +200,155 @@ const sceneTags: SceneTag[] = [
     icon: <AlertOutlined />,
     prompt: '帮我看看当前智能体运行监控情况',
   },
+  {
+    key: 'alert-rule-config',
+    label: '告警规则配置',
+    icon: <AlertOutlined />,
+    prompt: '帮我配置一条智能体告警规则',
+  },
 ];
+
+const businessSceneIntents: Array<{
+  key: BusinessSceneKey;
+  label: string;
+  patterns: RegExp[];
+}> = [
+  {
+    key: 'access-audit',
+    label: '接入审核',
+    patterns: [/接入.*审核|审核.*接入|待.*审核.*接入|驳回.*接入|通过.*接入|接入.*转交|接入审核/],
+  },
+  {
+    key: 'resource-audit',
+    label: '资源审核',
+    patterns: [/资源.*审核|审核.*资源|权限.*审核|业务系统.*权限.*审核|待.*审核.*资源|驳回.*(资源|权限)|批准.*(资源|权限)/],
+  },
+  {
+    key: 'evaluation-audit',
+    label: '评测审核',
+    patterns: [/评测.*审核|审核.*评测|评测报告.*(审核|复核)|待.*审核.*评测|驳回.*评测|评测审核/],
+  },
+  {
+    key: 'alert-rule-config',
+    label: '告警规则配置',
+    patterns: [/告警规则|报警规则|告警阈值|报警阈值|规则.*(启用|停用|关闭|复制|导出)|通知渠道|调用超时告警|超阈值告警|日调用量突增|触发记录/],
+  },
+  {
+    key: 'register-requirement',
+    label: '登记需求',
+    patterns: [/提需求|想提需求|登记.*需求|新增.*需求|创建.*需求|建设需求|智能体.*建设|想建.*智能体|搭建.*智能体|需求.*审批|撤回.*需求|导出.*需求|转交.*需求/],
+  },
+  {
+    key: 'access-apply',
+    label: '接入申请',
+    patterns: [/接入申请|接入.*智能体|申请.*接入|提交.*接入|纳管申请|做纳管|注册.*智能体|变更接入|接口配置|撤回.*接入|已提交.*接入/],
+  },
+  {
+    key: 'ledger-query',
+    label: '台账查询',
+    patterns: [/台账|已上线|智能体清单|调用量报表|科室.*分布|接入分布|总调用量|接口调用明细|资源占用报表|已下线|360\s*画像|详细台账/],
+  },
+  {
+    key: 'resource-register',
+    label: '资源注册',
+    patterns: [/资源注册|注册.*(HIS|LIS|PACS|EMR|RIS|业务系统)|登记.*(HIS|LIS|PACS|EMR|RIS|业务系统)|业务系统.*注册|可访问资源|可共享业务系统|开放接口范围|下线.*业务系统/],
+  },
+  {
+    key: 'resource-apply',
+    label: '资源申请',
+    patterns: [/资源申请|申请.*访问|访问.*权限|申请.*(HIS|LIS|PACS|EMR|RIS|业务系统)|业务系统访问|只读权限|字段范围|撤回.*访问申请|权限申请/],
+  },
+  {
+    key: 'evaluation-create',
+    label: '新建评测',
+    patterns: [/新建评测|发起.*评测|做.*评测|安全评测|准入评测|待评测|自定义评测集|评测任务|评测进度|上一次评测|中止.*评测|导出评测报告/],
+  },
+  {
+    key: 'monitor-info',
+    label: '监控信息查看',
+    patterns: [/监控信息|运行监控|整体运行|异常趋势|当前.*告警|正在触发告警|响应时长|成功率|实时资源占用|异常调用|历史监控|运行日报|token.*成本/],
+  },
+];
+
+function scoreBusinessScene(text: string, intent: (typeof businessSceneIntents)[number]) {
+  return intent.patterns.reduce((score, pattern) => score + (pattern.test(text) ? 1 : 0), 0);
+}
+
+function classifyBusinessScene(text: string): BusinessSceneKey | null {
+  const normalized = text.trim();
+  if (!normalized) return null;
+  const ranked = businessSceneIntents
+    .map((intent, index) => ({ ...intent, index, score: scoreBusinessScene(normalized, intent) }))
+    .filter((intent) => intent.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+  return ranked[0]?.key ?? null;
+}
+
+function suggestBusinessScene(text: string) {
+  const normalized = text.trim();
+  const ranked = businessSceneIntents
+    .map((intent, index) => ({ ...intent, index, score: scoreBusinessScene(normalized, intent) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+  if (!ranked[0] || ranked[0].score <= 0) {
+    return businessSceneIntents.find((intent) => intent.key === 'register-requirement') ?? businessSceneIntents[0];
+  }
+  return ranked[0] ?? businessSceneIntents[0];
+}
+
+function getAlertRuleConfigReply(text: string) {
+  const normalized = text.trim();
+  if (/清单|查看|当前|生效/.test(normalized)) {
+    return {
+      reply:
+        '当前生效告警规则共 **6 条**：\n\n' +
+        '1. 处方前置审核：调用超时 > 5 秒，高危，通知企业微信 + 短信\n' +
+        '2. 影像 AI：CPU 使用率 > 85%，中危，通知企业微信\n' +
+        '3. 全局规则：日调用量突增 200%，中危，通知企业微信\n\n' +
+        '要修改、停用或复制哪一条？',
+      quickActions: ['修改第 1 条阈值', '停用第 3 条', '复制第 1 条规则'],
+    };
+  }
+  if (/关闭|停用|禁用/.test(normalized)) {
+    return {
+      reply:
+        '已为您生成停用确认：\n\n' +
+        '- 规则：日调用量突增 200% 全局告警规则\n' +
+        '- 操作：停用\n' +
+        '- 生效：确认后立即生效\n\n' +
+        '请确认是否停用该告警规则。',
+      quickActions: ['确认停用', '取消'],
+    };
+  }
+  if (/修改|调整|阈值|通知渠道|企业微信|短信/.test(normalized)) {
+    return {
+      reply:
+        '已整理为规则变更草稿：\n\n' +
+        '- 规则对象：心内科智能体\n' +
+        '- 触发条件：按您描述调整阈值或通知渠道\n' +
+        '- 通知渠道：企业微信 + 短信\n' +
+        '- 状态：待确认\n\n' +
+        '确认后我会保存到告警规则配置。',
+      quickActions: ['确认保存', '继续修改阈值', '查看当前规则清单'],
+    };
+  }
+  if (/导出|触发记录|规则明细/.test(normalized)) {
+    return {
+      reply:
+        '已为您准备《本月告警规则触发记录与规则明细》导出任务，包含规则名称、适用对象、触发次数、通知渠道和最近触发时间。',
+      quickActions: ['导出 Excel', '导出 PDF', '查看当前规则清单'],
+    };
+  }
+  return {
+    reply:
+      '已识别为告警规则配置诉求，我先整理一条规则草稿：\n\n' +
+      '- 规则对象：按您的描述定位到相关智能体 / 全局规则\n' +
+      '- 触发条件：调用超时 / 日调用量突增 / 资源占用超阈值\n' +
+      '- 级别：待确认\n' +
+      '- 通知渠道：待确认\n\n' +
+      '请补充阈值、告警级别和通知渠道。',
+    quickActions: ['阈值 5 秒，高危，企业微信 + 短信', '查看当前生效的所有告警规则清单', '取消配置'],
+  };
+}
 
 /* =========================================================
  * Mock 回复:根据问句关键词命中 5 大模块
@@ -338,6 +503,11 @@ type MonitorAlertTable = {
   emptyText?: string;
 };
 
+type AccessAuditTable = {
+  rows: AccessAuditAgent[];
+  emptyText?: string;
+};
+
 type AccessStep =
   | 'collectMaterial'
   | 'agentName'
@@ -368,6 +538,8 @@ type AccessSlots = {
   apiKeyMasked?: string;
   connectivity?: string;
   materials?: string[];
+  techSpecUploaded?: boolean;
+  productDocUploaded?: boolean;
   draftSaved?: boolean;
 };
 
@@ -611,10 +783,12 @@ const HomePage = () => {
     content: string;
     module?: string;
     link?: { to: string; text: string };
+    actionLinks?: Array<{ to: string; text: string; download?: boolean }>;
     quickActions?: string[];
     candidates?: LedgerCandidate[];
     reportCard?: LedgerReportCard;
     monitorAlertTable?: MonitorAlertTable;
+    accessAuditTable?: AccessAuditTable;
     time: string;
   };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -623,6 +797,7 @@ const HomePage = () => {
   const [loading, setLoading] = useState(false);
   const [extraSessions, setExtraSessions] = useState<SessionEntry[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [newReplySessionIds, setNewReplySessionIds] = useState<Set<string>>(() => new Set());
   const [sessionConversations, setSessionConversations] = useState<Record<string, ChatMessage[]>>({});
   const [requirementFlow, setRequirementFlow] = useState<RequirementFlow | null>(null);
   const [ledgerFlow, setLedgerFlow] = useState<LedgerFlow | null>(null);
@@ -667,6 +842,63 @@ const HomePage = () => {
     })),
   );
   const messageListRef = useRef<HTMLDivElement>(null);
+  const sceneTagScrollRef = useRef<HTMLDivElement>(null);
+  const prevLoadingRef = useRef(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [isInputDragOver, setIsInputDragOver] = useState(false);
+  const [sceneTagScrollState, setSceneTagScrollState] = useState({ left: false, right: false });
+
+  const visibleSceneTags = sceneTags.filter(
+    (t) => !['evaluation-create', 'evaluation-audit', 'access-audit', 'resource-audit'].includes(t.key) || isItAdmin,
+  );
+
+  const updateSceneTagScrollState = useCallback(() => {
+    const el = sceneTagScrollRef.current;
+    if (!el) {
+      setSceneTagScrollState({ left: false, right: false });
+      return;
+    }
+    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    const nextState = {
+      left: el.scrollLeft > 1,
+      right: el.scrollLeft < maxScrollLeft - 1,
+    };
+    setSceneTagScrollState((prev) =>
+      prev.left === nextState.left && prev.right === nextState.right ? prev : nextState,
+    );
+  }, []);
+
+  const scrollSceneTags = (direction: 'left' | 'right') => {
+    const el = sceneTagScrollRef.current;
+    if (!el) return;
+    el.scrollBy({
+      left: direction === 'right' ? el.clientWidth * 0.65 : -el.clientWidth * 0.65,
+      behavior: 'smooth',
+    });
+  };
+
+  useEffect(() => {
+    if (!isNewTaskView) {
+      setSceneTagScrollState({ left: false, right: false });
+      return undefined;
+    }
+
+    updateSceneTagScrollState();
+    const el = sceneTagScrollRef.current;
+    if (!el) return undefined;
+
+    const handleResize = () => updateSceneTagScrollState();
+    window.addEventListener('resize', handleResize);
+
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => updateSceneTagScrollState());
+    resizeObserver?.observe(el);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      resizeObserver?.disconnect();
+    };
+  }, [isNewTaskView, isItAdmin, updateSceneTagScrollState]);
 
   // 角色变化/首次进入 → 注入问候语
   useEffect(() => {
@@ -718,6 +950,77 @@ const HomePage = () => {
     navigate(location.pathname, { replace: true, state: {} });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConnector]);
+
+  const handleUploadFiles = useCallback(
+    (files: FileList | null) => {
+      const selectedFiles = Array.from(files ?? []);
+      if (selectedFiles.length === 0) return;
+
+      if (accessFlow && accessFlow.sessionId === activeSessionId && accessFlow.step !== 'done') {
+        const fileNames = selectedFiles.map((file) => file.name).join('、');
+        const uploadText = `已上传${fileNames}`;
+        const next = getAccessNext(accessFlow, uploadText);
+        const timestamp = Date.now();
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `access-upload-u-${timestamp}`,
+            role: 'user' as const,
+            content: uploadText,
+            time: nowStr(),
+          },
+          ...next.replies.map((content, index) => ({
+            id: `access-upload-a-${timestamp}-${index}`,
+            role: 'assistant' as const,
+            content,
+            module: '接入申请',
+            link: index === next.replies.length - 1 ? next.link : undefined,
+            actionLinks: index === next.replies.length - 1 ? next.actionLinks : undefined,
+            quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
+            time: nowStr(),
+          })),
+        ]);
+        setAccessFlow(next.flow);
+        setExtraSessions((prev) =>
+          prev.map((s) =>
+            s.id === next.flow.sessionId ? { ...s, updatedAt: '刚刚' } : s,
+          ),
+        );
+      } else {
+        message.info('请先进入需要上传材料的业务场景', 2);
+      }
+    },
+    [accessFlow, activeSessionId],
+  );
+
+  const canUploadFiles =
+    Boolean(accessFlow && accessFlow.sessionId === activeSessionId && accessFlow.step !== 'done');
+
+  const hasDraggedFiles = (event: DragEvent<HTMLElement>) =>
+    Array.from(event.dataTransfer.types ?? []).includes('Files') || event.dataTransfer.files.length > 0;
+
+  const handleInputDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = canUploadFiles ? 'copy' : 'none';
+    if (canUploadFiles) setIsInputDragOver(true);
+  };
+
+  const handleInputDragLeave = (event: DragEvent<HTMLElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+      setIsInputDragOver(false);
+    }
+  };
+
+  const handleInputDrop = (event: DragEvent<HTMLElement>) => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setIsInputDragOver(false);
+    handleUploadFiles(event.dataTransfer.files);
+  };
 
   /* 自动化任务「新建」页提交成功 → 在这里把「任务创建成功」气泡推入对话区 */
   const autoTaskCreated = (location.state as { autoTaskCreated?: { id: string; name: string; firstRunName: string } } | null)?.autoTaskCreated;
@@ -814,7 +1117,34 @@ const HomePage = () => {
   }, [role, currentUser?.name]);
 
   const handleRestoreSession = useCallback((id: string) => {
-    const hist = sessionConversations[id] ?? sessionHistoryMocks[id];
+    setNewReplySessionIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    let hist = sessionConversations[id] ?? sessionHistoryMocks[id];
+    if (!hist) {
+      const session = extraSessions.find((item) => item.id === id);
+      if (session) {
+        hist = [
+          {
+            id: `${id}-u1`,
+            role: 'user',
+            content: session.title,
+            time: session.updatedAt,
+          },
+          {
+            id: `${id}-a1`,
+            role: 'assistant',
+            content: `已恢复「${session.title}」的模拟对话记录。您可以继续在当前窗口追问或补充信息。`,
+            module: '医小管',
+            time: session.updatedAt,
+          },
+        ];
+        setSessionConversations((prev) => ({ ...prev, [id]: hist }));
+      }
+    }
     if (!hist) {
       message.info('该会话暂无历史记录');
       return;
@@ -952,10 +1282,30 @@ const HomePage = () => {
       );
       el?.focus();
     }, 60);
-  }, [sessionConversations]);
+  }, [extraSessions, sessionConversations]);
+
+  useEffect(() => {
+    if (prevLoadingRef.current && !loading && activeSessionId) {
+      setNewReplySessionIds((prev) => {
+        const next = new Set(prev);
+        next.add(activeSessionId);
+        return next;
+      });
+    }
+    prevLoadingRef.current = loading;
+  }, [activeSessionId, loading]);
 
   const handleRestoreRun = useCallback((id: string) => {
-    const hist = runHistoryMocks[id];
+    let hist = runHistoryMocks[id];
+    if (!hist) {
+      const matched = autoTasks
+        .flatMap((task) => task.runs.map((run) => ({ task, run })))
+        .find((item) => item.run.id === id);
+      if (matched) {
+        hist = buildRunHistoryMock(matched.task, matched.run);
+        runHistoryMocks[id] = hist;
+      }
+    }
     if (!hist) {
       message.info('该执行记录暂无对话数据');
       return;
@@ -975,7 +1325,7 @@ const HomePage = () => {
     setMonitorFlow(null);
     setAccessAuditFlow(null);
     setIsNewTaskView(false);
-  }, []);
+  }, [autoTasks]);
 
   const startRequirementRegistration = useCallback(() => {
     const sessionId = `req-${Date.now()}`;
@@ -1366,6 +1716,54 @@ const HomePage = () => {
     }, 60);
   }, [role]);
 
+  /* 「告警规则配置」场景标签 → 创建历史会话并展示规则配置 mock */
+  const startAlertRuleConfig = useCallback((sourceText?: string) => {
+    const sessionId = `alert-rule-${Date.now()}`;
+    const newSession: SessionEntry = {
+      id: sessionId,
+      title: '告警规则配置',
+      updatedAt: '刚刚',
+    };
+    const opening: ChatMessage = {
+      id: `alert-rule-a-${Date.now()}`,
+      role: 'assistant',
+      content:
+        `已进入「告警规则配置」。${sourceText ? `我理解您想处理：${sourceText}\n\n` : ''}` +
+        '当前可配置：调用超时、日调用量突增、资源占用超阈值、异常失败率、通知渠道（企业微信 / 短信）。\n\n' +
+        '请告诉我规则对象、触发条件、阈值和通知渠道，例如：为“处方前置审核”配置调用超时超过 5 秒的高危告警，通知企业微信 + 短信。',
+      module: '告警规则配置',
+      quickActions: [
+        '为处方前置审核配置调用超时告警',
+        '新增日调用量突增 200% 的全局告警规则',
+        '查看当前生效的所有告警规则清单',
+      ],
+      time: nowStr(),
+    };
+
+    setMiddleView('overview');
+    setExtraSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(sessionId);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
+    setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
+    setMessages([opening]);
+    setDraft('');
+    setIsNewTaskView(false);
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        '[data-testid="home-v1-input"] textarea',
+      );
+      el?.focus();
+    }, 60);
+  }, []);
+
   /* 「接入审核」场景标签 → 创建历史会话并进入 N0→N5 固定审核轨道 */
   const startAccessAudit = useCallback(() => {
     const sessionId = `access-audit-${Date.now()}`;
@@ -1380,6 +1778,7 @@ const HomePage = () => {
       role: 'assistant',
       content: buildAccessAuditOpening(flow),
       module: '接入审核',
+      accessAuditTable: { rows: accessAuditPending(flow) },
       quickActions: ['批量通过建议通过', '查看 0201-0004', '只看建议退回修改'],
       time: nowStr(),
     };
@@ -1407,6 +1806,224 @@ const HomePage = () => {
       el?.focus();
     }, 60);
   }, []);
+
+  const startBusinessSceneFromInput = useCallback((sceneKey: BusinessSceneKey, text: string) => {
+    const sessionId = `${sceneKey}-${Date.now()}`;
+    const sceneLabel = businessSceneIntents.find((item) => item.key === sceneKey)?.label ?? '业务场景';
+    const resetFlows = () => {
+      setRequirementFlow(null);
+      setLedgerFlow(null);
+      setAccessFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceApplyFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationFlow(null);
+      setEvaluationAuditFlow(null);
+      setMonitorFlow(null);
+      setAccessAuditFlow(null);
+    };
+    const enterScene = (assistantMessage: ChatMessage) => {
+      setMiddleView('overview');
+      setExtraSessions((prev) => [{ id: sessionId, title: sceneLabel, updatedAt: '刚刚' }, ...prev]);
+      setActiveSessionId(sessionId);
+      setIsNewTaskView(false);
+      setMessages((prev) => [...prev, assistantMessage]);
+    };
+
+    switch (sceneKey) {
+      case 'register-requirement': {
+        resetFlows();
+        const completeSlots = extractCompleteRequirementSlots(text);
+        setRequirementFlow({
+          sessionId,
+          step: completeSlots ? 'summary' : 'n0',
+          slots: completeSlots ?? {},
+        });
+        enterScene({
+          id: `req-a-${Date.now()}`,
+          role: 'assistant',
+          content: completeSlots ? buildRequirementSummary(completeSlots) : buildRequirementOpening(),
+          module: '需求登记',
+          quickActions: completeSlots ? getRequirementQuickActions('summary') : undefined,
+          time: nowStr(),
+        });
+        return true;
+      }
+      case 'ledger-query': {
+        resetFlows();
+        const next = getLedgerReply({ sessionId }, text, role);
+        setLedgerFlow(next.flow);
+        enterScene({
+          id: `ledger-a-${Date.now()}`,
+          role: 'assistant',
+          content: next.reply,
+          module: next.module,
+          link: next.link,
+          quickActions: next.quickActions,
+          candidates: next.candidates,
+          reportCard: next.reportCard,
+          time: nowStr(),
+        });
+        return true;
+      }
+      case 'access-apply': {
+        resetFlows();
+        const completeSlots = extractCompleteAccessSlots(text);
+        const readySlots = completeSlots ? normalizeAccessReadySlots(completeSlots) : null;
+        const materialComplete = readySlots ? isAccessMaterialsComplete(readySlots) : false;
+        setAccessFlow({
+          sessionId,
+          step: readySlots ? (materialComplete ? 'summary' : 'materialConfirm') : 'collectMaterial',
+          slots: readySlots ?? {},
+        });
+        enterScene({
+          id: `access-a-${Date.now()}`,
+          role: 'assistant',
+          content: readySlots
+            ? materialComplete
+              ? buildAccessReadySummary(readySlots)
+              : buildAccessMaterialCheck(readySlots)
+            : buildAccessOpening(),
+          module: '接入申请',
+          quickActions: readySlots
+            ? materialComplete
+              ? ACCESS_SUBMIT_QUICK_ACTIONS
+              : ['上传备案材料']
+            : ['上传技术规格书.docx，并口述产品说明', '文字描述糖尿病随访助手', '我先口述材料内容'],
+          time: nowStr(),
+        });
+        return true;
+      }
+      case 'access-audit': {
+        resetFlows();
+        const flow = createAccessAuditFlow(sessionId);
+        setAccessAuditFlow(flow);
+        enterScene({
+          id: `access-audit-a-${Date.now()}`,
+          role: 'assistant',
+          content: buildAccessAuditOpening(flow),
+          module: '接入审核',
+          accessAuditTable: { rows: accessAuditPending(flow) },
+          quickActions: ['批量通过建议通过', '查看 0201-0004', '只看建议退回修改'],
+          time: nowStr(),
+        });
+        return true;
+      }
+      case 'resource-register': {
+        resetFlows();
+        setResourceRegisterFlow({ sessionId, step: 'n1', slots: {} });
+        enterScene({
+          id: `resource-register-a-${Date.now()}`,
+          role: 'assistant',
+          content: buildResourceRegisterOpening(),
+          module: '资源注册',
+          quickActions: ['注册 PACS', '注册 HIS', '登记 EMR 系统接口'],
+          time: nowStr(),
+        });
+        return true;
+      }
+      case 'resource-apply': {
+        resetFlows();
+        setResourceApplyFlow({ sessionId, step: 'n1', slots: {} });
+        enterScene({
+          id: `resource-a-${Date.now()}`,
+          role: 'assistant',
+          content: buildResourceOpening(),
+          module: '资源申请',
+          quickActions: ['糖尿病随访管理助手', '智能导诊助手 v2.3', '心血管随访助手 v1.2'],
+          time: nowStr(),
+        });
+        return true;
+      }
+      case 'resource-audit': {
+        resetFlows();
+        const flow = createResourceAuditFlow(sessionId);
+        setResourceAuditFlow(flow);
+        enterScene({
+          id: `resource-audit-a-${Date.now()}`,
+          role: 'assistant',
+          content: buildResourceAuditOpening(flow),
+          module: '资源审核',
+          quickActions: ['看第一条', '暂停并保存进度', '查看本批次汇总'],
+          time: nowStr(),
+        });
+        return true;
+      }
+      case 'evaluation-create': {
+        if (!isItAdmin) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `evaluation-deny-${Date.now()}`,
+              role: 'assistant',
+              content: EVALUATION_SCENE.noPermission,
+              module: '新建评测',
+              time: nowStr(),
+            },
+          ]);
+          setIsNewTaskView(false);
+          return true;
+        }
+        resetFlows();
+        setEvaluationFlow({ sessionId, step: 'n1', slots: {} });
+        enterScene({
+          id: `evaluation-a-${Date.now()}`,
+          role: 'assistant',
+          content: buildEvaluationOpening(),
+          module: '新建评测',
+          quickActions: ['第一个，标准评测', '这批都评一下，标准评测', '影像报告解读助手，深度评测'],
+          time: nowStr(),
+        });
+        return true;
+      }
+      case 'evaluation-audit': {
+        resetFlows();
+        const flow = createEvaluationAuditFlow(sessionId);
+        setEvaluationAuditFlow(flow);
+        enterScene({
+          id: `evaluation-audit-a-${Date.now()}`,
+          role: 'assistant',
+          content: buildEvaluationAuditOpening(flow),
+          module: '评测审核',
+          quickActions: ['看第一条', '查看批次汇总', '暂停审核'],
+          time: nowStr(),
+        });
+        return true;
+      }
+      case 'monitor-info': {
+        resetFlows();
+        const next = getMonitorReply({ sessionId }, text, role);
+        setMonitorFlow(next.flow);
+        enterScene({
+          id: `monitor-a-${Date.now()}`,
+          role: 'assistant',
+          content: next.reply,
+          module: '监控信息查看',
+          link: next.link,
+          quickActions: next.quickActions,
+          reportCard: next.reportCard,
+          monitorAlertTable: next.monitorAlertTable,
+          time: nowStr(),
+        });
+        return true;
+      }
+      case 'alert-rule-config': {
+        resetFlows();
+        const next = getAlertRuleConfigReply(text);
+        enterScene({
+          id: `alert-rule-a-${Date.now()}`,
+          role: 'assistant',
+          content: next.reply,
+          module: '告警规则配置',
+          quickActions: next.quickActions,
+          time: nowStr(),
+        });
+        return true;
+      }
+      default:
+        return false;
+    }
+  }, [isItAdmin, role]);
 
   /* 1.5 自动化任务新建成功 → 右侧对话区推一条「任务创建成功」气泡 + 链接到 1.5 分组 */
   const handleAutoTaskCreated = useCallback(
@@ -1444,8 +2061,65 @@ const HomePage = () => {
       content: text,
       time: nowStr(),
     };
-    setMessages((prev) => [...prev, userMsg]);
     setDraft('');
+
+    const isFreshHomeQuestion =
+      !activeSessionId &&
+      !requirementFlow &&
+      !ledgerFlow &&
+      !accessFlow &&
+      !resourceRegisterFlow &&
+      !resourceApplyFlow &&
+      !resourceAuditFlow &&
+      !evaluationFlow &&
+      !evaluationAuditFlow &&
+      !monitorFlow &&
+      !accessAuditFlow;
+
+    if (isFreshHomeQuestion) {
+      setMiddleView('overview');
+      setMessages([userMsg]);
+      setLoading(true);
+      window.setTimeout(() => {
+        const routedScene = classifyBusinessScene(text);
+        if (routedScene && startBusinessSceneFromInput(routedScene, text)) {
+          setLoading(false);
+          return;
+        }
+
+        const closestScene = suggestBusinessScene(text);
+        const sessionId = `clarify-${Date.now()}`;
+        const title = text.length > 14 ? `${text.slice(0, 14)}...` : text;
+        setExtraSessions((prev) => [{ id: sessionId, title, updatedAt: '刚刚' }, ...prev]);
+        setActiveSessionId(sessionId);
+        setRequirementFlow(null);
+        setLedgerFlow(null);
+        setAccessFlow(null);
+        setResourceRegisterFlow(null);
+        setResourceApplyFlow(null);
+        setResourceAuditFlow(null);
+        setEvaluationFlow(null);
+        setEvaluationAuditFlow(null);
+        setMonitorFlow(null);
+        setAccessAuditFlow(null);
+        setIsNewTaskView(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `clarify-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: `我暂时没能准确对应到具体业务场景。你是不是想「${closestScene.label}」？`,
+            module: '意图澄清',
+            quickActions: [`是，我想${closestScene.label}`, '不是，重新描述'],
+            time: nowStr(),
+          },
+        ]);
+        setLoading(false);
+      }, 1200);
+      return;
+    }
+
+    setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
     window.setTimeout(() => {
       if (
@@ -1459,12 +2133,13 @@ const HomePage = () => {
           ...next.replies.map((content, index) => ({
             id: `req-a-${Date.now()}-${index}`,
             role: 'assistant' as const,
-            content,
-            module: '需求登记',
-            link: index === next.replies.length - 1 ? next.link : undefined,
-            quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
-            time: nowStr(),
-          })),
+          content,
+          module: '需求登记',
+          link: index === next.replies.length - 1 ? next.link : undefined,
+          actionLinks: index === next.replies.length - 1 ? next.actionLinks : undefined,
+          quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
+          time: nowStr(),
+        })),
         ]);
         setRequirementFlow(next.flow);
         setExtraSessions((prev) =>
@@ -1506,6 +2181,7 @@ const HomePage = () => {
             content,
             module: '接入申请',
             link: index === next.replies.length - 1 ? next.link : undefined,
+            actionLinks: index === next.replies.length - 1 ? next.actionLinks : undefined,
             quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
             time: nowStr(),
           })),
@@ -1789,6 +2465,7 @@ const HomePage = () => {
             content,
             module: '接入审核',
             link: index === next.replies.length - 1 ? next.link : undefined,
+            accessAuditTable: index === next.replies.length - 1 ? next.accessAuditTable : undefined,
             quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
             time: nowStr(),
           })),
@@ -1822,6 +2499,61 @@ const HomePage = () => {
         setLoading(false);
         return;
       }
+      if (activeSessionId?.startsWith('alert-rule-')) {
+        const next = getAlertRuleConfigReply(text);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `alert-rule-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: next.reply,
+            module: '告警规则配置',
+            quickActions: next.quickActions,
+            time: nowStr(),
+          },
+        ]);
+        setExtraSessions((prev) =>
+          prev.map((s) => (s.id === activeSessionId ? { ...s, updatedAt: '刚刚' } : s)),
+        );
+        setLoading(false);
+        return;
+      }
+      const routedScene = classifyBusinessScene(text);
+      if (routedScene && startBusinessSceneFromInput(routedScene, text)) {
+        setLoading(false);
+        return;
+      }
+      const closestScene = suggestBusinessScene(text);
+      if (!activeSessionId) {
+        const sessionId = `clarify-${Date.now()}`;
+        const title = text.length > 14 ? `${text.slice(0, 14)}...` : text;
+        setExtraSessions((prev) => [{ id: sessionId, title, updatedAt: '刚刚' }, ...prev]);
+        setActiveSessionId(sessionId);
+        setRequirementFlow(null);
+        setLedgerFlow(null);
+        setAccessFlow(null);
+        setResourceRegisterFlow(null);
+        setResourceApplyFlow(null);
+        setResourceAuditFlow(null);
+        setEvaluationFlow(null);
+        setEvaluationAuditFlow(null);
+        setMonitorFlow(null);
+        setAccessAuditFlow(null);
+        setIsNewTaskView(false);
+      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `clarify-a-${Date.now()}`,
+          role: 'assistant' as const,
+          content: `我暂时没能准确对应到具体业务场景。你是不是想「${closestScene.label}」？`,
+          module: '意图澄清',
+          quickActions: [`是，我想${closestScene.label}`, '不是，重新描述'],
+          time: nowStr(),
+        },
+      ]);
+      setLoading(false);
+      return;
       if (!activeSessionId && isDirectEvaluationCreateText(text)) {
         if (!isItAdmin) {
           setMessages((prev) => [
@@ -1964,9 +2696,16 @@ const HomePage = () => {
       }
       if (!activeSessionId && isDirectAccessText(text)) {
         const sessionId = `access-${Date.now()}`;
+        const completeSlots = extractCompleteAccessSlots(text);
+        const readySlots = completeSlots ? normalizeAccessReadySlots(completeSlots) : null;
+        const materialComplete = readySlots ? isAccessMaterialsComplete(readySlots) : false;
         setExtraSessions((prev) => [{ id: sessionId, title: '接入申请', updatedAt: '刚刚' }, ...prev]);
         setActiveSessionId(sessionId);
-        setAccessFlow({ sessionId, step: 'collectMaterial', slots: {} });
+        setAccessFlow({
+          sessionId,
+          step: readySlots ? (materialComplete ? 'summary' : 'materialConfirm') : 'collectMaterial',
+          slots: readySlots ?? {},
+        });
         setRequirementFlow(null);
         setLedgerFlow(null);
         setResourceRegisterFlow(null);
@@ -1982,9 +2721,17 @@ const HomePage = () => {
           {
             id: `access-a-${Date.now()}`,
             role: 'assistant' as const,
-            content: buildAccessOpening(),
+            content: readySlots
+              ? materialComplete
+                ? buildAccessReadySummary(readySlots)
+                : buildAccessMaterialCheck(readySlots)
+              : buildAccessOpening(),
             module: '接入申请',
-            quickActions: ['上传技术规格书.docx，并口述产品说明', '文字描述糖尿病随访助手', '我先口述材料内容'],
+            quickActions: readySlots
+              ? materialComplete
+                ? ACCESS_SUBMIT_QUICK_ACTIONS
+                : ['上传备案材料']
+              : ['上传技术规格书.docx，并口述产品说明', '文字描述糖尿病随访助手', '我先口述材料内容'],
             time: nowStr(),
           },
         ]);
@@ -1992,6 +2739,23 @@ const HomePage = () => {
         return;
       }
       const r = pickReply(text);
+      if (!activeSessionId) {
+        const sessionId = `chat-${Date.now()}`;
+        const title = text.length > 14 ? `${text.slice(0, 14)}...` : text;
+        setExtraSessions((prev) => [{ id: sessionId, title, updatedAt: '刚刚' }, ...prev]);
+        setActiveSessionId(sessionId);
+        setRequirementFlow(null);
+        setLedgerFlow(null);
+        setAccessFlow(null);
+        setResourceRegisterFlow(null);
+        setResourceApplyFlow(null);
+        setResourceAuditFlow(null);
+        setEvaluationFlow(null);
+        setEvaluationAuditFlow(null);
+        setMonitorFlow(null);
+        setAccessAuditFlow(null);
+        setIsNewTaskView(false);
+      }
       setMessages((prev) => [
         ...prev,
         {
@@ -2052,6 +2816,10 @@ const HomePage = () => {
       startMonitorInfo();
       return;
     }
+    if (tag.key === 'alert-rule-config') {
+      startAlertRuleConfig();
+      return;
+    }
     handleSend(tag.prompt);
   };
 
@@ -2101,6 +2869,8 @@ const HomePage = () => {
             autoTasks={autoTasks}
             sessions={[...extraSessions, ...initialSessions]}
             activeSessionId={activeSessionId}
+            generatingSessionId={loading ? activeSessionId : null}
+            newReplySessionIds={newReplySessionIds}
           />
         </Col>
 
@@ -2203,7 +2973,13 @@ const HomePage = () => {
                 key={m.id}
                 msg={m}
                 navigate={navigate}
-                onQuickAction={handleSend}
+                onQuickAction={(action) => {
+                  if (action === '上传备案材料') {
+                    uploadInputRef.current?.click();
+                    return;
+                  }
+                  handleSend(action);
+                }}
                 onMetricClick={(label) => navigate(resolveLedgerMetricRoute(label))}
               />
             ))
@@ -2229,6 +3005,10 @@ const HomePage = () => {
 
         {/* 2.3 指令输入区 */}
         <div
+          onDragEnter={handleInputDragOver}
+          onDragOver={handleInputDragOver}
+          onDragLeave={handleInputDragLeave}
+          onDrop={handleInputDrop}
           style={{
             padding: '10px 24px 14px',
             borderTop: '1px solid #F0F0F0',
@@ -2239,57 +3019,137 @@ const HomePage = () => {
           {isNewTaskView && (
             <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 8,
+                position: 'relative',
                 marginBottom: 6,
+                minWidth: 0,
               }}
             >
-              {sceneTags.filter((t) => !['evaluation-create', 'evaluation-audit', 'access-audit', 'resource-audit'].includes(t.key) || isItAdmin).map((t) => (
-                <div
-                  key={t.key}
-                  onClick={() => handleSceneTagClick(t)}
+              {sceneTagScrollState.left && (
+                <Button
+                  type="text"
+                  shape="circle"
+                  size="small"
+                  icon={<LeftOutlined />}
+                  aria-label="向左滑动业务标签"
+                  onClick={() => scrollSceneTags('left')}
                   style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    background: '#FFFFFF',
-                    border: '1px solid #D9D9D9',
-                    borderRadius: 999,
-                    padding: '4px 12px',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    color: '#262626',
-                    transition: 'all 0.15s',
+                    position: 'absolute',
+                    left: 0,
+                    top: '50%',
+                    zIndex: 2,
+                    transform: 'translateY(-50%)',
+                    background: 'rgba(255, 255, 255, 0.92)',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#1677FF';
-                    e.currentTarget.style.color = '#1677FF';
+                />
+              )}
+              <div
+                ref={sceneTagScrollRef}
+                onScroll={updateSceneTagScrollState}
+                className="home-v1-scene-tag-scrollbar"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'nowrap',
+                  gap: 8,
+                  overflowX: 'auto',
+                  overflowY: 'hidden',
+                  minWidth: 0,
+                  padding: '2px 0',
+                  scrollBehavior: 'smooth',
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none',
+                }}
+              >
+                {visibleSceneTags.map((t) => (
+                  <div
+                    key={t.key}
+                    onClick={() => handleSceneTagClick(t)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      flex: '0 0 auto',
+                      gap: 6,
+                      background: '#FFFFFF',
+                      border: '1px solid #D9D9D9',
+                      borderRadius: 999,
+                      padding: '4px 12px',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      lineHeight: '20px',
+                      whiteSpace: 'nowrap',
+                      color: '#262626',
+                      transition: 'all 0.15s',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#1677FF';
+                      e.currentTarget.style.color = '#1677FF';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = '#D9D9D9';
+                      e.currentTarget.style.color = '#262626';
+                    }}
+                    data-testid={`home-v1-scene-${t.key}`}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 12 }}>{t.icon}</span>
+                    <span>{t.label}</span>
+                  </div>
+                ))}
+              </div>
+              {sceneTagScrollState.right && (
+                <Button
+                  type="text"
+                  shape="circle"
+                  size="small"
+                  icon={<RightOutlined />}
+                  aria-label="向右滑动业务标签"
+                  onClick={() => scrollSceneTags('right')}
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: '50%',
+                    zIndex: 2,
+                    transform: 'translateY(-50%)',
+                    background: 'rgba(255, 255, 255, 0.92)',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
                   }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = '#D9D9D9';
-                    e.currentTarget.style.color = '#262626';
-                  }}
-                  data-testid={`home-v1-scene-${t.key}`}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 12 }}>{t.icon}</span>
-                  <span>{t.label}</span>
-                </div>
-              ))}
+                />
+              )}
             </div>
           )}
           <div
+            onDragEnter={handleInputDragOver}
+            onDragOver={handleInputDragOver}
+            onDragLeave={handleInputDragLeave}
+            onDrop={handleInputDrop}
             style={{
-              border: '1px solid #D9D9D9',
+              border: `1px solid ${isInputDragOver ? '#1677FF' : '#D9D9D9'}`,
               borderRadius: 10,
               padding: '6px 10px',
-              background: '#FFFFFF',
+              background: isInputDragOver ? '#F0F7FF' : '#FFFFFF',
+              boxShadow: isInputDragOver ? '0 0 0 3px rgba(22, 119, 255, 0.12)' : 'none',
+              transition: 'border-color 0.15s, box-shadow 0.15s, background 0.15s',
             }}
           >
+            {isInputDragOver && (
+              <div
+                style={{
+                  marginBottom: 4,
+                  color: '#1677FF',
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                松开即可上传文件
+              </div>
+            )}
             <TextArea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onDragEnter={handleInputDragOver}
+              onDragOver={handleInputDragOver}
+              onDragLeave={handleInputDragLeave}
+              onDrop={handleInputDrop}
               onPressEnter={(e) => {
                 if (!e.shiftKey) {
                   e.preventDefault();
@@ -2311,6 +3171,19 @@ const HomePage = () => {
               }}
             >
               {/* 左侧:「+」下拉(添加文件 / 连接器) */}
+              <input
+                ref={uploadInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,image/*"
+                style={{ display: 'none' }}
+                onChange={(event) => {
+                  handleUploadFiles(event.target.files);
+                  event.target.value = '';
+                }}
+                aria-hidden="true"
+                tabIndex={-1}
+              />
               <Dropdown
                 menu={{
                   items: [
@@ -2327,7 +3200,7 @@ const HomePage = () => {
                   ],
                   onClick: ({ key }) => {
                     if (key === 'file') {
-                      message.info('附件上传:v1.1 开放', 2);
+                      uploadInputRef.current?.click();
                     } else if (key === 'connector') {
                       setConnectorOpen(true);
                     }
@@ -2484,6 +3357,7 @@ const MessageBubble = ({
   onMetricClick?: (text: string) => void;
 }) => {
   const isUser = msg.role === 'user';
+  const isWideAssistantContent = !isUser && Boolean(msg.accessAuditTable);
   return (
     <div
       style={{
@@ -2499,7 +3373,12 @@ const MessageBubble = ({
       ) : (
         <AgentRobotIcon mood="happy" size={28} />
       )}
-      <div style={{ maxWidth: '78%' }}>
+      <div
+        style={{
+          maxWidth: isWideAssistantContent ? 'calc(100% - 44px)' : '78%',
+          width: isWideAssistantContent ? 'calc(100% - 44px)' : undefined,
+        }}
+      >
         {!isUser && msg.module && (
           <div style={{ marginBottom: 4 }}>
             <Tag color="blue" style={{ fontSize: 11 }}>
@@ -2635,6 +3514,13 @@ const MessageBubble = ({
               onQuickAction={onQuickAction}
             />
           )}
+          {!isUser && msg.accessAuditTable && (
+            <AccessAuditTableView
+              table={msg.accessAuditTable}
+              navigate={navigate}
+              onQuickAction={onQuickAction}
+            />
+          )}
           {msg.link && (
             <div style={{ marginTop: 8 }}>
               <Button
@@ -2646,6 +3532,24 @@ const MessageBubble = ({
               >
                 {msg.link.text} →
               </Button>
+            </div>
+          )}
+          {!isUser && Array.isArray(msg.actionLinks) && msg.actionLinks.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {msg.actionLinks.map((action: { to: string; text: string; download?: boolean }) => (
+                <Button
+                  key={`${action.text}-${action.to}`}
+                  size="small"
+                  style={{ borderRadius: 999, fontSize: 11, minHeight: 26, height: 'auto' }}
+                  onClick={() => {
+                    const url = new URL(action.to, window.location.origin);
+                    window.open(url.toString(), '_blank', 'noopener,noreferrer');
+                  }}
+                  data-testid="home-v1-action-link"
+                >
+                  {action.text}
+                </Button>
+              ))}
             </div>
           )}
           {!isUser && Array.isArray(msg.quickActions) && msg.quickActions.length > 0 && (
@@ -2682,6 +3586,153 @@ const MessageBubble = ({
         >
           {msg.time}
         </div>
+      </div>
+    </div>
+  );
+};
+
+const accessAuditRouteByCode: Record<string, string> = {
+  '0503-0001': '/app/agent-center/audit/acc-xg-001',
+  '0201-0006': '/app/agent-center/audit/acc-004',
+  '0201-0004': '/app/agent-center/audit/acc-009',
+};
+
+const AccessAuditTableView = ({
+  table,
+  navigate,
+  onQuickAction,
+}: {
+  table: AccessAuditTable;
+  navigate: (to: string) => void;
+  onQuickAction?: (text: string) => void;
+}) => {
+  const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
+  const rows = table.rows;
+  const allSelected = rows.length > 0 && selectedCodes.length === rows.length;
+  const partiallySelected = selectedCodes.length > 0 && selectedCodes.length < rows.length;
+  const selectedText = selectedCodes.join(' ');
+
+  const openAuditPage = (agent: AccessAuditAgent) => {
+    const to = accessAuditRouteByCode[agent.code] ?? '/app/agent-center?tab=待审核';
+    const url = new URL(to, window.location.origin);
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
+  };
+
+  if (!rows.length) {
+    return (
+      <div
+        style={{
+          marginTop: 10,
+          border: '1px solid #D9E8FF',
+          background: '#F7FBFF',
+          borderRadius: 8,
+          padding: 10,
+        }}
+        data-testid="home-v1-access-audit-empty"
+      >
+        <Text style={{ fontSize: 12 }}>{table.emptyText ?? '当前暂无待接入审核申请。'}</Text>
+        <div style={{ marginTop: 8 }}>
+          <Button size="small" onClick={() => navigate('/app/agent-center?tab=待审核')}>
+            打开接入中心
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        border: '1px solid #E5E7EB',
+        background: '#FFFFFF',
+        borderRadius: 8,
+        overflow: 'hidden',
+      }}
+      data-testid="home-v1-access-audit-table"
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, borderBottom: '1px solid #F0F0F0', flexWrap: 'wrap' }}>
+        <Checkbox
+          indeterminate={partiallySelected}
+          checked={allSelected}
+          onChange={(event) => setSelectedCodes(event.target.checked ? rows.map((row) => row.code) : [])}
+        >
+          全选
+        </Checkbox>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          已选 {selectedCodes.length} / {rows.length}
+        </Text>
+        <span style={{ flex: 1 }} />
+        <Button
+          size="small"
+          type="primary"
+          disabled={!selectedCodes.length}
+          onClick={() => onQuickAction?.(`审核通过 ${selectedText}`)}
+        >
+          审核通过
+        </Button>
+        <Button
+          size="small"
+          danger
+          disabled={!selectedCodes.length}
+          onClick={() => onQuickAction?.(`审核不通过 ${selectedText}：依据预审建议退回修改`)}
+        >
+          审核不通过
+        </Button>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1320, fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: '#FAFAFA', color: '#595959' }}>
+              <th style={monitorThStyle}>选择</th>
+              <th style={monitorThStyle}>智能体名称</th>
+              <th style={monitorThStyle}>所属科室</th>
+              <th style={monitorThStyle}>诊断环节</th>
+              <th style={monitorThStyle}>智能体来源</th>
+              <th style={monitorThStyle}>供应商名称</th>
+              <th style={monitorThStyle}>核心功能</th>
+              <th style={monitorThStyle}>智能体版本</th>
+              <th style={monitorThStyle}>预审建议</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.code}>
+                <td style={monitorTdStyle}>
+                  <Checkbox
+                    checked={selectedCodes.includes(row.code)}
+                    onChange={(event) => {
+                      setSelectedCodes((prev) =>
+                        event.target.checked
+                          ? Array.from(new Set([...prev, row.code]))
+                          : prev.filter((code) => code !== row.code),
+                      );
+                    }}
+                    aria-label={`选择${row.name}`}
+                  />
+                </td>
+                <td style={{ ...monitorTdStyle, minWidth: 190 }}>
+                  <Button type="link" size="small" style={{ padding: 0, height: 'auto', whiteSpace: 'normal', textAlign: 'left' }} onClick={() => openAuditPage(row)}>
+                    {row.name}
+                  </Button>
+                  <div style={{ color: '#8C8C8C', fontSize: 11 }}>{row.code}</div>
+                </td>
+                <td style={monitorTdStyle}>{row.department}</td>
+                <td style={monitorTdStyle}>{row.clinicStage}</td>
+                <td style={monitorTdStyle}>{row.source}</td>
+                <td style={monitorTdStyle}>{row.vendor}</td>
+                <td style={{ ...monitorTdStyle, minWidth: 320 }}>{row.description}</td>
+                <td style={monitorTdStyle}>{row.version}</td>
+                <td style={{ ...monitorTdStyle, minWidth: 150 }}>
+                  <Tag color={row.precheck === '建议通过' ? 'green' : 'orange'} style={{ marginInlineEnd: 0 }}>
+                    {row.precheck}
+                  </Tag>
+                  <div style={{ color: '#8C8C8C', fontSize: 11, marginTop: 2 }}>{row.precheckSummary}</div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -2854,7 +3905,7 @@ function resolveLedgerMetricRoute(label: string): string {
 function buildGreeting(role: '信息科管理员' | '科室管理员', userName?: string): string {
   const who = userName ?? '用户';
   return role === '信息科管理员'
-    ? `您好,${who},我是医小管,请问有什么能帮到您?\n\n我可以帮您一站式处理:\n- **智能体接入** 审批/申请\n- **统一台账** 查询/统计\n- **运行监控** 告警/报告`
+    ? `您好,${who},我是医小管,请问有什么能帮到您?`
     : `您好,${who},我是医小管,请问有什么能帮到您?\n\n我可以帮您快速:\n- 查找本科室可用的智能体\n- 提报建设需求 / 跟踪接入审批\n- 了解本科室本月调用与告警情况`;
 }
 
@@ -2984,6 +4035,19 @@ function locateAccessAuditAgent(flow: AccessAuditFlow, text: string): AccessAudi
   });
 }
 
+function locateAccessAuditAgents(flow: AccessAuditFlow, text: string): AccessAuditAgent[] {
+  const pending = accessAuditPending(flow);
+  const normalized = text.toLowerCase();
+  const matched = pending.filter((agent) => {
+    const codeHit = normalized.includes(agent.code.toLowerCase());
+    const nameHit = normalized.includes(agent.name.toLowerCase()) || normalized.includes(agent.name.toLowerCase().slice(0, 4));
+    return codeHit || nameHit;
+  });
+  if (matched.length > 0) return matched;
+  const single = locateAccessAuditAgent(flow, text);
+  return single ? [single] : [];
+}
+
 function accessAuditBatchTime() {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -2999,14 +4063,10 @@ function formatAccessAuditQueue(flow: AccessAuditFlow, agents = accessAuditPendi
 
 function buildAccessAuditOpening(flow: AccessAuditFlow): string {
   const pending = accessAuditPending(flow);
-  return `你好！我是医小管。目前待审核 ${pending.length} 个智能体，我已完成预审并给出结论：
-${formatAccessAuditQueue(flow, pending)}
+  if (!pending.length) return '已识别意图：接入审核。当前暂无待接入审核申请。';
+  return `已识别意图：接入审核。当前待接入审核 ${pending.length} 项，列表如下。
 
-可直接说、打字或点击队列条目开始。支持：
-- 批量通过：仅批量采纳预审“建议通过”项
-- 按编号/名称/自然语言定位单个
-- 按预审结论筛选，例如“只看要退回的”
-- 主动暂停，本次未处理项保持待审核`;
+您可以在列表中单选或多选后执行“审核通过 / 审核不通过”；点击智能体名称可在新页面查看待审核信息。`;
 }
 
 function buildAccessAuditDetail(agent: AccessAuditAgent, full = false): string {
@@ -3123,6 +4183,7 @@ ${formatAccessAuditQueue(flow)}
 
 请继续选择审核对象，或说“暂停审核”。`,
     ],
+    accessAuditTable: { rows: accessAuditPending(flow) },
     quickActions: ['查看下一条', '只看建议退回修改', '暂停审核'],
   };
 }
@@ -3135,10 +4196,14 @@ function getAccessAuditNext(
   flow: AccessAuditFlow;
   replies: string[];
   link?: { to: string; text: string };
+  accessAuditTable?: AccessAuditTable;
   quickActions?: string[];
 } {
   const normalized = text.trim();
   const yes = /确认|同意|是|对|没问题|执行|批量通过/.test(normalized);
+  const explicitAgents = locateAccessAuditAgents(flow, normalized);
+  const isRejectAction = /审核不通过|不通过|退回|驳回/.test(normalized);
+  const isPassAction = !isRejectAction && /审核通过|通过/.test(normalized);
 
   if (/暂停|先停|结束/.test(normalized)) {
     return finishAccessAuditIfNeeded(flow, ['已暂停本次接入审核。未处理项保持待审核。'], true);
@@ -3188,6 +4253,50 @@ function getAccessAuditNext(
       replies: [`好的，预审“建议通过”共 ${candidates.length} 个：${candidates.map((agent) => `${agent.code} ${agent.name}`).join('、')}。确认全部审核通过吗？`],
       quickActions: ['确认批量通过', '取消'],
     };
+  }
+
+  if (isPassAction && explicitAgents.length > 0) {
+    const pendingDecision: AccessAuditPendingDecision = {
+      codes: explicitAgents.map((agent) => agent.code),
+      result: '审核通过',
+      batch: explicitAgents.length > 1,
+      overridePrecheck: explicitAgents.some((agent) => agent.precheck !== '建议通过'),
+    };
+    if (pendingDecision.overridePrecheck) {
+      return {
+        flow: { ...flow, step: 'n3', pendingDecision },
+        replies: [`已选择 ${explicitAgents.map((agent) => `${agent.code} ${agent.name}`).join('、')}。其中存在预审非“建议通过”的项目，请确认是否覆盖预审并审核通过？`],
+        quickActions: ['确认覆盖预审并通过', '取消'],
+      };
+    }
+    const applied = applyAccessAuditDecision(flow, pendingDecision, reviewer);
+    return finishAccessAuditIfNeeded(applied.flow, [applied.receipt]);
+  }
+
+  if (isRejectAction && explicitAgents.length > 0) {
+    const reasonMatch = normalized.match(/(?:审核不通过|不通过|退回修改|退回|驳回|说明|原因)[:：]?\s*(.+)/);
+    const rawReason = reasonMatch?.[1]?.trim();
+    const reason = rawReason && rawReason.length >= 6
+      ? rawReason
+      : explicitAgents.length === 1
+        ? `依据预审意见退回修改：${explicitAgents[0].precheckSummary}`
+        : '依据预审意见退回修改，请申请人按各项预审建议补充材料或修正接入配置后重新提交';
+    const pendingDecision: AccessAuditPendingDecision = {
+      codes: explicitAgents.map((agent) => agent.code),
+      result: '退回修改',
+      reason,
+      batch: explicitAgents.length > 1,
+      overridePrecheck: explicitAgents.some((agent) => agent.precheck !== '建议退回修改'),
+    };
+    if (pendingDecision.overridePrecheck) {
+      return {
+        flow: { ...flow, step: 'n3', pendingDecision },
+        replies: [`已选择 ${explicitAgents.map((agent) => `${agent.code} ${agent.name}`).join('、')} 退回修改。部分项目预审为“建议通过”，请确认是否覆盖预审并退回？\n\n待修改说明：${reason}`],
+        quickActions: ['确认覆盖预审并退回', '取消'],
+      };
+    }
+    const applied = applyAccessAuditDecision(flow, pendingDecision, reviewer);
+    return finishAccessAuditIfNeeded(applied.flow, [applied.receipt]);
   }
 
   const current = flow.selectedCode ? flow.agents.find((agent) => agent.code === flow.selectedCode) : undefined;
@@ -5541,7 +6650,7 @@ function isDirectMonitorText(text: string) {
 }
 
 function isDirectRequirementText(text: string) {
-  return /我想提需求|想建一个智能体|帮我登记个需求|登记.*需求|建设需求|提报需求|智能体建设需求|需求登记/.test(text.trim());
+  return /我想提需求|想建一个智能体|搭建.*智能体|建.*智能体|帮我登记个需求|登记.*需求|建设需求|提报需求|智能体建设需求|需求登记/.test(text.trim());
 }
 
 function isDirectEvaluationCreateText(text: string) {
@@ -5553,8 +6662,10 @@ function isDirectResourceRegisterText(text: string) {
 }
 
 function isDirectAccessText(text: string) {
-  return /我要接入智能体|我要做纳管申请|帮我注册一个智能体|接入注册|接入申请|纳管申请|注册.*智能体|申请接入平台/.test(text.trim());
+  return /我要接入.*智能体|我要做纳管申请|帮我注册一个智能体|接入注册|接入申请|纳管申请|注册.*智能体|申请接入平台/.test(text.trim());
 }
+
+const ACCESS_DEMO_DETAIL_ID = 'acc-xg-001';
 
 const ACCESS_SCENE = {
   opening:
@@ -5566,17 +6677,34 @@ const ACCESS_SCENE = {
   mock: {
     parseMaterial(text: string): AccessSlots {
       const accessMethod = /SDK/i.test(text) ? 'SDK' : /OTel/i.test(text) ? 'OTel' : 'API';
+      const uploaded = extractAccessUploadedMaterials(text);
+      const isUltrasoundAppointment = /超声/.test(text) && /预约/.test(text);
       return {
-        version: /(?:^|[^\d])([1-9]\d*\.\d)(?:[^\d]|$)/.test(text) ? text.match(/([1-9]\d*\.\d)/)?.[1] : '2.1',
+        agentName: isUltrasoundAppointment ? '超声检查预约助手' : undefined,
+        version: isUltrasoundAppointment
+          ? '1.0'
+          : /(?:^|[^\d])([1-9]\d*\.\d)(?:[^\d]|$)/.test(text)
+            ? text.match(/([1-9]\d*\.\d)/)?.[1]
+            : '2.1',
+        ...extractAccessDepartment(text),
+        clinicStage: extractAccessClinicStage(text),
         source: /自研/.test(text) ? '自研' : /第三方|采购|外采/.test(text) ? '第三方' : '合作研发',
         vendor: /健康|科技|公司/.test(text) ? '智医健康科技有限公司' : '智医健康科技有限公司',
         contact: /陈明/.test(text) ? '陈明' : '陈明',
-        phone: text.match(/\b1\d{10}\b/)?.[0] ?? '13812345678',
+        phone: text.match(/\b1\d{10}\b/)?.[0] ?? (isUltrasoundAppointment ? '13800138000' : '13812345678'),
         accessMethod,
-        endpoint: accessMethod === 'API' ? 'https://api.xxhealth.com/dm-followup/v2' : 'https://sdk.xxhealth.com/platform',
+        endpoint: isUltrasoundAppointment
+          ? 'https://api.hospital.local/agent/access/v1'
+          : accessMethod === 'API'
+            ? 'https://api.xxhealth.com/dm-followup/v2'
+            : 'https://sdk.xxhealth.com/platform',
         apiKeyMasked: '********',
-        functionDescription: buildAccessFunctionDescription(),
-        materials: ['技术规格书.docx（已解析，需转 PDF 留存）'],
+        functionDescription: isUltrasoundAppointment
+          ? buildAccessFunctionDescription('超声')
+          : buildAccessFunctionDescription(),
+        materials: uploaded.materials.length > 0 ? uploaded.materials : ['技术规格书.docx（已解析，需转 PDF 留存）'],
+        techSpecUploaded: uploaded.techSpecUploaded || /技术规格|技术文档|接口文档|规格书/.test(text),
+        productDocUploaded: uploaded.productDocUploaded,
       };
     },
     testConnectivity(slots: AccessSlots, fixed = false) {
@@ -5594,7 +6722,148 @@ const ACCESS_SCENE = {
   },
 };
 
-function buildAccessFunctionDescription(): string {
+function extractAccessDepartment(text: string): Pick<AccessSlots, 'department' | 'departmentCode'> {
+  if (/超声|超声医学/.test(text)) return { department: '超声医学科', departmentCode: '0601' };
+  if (/内分泌/.test(text)) return { department: '内分泌科', departmentCode: '0503' };
+  if (/影像|放射/.test(text)) return { department: '影像科', departmentCode: '0201' };
+  if (/心内|心血管/.test(text)) return { department: '心内科', departmentCode: '0301' };
+  if (/门诊/.test(text)) return { department: '门诊部', departmentCode: '0101' };
+  return { department: '信息中心', departmentCode: '0001' };
+}
+
+function extractAccessClinicStage(text: string) {
+  if (/导诊|分诊/.test(text)) return '导诊分诊';
+  if (/预问诊/.test(text)) return '预问诊';
+  if (/预约|挂号/.test(text)) return '预约挂号';
+  if (/检查|检验|影像|超声|PACS|LIS/.test(text)) return '辅助检查';
+  if (/诊断|判读|解读/.test(text)) return '辅助诊断';
+  if (/治疗|处方|用药/.test(text)) return '辅助治疗';
+  if (/住院|病程/.test(text)) return '住院';
+  if (/手术/.test(text)) return '手术';
+  return '其他';
+}
+
+function extractAccessAgentName(text: string) {
+  const quoted = text.match(/[“"《「]([^”"》」]{2,20})(?:[”"》」])/);
+  if (quoted?.[1]) return quoted[1].replace(/智能体$/, '助手').slice(0, 20);
+  if (/超声/.test(text) && /预约/.test(text)) return '超声检查预约助手';
+  if (/糖尿病|随访/.test(text)) return '内分泌糖尿病随访管理助手';
+  if (/影像|放射/.test(text)) return '影像辅助诊断助手';
+  if (/处方|用药/.test(text)) return '处方前置审核助手';
+  return '智能体接入助手';
+}
+
+function extractAccessUploadedMaterials(text: string) {
+  const materials: string[] = [];
+  const hasUploadSignal = /上传|已传|附件|文件|PDF|pdf|docx?|DOCX?|材料/.test(text);
+  if (!hasUploadSignal) return { materials, techSpecUploaded: false, productDocUploaded: false };
+  const techSpecUploaded = /技术规格|技术文档|接口文档|规格书/.test(text);
+  const productDocUploaded = /产品说明|产品文档|说明书/.test(text);
+  const pickName = (keyword: RegExp, fallback: string) => {
+    const match = text.match(new RegExp(`[^、，,\\s]*(?:${keyword.source})[^、，,\\s]*`, 'i'))?.[0];
+    return (match ?? fallback).replace(/^已上传/, '');
+  };
+  const materialLabel = (name: string) =>
+    /\.pdf$/i.test(name) ? `${name}（已上传，内容达标）` : `${name}（已上传，内容达标，将转 PDF 留存）`;
+  if (techSpecUploaded) materials.push(materialLabel(pickName(/技术规格|技术文档|接口文档|规格书/, '技术规格书.pdf')));
+  if (productDocUploaded) materials.push(materialLabel(pickName(/产品说明|产品文档|说明书/, '产品说明书.pdf')));
+  return { materials, techSpecUploaded, productDocUploaded };
+}
+
+function isAccessMaterialsComplete(slots: AccessSlots) {
+  const materialText = (slots.materials ?? []).join('、');
+  return Boolean(
+    (slots.techSpecUploaded || /技术规格|技术文档|接口文档|规格书/.test(materialText)) &&
+      (slots.productDocUploaded || /产品说明|产品文档|说明书/.test(materialText)),
+  );
+}
+
+function normalizeAccessReadySlots(slots: AccessSlots): AccessSlots {
+  const next = { ...slots };
+  if (!next.connectivity && next.accessMethod === 'API' && next.endpoint && next.apiKeyMasked) {
+    next.connectivity = ACCESS_SCENE.mock.testConnectivity(next, true).message;
+  }
+  return next;
+}
+
+function buildAccessMaterialCheck(slots: AccessSlots) {
+  const missing = [
+    !slots.techSpecUploaded && '技术规格书 / 技术文档',
+    !slots.productDocUploaded && '产品说明书 / 产品文档',
+  ].filter(Boolean);
+  return `已识别到完整接入申请信息。
+
+- 描述信息：完整
+- 技术信息：完整
+- API key：********（已密文保存）
+- 联通测试：${slots.connectivity ?? '已具备测试条件，材料齐全后自动执行'}
+- 材料核验：${missing.length > 0 ? `仍缺 ${missing.join('、')}` : '材料齐全'}
+
+请点击【上传备案材料】选择文件，或将产品说明书、技术规格书直接拖拽到对话界面中。材料齐全后我会给出最终汇总确认卡。`;
+}
+
+function buildAccessReadySummary(slots: AccessSlots) {
+  return `描述信息完整 + 材料齐全 + 连通测试通过，可以提交。
+
+${buildAccessSummary(slots)}`;
+}
+
+const ACCESS_SUBMIT_QUICK_ACTIONS = ['确认提交'];
+
+function extractCompleteAccessSlots(text: string): AccessSlots | null {
+  const normalized = text.trim();
+  const accessMethod = /SDK/i.test(normalized) ? 'SDK' : /OTel/i.test(normalized) ? 'OTel' : 'API';
+  const endpoint =
+    normalized.match(/https?:\/\/[^\s，,。；;]+/i)?.[0] ??
+    (accessMethod === 'API'
+      ? 'https://api.hospital.local/agent/access/v1'
+      : 'https://platform.hospital.local/agent/sdk');
+  const hasCredential = accessMethod !== 'API' || /key|密钥|鉴权|认证|token|已提供/i.test(normalized);
+  const enoughContext =
+    normalized.length >= 40 &&
+    /智能体|助手|系统|应用/.test(normalized) &&
+    /科|门诊|中心/.test(normalized) &&
+    /接入|接口|API|SDK|OTel|地址|key|鉴权|供应商|联系人|手机号/.test(normalized) &&
+    Boolean(endpoint) &&
+    hasCredential;
+  if (!enoughContext) return null;
+
+  const dept = extractAccessDepartment(normalized);
+  const phone = normalized.match(/\b1\d{10}\b/)?.[0] ?? '13800138000';
+  const contactMatch = normalized.match(/(?:联系人|提出人|技术联系人|负责人)(?:是|为|：|:)?\s*([\u4e00-\u9fa5]{2,10})/);
+  const vendorMatch = normalized.match(/(?:供应商|厂商|开发单位)(?:是|为|：|:)?\s*([\u4e00-\u9fa5A-Za-z0-9]{2,30})/);
+  const source = /自研/.test(normalized) ? '自研' : /第三方|采购|外采/.test(normalized) ? '第三方' : '合作研发';
+  const agentName = extractAccessAgentName(normalized);
+  const uploaded = extractAccessUploadedMaterials(normalized);
+
+  return {
+    agentName,
+    version: normalized.match(/(?:版本|v|V)?\s*([1-9]\d*\.\d)/)?.[1] ?? '1.0',
+    ...dept,
+    clinicStage: extractAccessClinicStage(normalized),
+    functionDescription: normalized.length > 500 ? normalized.slice(0, 500) : normalized,
+    source,
+    vendor: vendorMatch?.[1] ?? (source === '自研' ? '本院信息科' : '智医健康科技有限公司'),
+    contact: contactMatch?.[1] ?? '陈明',
+    phone,
+    accessMethod,
+    endpoint,
+    apiKeyMasked: '********',
+    connectivity: ACCESS_SCENE.mock.testConnectivity({ accessMethod, endpoint }, true).message,
+    materials: uploaded.materials,
+    techSpecUploaded: uploaded.techSpecUploaded,
+    productDocUploaded: uploaded.productDocUploaded,
+  };
+}
+
+function getAccessDoneActionLinks(): Array<{ to: string; text: string }> {
+  return [{ text: '查看详情', to: `/app/agent-center/detail/${ACCESS_DEMO_DETAIL_ID}` }];
+}
+
+function buildAccessFunctionDescription(scene?: string): string {
+  if (scene === '超声') {
+    return '面向门诊和住院患者提供超声检查智能预约与检前指导服务，读取 HIS、EMR、检查预约系统中的患者基础信息、医生医嘱、检查项目、可预约时段和检查注意事项，自动生成预约建议、检前准备提醒、改约提醒和结构化预约记录。';
+  }
   return '面向出院及门诊糖尿病患者提供随访服务，读取患者基础信息、诊疗记录、检验指标与随访计划，自动生成随访任务、健康提醒与异常风险提示，并向责任医生输出结构化随访报告与风险提醒。';
 }
 
@@ -5605,6 +6874,7 @@ function getAccessNext(
   flow: AccessFlow;
   replies: string[];
   link?: { to: string; text: string };
+  actionLinks?: Array<{ to: string; text: string }>;
   quickActions?: string[];
 } {
   const normalized = text.trim();
@@ -5628,6 +6898,23 @@ function getAccessNext(
     };
   }
 
+  if (flow.step !== 'summary' && flow.step !== 'done') {
+    const extractedSlots = extractCompleteAccessSlots(`${slots.functionDescription ?? ''} ${normalized}`);
+    if (extractedSlots) {
+      const completeSlots = normalizeAccessReadySlots(extractedSlots);
+      const materialComplete = isAccessMaterialsComplete(completeSlots);
+      return {
+        flow: { ...flow, step: materialComplete ? 'summary' : 'materialConfirm', slots: completeSlots },
+        replies: [
+          materialComplete
+            ? buildAccessReadySummary(completeSlots)
+            : buildAccessMaterialCheck(completeSlots),
+        ],
+        quickActions: materialComplete ? ACCESS_SUBMIT_QUICK_ACTIONS : ['上传备案材料'],
+      };
+    }
+  }
+
   switch (flow.step) {
     case 'collectMaterial': {
       if (/超过30M|无法解析|解析失败|损坏|打不开/.test(normalized)) {
@@ -5638,6 +6925,16 @@ function getAccessNext(
         };
       }
       Object.assign(slots, ACCESS_SCENE.mock.parseMaterial(normalized));
+      if (isAccessMaterialsComplete(slots) && slots.agentName && slots.department && slots.clinicStage) {
+        const readySlots = normalizeAccessReadySlots(slots);
+        return {
+          flow: { ...flow, step: 'summary', slots: readySlots },
+          replies: [
+            `收到，正在识别……\n\n${buildAccessReadySummary(readySlots)}`,
+          ],
+          quickActions: ACCESS_SUBMIT_QUICK_ACTIONS,
+        };
+      }
       return {
         flow: { ...flow, step: 'agentName', slots },
         replies: [
@@ -5765,6 +7062,16 @@ ${slots.functionDescription}
       };
     }
     case 'materialConfirm': {
+      const uploaded = extractAccessUploadedMaterials(normalized);
+      if (uploaded.materials.length > 0) {
+        slots.techSpecUploaded = slots.techSpecUploaded || uploaded.techSpecUploaded;
+        slots.productDocUploaded = slots.productDocUploaded || uploaded.productDocUploaded;
+        const existing = slots.materials ?? [];
+        slots.materials = [...existing, ...uploaded.materials].filter(
+          (item, index, arr) => arr.indexOf(item) === index,
+        );
+      }
+
       if (/修改|调整/.test(normalized) && !/就用|确认|可以/.test(normalized)) {
         return {
           flow,
@@ -5772,11 +7079,20 @@ ${slots.functionDescription}
           quickActions: ['就用它', '继续修改产品简介'],
         };
       }
-      slots.materials = ACCESS_SCENE.mock.generateMaterials(slots);
+
+      if (!isAccessMaterialsComplete(slots)) {
+        return {
+          flow: { ...flow, step: 'materialConfirm', slots },
+          replies: [buildAccessMaterialCheck(slots)],
+          quickActions: ['上传备案材料'],
+        };
+      }
+
+      slots.connectivity = slots.connectivity ?? ACCESS_SCENE.mock.testConnectivity(slots, true).message;
       return {
         flow: { ...flow, step: 'summary', slots },
-        replies: [buildAccessSummary(slots)],
-        quickActions: ['确认提交', '修改接口地址', '修改联系人'],
+        replies: [buildAccessReadySummary(slots)],
+        quickActions: ACCESS_SUBMIT_QUICK_ACTIONS,
       };
     }
     case 'summary': {
@@ -5804,7 +7120,7 @@ ${slots.functionDescription}
         return {
           flow,
           replies: ['当前已到汇总确认节点。哪项要改直接说“修改××”；没问题请说“确认提交”。'],
-          quickActions: ['确认提交', '修改接口地址', '修改联系人'],
+          quickActions: ACCESS_SUBMIT_QUICK_ACTIONS,
         };
       }
       return {
@@ -5818,7 +7134,7 @@ ${slots.functionDescription}
 
 ${ACCESS_SCENE.closing}`,
         ],
-        link: { to: '/app/agent-center', text: '查看接入申请' },
+        actionLinks: getAccessDoneActionLinks(),
       };
     }
     case 'editContact': {
@@ -5835,7 +7151,7 @@ ${ACCESS_SCENE.closing}`,
       return {
         flow: { ...flow, step: 'summary', slots },
         replies: [buildAccessSummary(slots)],
-        quickActions: ['确认提交', '修改接口地址', '修改联系人'],
+        quickActions: ACCESS_SUBMIT_QUICK_ACTIONS,
       };
     }
     case 'editEndpoint': {
@@ -5848,7 +7164,7 @@ ${ACCESS_SCENE.closing}`,
       return {
         flow: { ...flow, step: 'summary', slots },
         replies: [`技术信息已更新，已自动重跑联通测试：${test.message}。\n\n备案材料已按最新技术字段刷新。\n\n${buildAccessSummary(slots)}`],
-        quickActions: ['确认提交', '修改接口地址', '修改联系人'],
+        quickActions: ACCESS_SUBMIT_QUICK_ACTIONS,
       };
     }
     default:
@@ -5877,7 +7193,7 @@ function buildAccessSummary(slots: AccessSlots): string {
 - 备案材料：${(slots.materials ?? ['技术规格书.pdf（由上传材料转换）', '产品说明书（自动生成）.pdf']).join('、')}
 - 联通测试：${slots.connectivity ?? '通过（320ms）'}
 
-哪项要改直接说/点，没问题就说“提交”或点【确认提交】。`;
+哪项要改直接说，没问题就说“提交”或点【确认提交】。`;
 }
 
 function currentAccessQuestion(flow: AccessFlow) {
@@ -6229,13 +7545,64 @@ function buildResources(text: string): string {
     : text;
 }
 
+function extractRequirementDepartment(text: string) {
+  const explicit = text.match(/(?:提出科室|科室|我们|我院)(?:是|为|：|:)?\s*([\u4e00-\u9fa5]{2,12}(?:科|中心|部))/)?.[1];
+  if (explicit) return explicit;
+  return normalizeDepartment(text);
+}
+
+function extractRequirementUrgency(text: string) {
+  const explicit = text.match(/(?:需求紧急程度|紧急程度|优先级|紧急|程度)(?:是|为|：|:)?\s*(高|中|低)/)?.[1];
+  if (explicit) return explicit;
+  if (/高优先级|非常急|很急|尽快|紧急/.test(text)) return '高';
+  if (/低优先级|不急|可排期/.test(text)) return '低';
+  if (/中优先级|中等|一般|适中/.test(text)) return '中';
+  return undefined;
+}
+
 function extractContact(text: string): { proposer?: string; phone?: string; phoneValid: boolean } {
   const phone = text.match(/\d{11,12}/)?.[0];
-  const name = text.match(/[\u4e00-\u9fa5]{2,10}/)?.[0]?.replace(/手机|电话|联系|方式/g, '');
+  const explicitName = text.match(/(?:提出人|联系人|申请人|我是)(?:是|为|：|:)?\s*([\u4e00-\u9fa5]{2,10})/)?.[1];
+  const name = (explicitName ?? text.match(/[\u4e00-\u9fa5]{2,10}/)?.[0])?.replace(/手机|电话|联系|方式/g, '');
   return {
     proposer: name && name.length >= 2 ? name : undefined,
     phone,
     phoneValid: Boolean(phone && /^\d{11}$/.test(phone)),
+  };
+}
+
+function extractCompleteRequirementSlots(text: string): RequirementSlots | null {
+  const contact = extractContact(text);
+  const department = extractRequirementDepartment(text);
+  const clinicStage = inferClinicStage(text);
+  const urgency = extractRequirementUrgency(text);
+  const resources = /HIS|EMR|RIS|PACS|LIS|短信|企业微信|微信|预约系统|资源|系统|模型/i.test(text)
+    ? buildResources(text)
+    : undefined;
+  const hasFunction = /助手|智能体|帮助|自动|预约|审核|质控|诊断|随访|输出|生成|推送/.test(text);
+  const hasReason = /现在|目前|人工|痛点|成本|效率|容易|希望|减少|提升|等待|反复|漏检/.test(text);
+  const complete =
+    hasFunction &&
+    hasReason &&
+    Boolean(department) &&
+    Boolean(clinicStage) &&
+    Boolean(resources) &&
+    Boolean(urgency) &&
+    Boolean(contact.proposer) &&
+    Boolean(contact.phoneValid);
+
+  if (!complete) return null;
+
+  return {
+    rawNeed: text,
+    department,
+    functionDescription: buildFunctionDescription({ rawNeed: text, department }, text),
+    reason: buildReason(text),
+    clinicStage,
+    resources,
+    urgency,
+    proposer: contact.proposer,
+    phone: contact.phone,
   };
 }
 
@@ -6266,7 +7633,7 @@ function buildRequirementSuccess(slots: RequirementSlots): string {
 - 需求标题：《${title}》（已查重）
 - 序号：143
 - 提出时间：${time}
-- 需求文档查看/下载：Word、PDF 版
+- 需求文档：已生成 Word / PDF 版
 
 正在为您自动执行智能化匹配……
 
@@ -6276,7 +7643,15 @@ function buildRequirementSuccess(slots: RequirementSlots): string {
 2. AGT-0102 患者服务通知助手 —— **64%**
 3. AGT-0056 门诊智能预问诊助手 —— **41%**
 
-「匹配情况」已回填 **82%**。您可以继续说「查看文档」或点击下方入口查看详情。`;
+「匹配情况」已回填 **82%**。可点击下方入口查看详情、预览或下载需求文档。`;
+}
+
+function getRequirementDoneActionLinks(): Array<{ to: string; text: string; download?: boolean }> {
+  return [
+    { text: '查看详情', to: '/app/agent-needs/detail/143' },
+    { text: '需求文档预览', to: '/app/agent-needs/doc/143' },
+    { text: '需求文档下载', to: '/app/agent-needs/doc/143?download=pdf', download: true },
+  ];
 }
 
 function getRequirementCurrentQuestion(step: RequirementStep, slots: RequirementSlots): string {
@@ -6325,7 +7700,13 @@ function isRequirementOfftopic(text: string): boolean {
 function getRequirementNext(
   flow: RequirementFlow,
   text: string,
-): { flow: RequirementFlow; replies: string[]; link?: { to: string; text: string }; quickActions?: string[] } {
+): {
+  flow: RequirementFlow;
+  replies: string[];
+  link?: { to: string; text: string };
+  actionLinks?: Array<{ to: string; text: string; download?: boolean }>;
+  quickActions?: string[];
+} {
   const slots = { ...flow.slots };
   const normalized = text.trim();
   const yes = /^(对|是|确认|确认提交|可以|没问题|准确|正确|好|嗯|提交)[。！!.\s]*$/.test(normalized);
@@ -6357,6 +7738,17 @@ function getRequirementNext(
       replies: [`我们先来完成智能体建设需求登记，稍后再为您解决此问题\n\n当前问题：${getRequirementCurrentQuestion(flow.step, slots)}`],
       quickActions: getRequirementQuickActions(flow.step),
     };
+  }
+
+  if (flow.step !== 'summary' && flow.step !== 'done') {
+    const completeSlots = extractCompleteRequirementSlots(`${slots.rawNeed ?? ''} ${normalized}`);
+    if (completeSlots) {
+      return {
+        flow: { ...flow, step: 'summary', slots: completeSlots },
+        replies: [buildRequirementSummary(completeSlots)],
+        quickActions: getRequirementQuickActions('summary'),
+      };
+    }
   }
 
   switch (flow.step) {
@@ -6511,16 +7903,14 @@ function getRequirementNext(
       return {
         flow: { ...flow, step: 'done', slots },
         replies: [buildRequirementSuccess(slots)],
-        link: { to: '/app/agent-needs', text: '查看详情' },
-        quickActions: getRequirementQuickActions('done'),
+        actionLinks: getRequirementDoneActionLinks(),
       };
     }
     default:
       return {
         flow,
         replies: ['需求登记已完成。您可以查看需求文档或进入需求详情页。'],
-        link: { to: '/app/agent-needs', text: '查看详情' },
-        quickActions: getRequirementQuickActions('done'),
+        actionLinks: getRequirementDoneActionLinks(),
       };
   }
 }

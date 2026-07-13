@@ -42,6 +42,7 @@ import {
   Input,
   Segmented,
   Space,
+  Tooltip,
   Typography,
   type MenuProps,
 } from 'antd';
@@ -547,6 +548,7 @@ const RunRecordList = ({
   onDelete: (runId: string) => void;
   compact: boolean;
 }) => {
+  const navigate = useNavigate();
   const [hoveredRunId, setHoveredRunId] = useState<string | null>(null);
   const groups = [
     {
@@ -625,12 +627,43 @@ const RunRecordList = ({
                     gap: 14,
                   }}
                 >
-                  <Text
-                    ellipsis
-                    style={{ color: '#262626', fontSize: compact ? 14 : 16, fontWeight: 500, flexShrink: 0 }}
-                  >
-                    {task.name}
-                  </Text>
+                  {archived ? (
+                    <Text
+                      ellipsis
+                      style={{
+                        color: '#262626',
+                        fontSize: compact ? 14 : 16,
+                        fontWeight: 500,
+                        flexShrink: 0,
+                      }}
+                      data-testid={`run-record-title-${run.id}`}
+                    >
+                      {task.name}
+                    </Text>
+                  ) : (
+                    <Typography.Link
+                      ellipsis
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => navigate(`/app/home/overview?runId=${encodeURIComponent(run.id)}`)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          navigate(`/app/home/overview?runId=${encodeURIComponent(run.id)}`);
+                        }
+                      }}
+                      style={{
+                        color: '#262626',
+                        fontSize: compact ? 14 : 16,
+                        fontWeight: 500,
+                        flexShrink: 0,
+                        cursor: 'pointer',
+                      }}
+                      data-testid={`run-record-title-${run.id}`}
+                    >
+                      {task.name}
+                    </Typography.Link>
+                  )}
                   <Text ellipsis style={{ color: '#BFBFBF', fontSize: compact ? 13 : 14 }}>
                     {statusText}
                   </Text>
@@ -641,23 +674,27 @@ const RunRecordList = ({
                     style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}
                   >
                     {!archived && (
+                      <Tooltip title="归档" placement="top">
+                        <Button
+                          type="text"
+                          aria-label={`归档 ${task.name}`}
+                          data-testid={`run-record-archive-${run.id}`}
+                          icon={<InboxOutlined style={{ fontSize: 18 }} />}
+                          onClick={() => onArchive(run.id)}
+                          style={{ width: 38, height: 36, color: '#595959' }}
+                        />
+                      </Tooltip>
+                    )}
+                    <Tooltip title="删除" placement="top">
                       <Button
                         type="text"
-                        aria-label={`归档 ${task.name}`}
-                        data-testid={`run-record-archive-${run.id}`}
-                        icon={<InboxOutlined style={{ fontSize: 18 }} />}
-                        onClick={() => onArchive(run.id)}
+                        aria-label={`删除 ${task.name}`}
+                        data-testid={`run-record-delete-${run.id}`}
+                        icon={<DeleteOutlined style={{ fontSize: 18 }} />}
+                        onClick={() => onDelete(run.id)}
                         style={{ width: 38, height: 36, color: '#595959' }}
                       />
-                    )}
-                    <Button
-                      type="text"
-                      aria-label={`删除 ${task.name}`}
-                      data-testid={`run-record-delete-${run.id}`}
-                      icon={<DeleteOutlined style={{ fontSize: 18 }} />}
-                      onClick={() => onDelete(run.id)}
-                      style={{ width: 38, height: 36, color: '#595959' }}
-                    />
+                    </Tooltip>
                   </div>
                 ) : (
                   <>
