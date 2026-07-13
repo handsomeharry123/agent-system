@@ -127,6 +127,7 @@ const AutoTaskTemplateList = () => {
                       <Icon style={{ fontSize: 23, color: '#262626' }} />
                       <span style={{ minWidth: 0 }}>
                         <span
+                          title={template.name}
                           style={{
                             display: 'block',
                             fontSize: 15,
@@ -134,11 +135,16 @@ const AutoTaskTemplateList = () => {
                             fontWeight: 600,
                             color: '#262626',
                             marginBottom: 4,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: '100%',
                           }}
                         >
                           {template.name}
                         </span>
                         <Text
+                          title={template.description}
                           type="secondary"
                           style={{
                             display: 'block',

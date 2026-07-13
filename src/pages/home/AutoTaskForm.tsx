@@ -44,6 +44,45 @@ const { Text } = Typography;
 
 type FrequencyType = 'cycle' | 'interval' | 'once';
 
+const formatNextRunIn = (values: {
+  frequencyType: FrequencyType;
+  cyclePeriod?: 'day' | 'week' | 'month';
+  cycleTime?: unknown;
+  intervalValue?: number;
+  intervalUnit?: 'hour' | 'minute';
+  onceAt?: unknown;
+}) => {
+  const now = dayjs();
+  const formatDiff = (target: dayjs.Dayjs) => {
+    const minutes = Math.max(1, target.diff(now, 'minute'));
+    if (minutes < 60) return `约 ${minutes} 分钟后执行`;
+    const hours = Math.ceil(minutes / 60);
+    if (hours < 24) return `约 ${hours} 小时后执行`;
+    return `约 ${Math.ceil(hours / 24)} 天后执行`;
+  };
+
+  if (values.frequencyType === 'interval') {
+    const value = values.intervalValue ?? 1;
+    if (values.intervalUnit === 'minute') return `约 ${value} 分钟后执行`;
+    return `约 ${value} 小时后执行`;
+  }
+
+  if (values.frequencyType === 'once') {
+    const once = values.onceAt as { isValid?: () => boolean; diff?: (d: dayjs.Dayjs, unit: 'minute') => number } | undefined;
+    if (once && typeof once.diff === 'function') return formatDiff(once as dayjs.Dayjs);
+    return '待下次调度';
+  }
+
+  const timeLike = values.cycleTime as { hour?: () => number; minute?: () => number } | undefined;
+  const hour = typeof timeLike?.hour === 'function' ? timeLike.hour() : 9;
+  const minute = typeof timeLike?.minute === 'function' ? timeLike.minute() : 0;
+  let next = now.hour(hour).minute(minute).second(0).millisecond(0);
+  if (!next.isAfter(now)) {
+    next = values.cyclePeriod === 'month' ? next.add(1, 'month') : values.cyclePeriod === 'week' ? next.add(1, 'week') : next.add(1, 'day');
+  }
+  return formatDiff(next);
+};
+
 const AutoTaskForm = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -115,6 +154,7 @@ const AutoTaskForm = () => {
     const pad = (n: number) => String(n).padStart(2, '0');
     const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
     const firstRunName = `${values.name}-${stamp}`;
+    const nextRunIn = formatNextRunIn(values);
 
     /* 把表单频率字段浓缩为一行描述,用于侧栏/列表 display */
     const frequencyDesc = (() => {
@@ -155,7 +195,7 @@ const AutoTaskForm = () => {
       enabled: true,
       frequencyDesc,
       runs: [
-        { id: `${taskId}-r1`, name: firstRunName, updatedAt: '刚刚', status: '成功', enabled: true, nextRunIn: '待下次调度', summary: '首次执行已生成' },
+        { id: `${taskId}-r1`, name: firstRunName, updatedAt: '刚刚', status: '成功', enabled: true, nextRunIn, summary: '首次执行已生成' },
       ],
     };
 
