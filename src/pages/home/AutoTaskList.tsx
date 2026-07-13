@@ -23,6 +23,7 @@ import {
   EditOutlined,
   ExclamationCircleOutlined,
   FilterOutlined,
+  FileAddOutlined,
   InboxOutlined,
   MoreOutlined,
   PauseCircleOutlined,
@@ -419,6 +420,14 @@ const AutoTaskList = ({
                   </Button>
                 </Badge>
               )}
+              <Button
+                icon={<FileAddOutlined />}
+                onClick={() => navigate('/app/home/auto-tasks/templates')}
+                style={{ height: embedded ? 36 : 40, borderRadius: 8, paddingInline: embedded ? 14 : 16, flexShrink: 0 }}
+                data-testid="auto-tasks-add-from-template"
+              >
+                从模板添加
+              </Button>
               <Button
                 type="primary"
                 icon={<PlusOutlined />}

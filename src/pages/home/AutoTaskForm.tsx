@@ -15,8 +15,9 @@
  *   - 编辑能力留待后续版本(目前只看 new),由 /app/home/auto-tasks 列表页提供
  */
 
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 import {
   type FormProps,
   Button,
@@ -36,6 +37,7 @@ import {
 } from 'antd';
 import HomeSidebarV2, { initialAutoTasks, type AutoTask } from './HomeSidebarV2';
 import ModelSelector from './ModelSelector';
+import { getAutoTaskTemplate } from './autoTaskTemplates';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -44,9 +46,40 @@ type FrequencyType = 'cycle' | 'interval' | 'once';
 
 const AutoTaskForm = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const templateId =
+    (location.state as { autoTaskTemplateId?: string } | null)?.autoTaskTemplateId ??
+    searchParams.get('template');
+  const template = getAutoTaskTemplate(templateId);
+  const returnPath = template ? '/app/home/auto-tasks/templates' : '/app/home/auto-tasks';
   const [form] = Form.useForm();
-  const [frequencyType, setFrequencyType] = useState<FrequencyType>('cycle');
+  const [frequencyType, setFrequencyType] = useState<FrequencyType>(template?.frequency.type ?? 'cycle');
   const [saving, setSaving] = useState(false);
+  const initialValues = useMemo(() => {
+    const base = {
+      model: 'auto',
+      frequencyType: 'cycle' as FrequencyType,
+      cyclePeriod: 'day',
+      cycleWeekdays: [],
+      cycleMonthdays: [],
+      intervalValue: 1,
+      intervalUnit: 'hour',
+      intervalWeekdays: [],
+      connectors: [],
+    };
+    if (!template) return base;
+    return {
+      ...base,
+      name: template.name,
+      prompt: template.prompt,
+      frequencyType: template.frequency.type,
+      cyclePeriod: template.frequency.cyclePeriod ?? 'day',
+      cycleTime: template.frequency.cycleTime ? dayjs(`2026-01-01 ${template.frequency.cycleTime}`) : undefined,
+      intervalValue: template.frequency.intervalValue ?? 1,
+      intervalUnit: template.frequency.intervalUnit ?? 'hour',
+    };
+  }, [template]);
 
   const handleFinishFailed: FormProps['onFinishFailed'] = ({ errorFields }) => {
     const firstError = errorFields[0];
@@ -57,11 +90,7 @@ const AutoTaskForm = () => {
   };
 
   const handleCancel = () => {
-    if (form.isFieldsTouched()) {
-      // PRD §3.3.1 取消二次确认:仅在有未保存修改时弹;此处简化为 message 提示后返回
-      message.info('检测到未保存修改,已为您保留。下次取消请确认是否丢弃。', 2);
-    }
-    navigate('/app/home/auto-tasks');
+    navigate(returnPath);
   };
 
   const handleFinish = (values: {
@@ -133,18 +162,8 @@ const AutoTaskForm = () => {
     /* 同步写入 HomeSidebarV2 暴露的 mock,保持侧栏列表与本页一致 */
     initialAutoTasks.unshift(newTask);
 
-    message.success(`已创建自动化任务:${values.name}`);
-
-    /* navigate 回首页 + 传 state,首页 useEffect 推「任务创建成功」气泡 */
-    navigate('/app/home/overview', {
-      state: {
-        autoTaskCreated: {
-          id: newTask.id,
-          name: newTask.name,
-          firstRunName,
-        },
-      },
-    });
+    message.success(`保存成功：${values.name}`);
+    navigate('/app/home/auto-tasks');
     setSaving(false);
   };
 
@@ -212,7 +231,7 @@ const AutoTaskForm = () => {
           }}
         >
           <div style={{ fontSize: 18, fontWeight: 600, color: '#262626' }}>
-            新建自动化任务
+            自动化 / {template?.name ?? '新建自动化任务'}
           </div>
           <Space size={8}>
             <Button size="small" onClick={handleCancel} data-testid="auto-task-cancel">
@@ -258,17 +277,7 @@ const AutoTaskForm = () => {
             style={{ width: '100%' }}
             onFinish={handleFinish}
             onFinishFailed={handleFinishFailed}
-            initialValues={{
-              model: 'auto',
-              frequencyType: 'cycle',
-              cyclePeriod: 'day',
-              cycleWeekdays: [],
-              cycleMonthdays: [],
-              intervalValue: 1,
-              intervalUnit: 'hour',
-              intervalWeekdays: [],
-              connectors: [],
-            }}
+            initialValues={initialValues}
           >
             <Form.Item name="frequencyType" hidden>
               <Input />

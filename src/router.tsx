@@ -18,6 +18,7 @@ import HomePage from './pages/home';
 import Workbench from './pages/home/Workbench';
 import Dashboard from './pages/home/Dashboard';
 import AutoTaskForm from './pages/home/AutoTaskForm';
+import AutoTaskTemplateList from './pages/home/AutoTaskTemplateList';
 import RoleBasedRedirect from './components/RoleBasedRedirect';
 
 // Pages - Agent Needs（V1.0 智能体建设需求管理：需求管理列表 / 草稿 / 生成需求 / 详情 / 文档预览）
@@ -161,6 +162,7 @@ const routes: RouteObject[] = [
           // 两个工作台入口必须由 HomePage 承载，避免直接路由只渲染裸列表、丢失第二层功能栏。
           { path: 'connector', element: <HomePage /> },
           { path: 'auto-tasks', element: <HomePage /> },
+          { path: 'auto-tasks/templates', element: <AutoTaskTemplateList /> },
           { path: 'auto-tasks/new', element: <AutoTaskForm /> },
         ],
       },

@@ -17,10 +17,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
+  AlertOutlined,
   ApiOutlined,
+  AppstoreOutlined,
+  AuditOutlined,
   ArrowUpOutlined,
   AudioOutlined,
   DatabaseOutlined,
+  ExperimentOutlined,
   FileAddOutlined,
   PaperClipOutlined,
   PlusOutlined,
@@ -49,6 +53,50 @@ import {
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../../hooks/useAuth';
 import { useDemoSettings } from '../../hooks/useDemoSettings';
+import {
+  addApply,
+  getApplies,
+  mockAgents as resourceCenterAgents,
+  mockResources,
+  nowAt,
+  RESOURCE_CATALOG,
+  updateApply,
+  type ApplyItem,
+} from '../../mock/resource-center';
+import {
+  ALL_DIMENSIONS,
+  mockEvaluationReports,
+  mockEvaluationTasks,
+  getReportByTaskId,
+  sampleLevelPercent,
+  type EvalDimension,
+  type EvaluationConclusion,
+  type EvaluationTask,
+  type SampleLevel,
+} from '../../mock/evaluation';
+import {
+  alertOverviewKpiV18,
+  businessKpiV18,
+  costKpiV18,
+  mockAlertEventsV18,
+  statusKpiV18,
+  type AlertEventV18,
+} from '../../mock/monitoringV18';
+import {
+  currentUser as ledgerCurrentUser,
+  getAlarmStat,
+  getCallVolumeStat,
+  getCoverageStat,
+  getDepartmentDistribution,
+  getDiagnosisPhaseDistribution,
+  getInstanceOnlineRateStat,
+  getRiskDistribution,
+  getSourceDistribution,
+  getVisibleAgents,
+  ledgerAgents,
+  type LedgerAgent,
+  type LedgerUser,
+} from '../../mock/ledger';
 import AgentRobotIcon from '../agent-center/smart/AgentRobotIcon';
 import HomeSidebarV2, {
   initialAutoTasks,
@@ -88,10 +136,52 @@ const sceneTags: SceneTag[] = [
     prompt: '帮我查看待审批的智能体接入申请',
   },
   {
+    key: 'access-audit',
+    label: '接入审核',
+    icon: <AuditOutlined />,
+    prompt: '开始接入审核',
+  },
+  {
     key: 'ledger-query',
     label: '台账查询',
     icon: <DatabaseOutlined />,
     prompt: '按科室统计全院已上线智能体的数量和分类',
+  },
+  {
+    key: 'resource-register',
+    label: '资源注册',
+    icon: <DatabaseOutlined />,
+    prompt: '我想注册医院资源中心资源',
+  },
+  {
+    key: 'resource-apply',
+    label: '资源申请',
+    icon: <AppstoreOutlined />,
+    prompt: '我想申请一个新资源（含算力 / 存储 / 模型 / 接口）的使用权限',
+  },
+  {
+    key: 'resource-audit',
+    label: '资源审核',
+    icon: <AuditOutlined />,
+    prompt: '开始资源使用权限审核',
+  },
+  {
+    key: 'evaluation-create',
+    label: '新建评测',
+    icon: <ExperimentOutlined />,
+    prompt: '请帮我新建一个智能体安全评测任务',
+  },
+  {
+    key: 'evaluation-audit',
+    label: '评测审核',
+    icon: <AuditOutlined />,
+    prompt: '开始评测审核',
+  },
+  {
+    key: 'monitor-info',
+    label: '监控信息查看',
+    icon: <AlertOutlined />,
+    prompt: '帮我看看当前智能体运行监控情况',
   },
 ];
 
@@ -200,6 +290,7 @@ type RequirementSlots = {
   proposer?: string;
   phone?: string;
   sidetrack?: string[];
+  returnToSummary?: boolean;
 };
 
 type RequirementFlow = {
@@ -210,6 +301,41 @@ type RequirementFlow = {
 
 type LedgerFlow = {
   sessionId: string;
+  awaitingAgent?: boolean;
+  lastAgentId?: string;
+  reportScope?: '全院' | '本科室';
+  reportPeriod?: '今日' | '本周' | '本月';
+};
+
+type LedgerCandidate = {
+  code: string;
+  name: string;
+  version: string;
+  to: string;
+  prompt: string;
+};
+
+type LedgerReportCard = {
+  title: string;
+  scope: string;
+  period: string;
+  modules: string[];
+  to: string;
+};
+
+type MonitorAlertRow = {
+  id: string;
+  level: '高' | '中' | '低';
+  dimension: '业务' | '状态' | '成本' | '安全';
+  code: string;
+  agentName: string;
+  content: string;
+  detailTo: string;
+};
+
+type MonitorAlertTable = {
+  rows: MonitorAlertRow[];
+  emptyText?: string;
 };
 
 type AccessStep =
@@ -221,6 +347,8 @@ type AccessStep =
   | 'confirmFunction'
   | 'connectivityFix'
   | 'materialConfirm'
+  | 'editContact'
+  | 'editEndpoint'
   | 'summary'
   | 'done';
 
@@ -240,6 +368,7 @@ type AccessSlots = {
   apiKeyMasked?: string;
   connectivity?: string;
   materials?: string[];
+  draftSaved?: boolean;
 };
 
 type AccessFlow = {
@@ -248,10 +377,219 @@ type AccessFlow = {
   slots: AccessSlots;
 };
 
+type ResourceApplyStep = 'n1' | 'n2' | 'n3' | 'done';
+
+type ResourceOption = {
+  code: string;
+  name: string;
+  type: '业务系统数据资源' | '模型资源';
+  resourceId: string;
+  status: 'registered' | 'unregistered';
+};
+
+type ResourceApplySlots = {
+  agent?: (typeof resourceCenterAgents)[number];
+  resources?: ResourceOption[];
+  pendingResources?: ResourceOption[];
+  receiptNo?: string;
+  sidetrack?: string[];
+  draftSaved?: boolean;
+};
+
+type ResourceApplyFlow = {
+  sessionId: string;
+  step: ResourceApplyStep;
+  slots: ResourceApplySlots;
+};
+
+type ResourceRegisterStep = 'n0' | 'n1' | 'n2' | 'n3' | 'n4' | 'n5' | 'done';
+
+type ResourceRegisterDraft = {
+  kind: '业务系统数据资源' | '模型资源';
+  code: string;
+  name: string;
+  owner?: string;
+  contact?: string;
+  protocol?: 'HL7' | 'FHIR' | 'DICOM' | '数据库直连' | 'MQ';
+  protocolConfig?: Record<string, string>;
+  modelVersion?: string;
+  deployMode?: '本地化部署' | '云端部署' | '混合部署';
+  apiUrl?: string;
+  apiKeyMasked?: string;
+  testStatus?: '待测试' | '失败' | '通过';
+  testMessage?: string;
+};
+
+type ResourceRegisterSlots = {
+  materials?: string[];
+  drafts?: ResourceRegisterDraft[];
+  pendingDrafts?: ResourceRegisterDraft[];
+  awaitingFix?: 'pacs-ip' | 'api-key';
+  receiptNo?: string;
+  draftSaved?: boolean;
+  sidetrack?: string[];
+  matchMissCount?: number;
+  returnToSummary?: boolean;
+};
+
+type ResourceRegisterFlow = {
+  sessionId: string;
+  step: ResourceRegisterStep;
+  slots: ResourceRegisterSlots;
+};
+
+type ResourceAuditStep = 'n1' | 'n2' | 'n3' | 'done';
+
+type ResourceAuditRecord = {
+  applyId: string;
+  agentId: string;
+  agentName: string;
+  resourceName: string;
+  conclusion: '审核通过' | '退回修改';
+  comment: string;
+  reviewer: string;
+  time: string;
+};
+
+type ResourceAuditFlow = {
+  sessionId: string;
+  step: ResourceAuditStep;
+  queueIds: string[];
+  reviewedIds: string[];
+  records: ResourceAuditRecord[];
+  selectedApplyId?: string;
+  conclusion?: '审核通过' | '退回修改';
+  comment?: string;
+  paused?: boolean;
+};
+
+type EvaluationStep = 'n1' | 'n2' | 'running' | 'done';
+
+type EvaluationPendingAgent = {
+  id: string;
+  agentId: string;
+  code: string;
+  name: string;
+  version: string;
+  department: string;
+  riskLevel: '低风险' | '中等风险' | '高风险';
+};
+
+type EvaluationSlots = {
+  agent?: EvaluationPendingAgent;
+  agents?: EvaluationPendingAgent[];
+  levels?: Record<EvalDimension, SampleLevel>;
+  taskId?: string;
+  taskNo?: string;
+  taskIds?: string[];
+  taskNos?: string[];
+  totalProgress?: number;
+  totalScore?: number;
+  dimensionScores?: Record<EvalDimension, number>;
+  sidetrack?: string[];
+  draftSaved?: boolean;
+};
+
+type EvaluationFlow = {
+  sessionId: string;
+  step: EvaluationStep;
+  slots: EvaluationSlots;
+};
+
+type EvaluationAuditStep = 'n1' | 'n2' | 'n3' | 'done';
+
+type EvaluationAuditRecord = {
+  taskId: string;
+  agentCode: string;
+  agentName: string;
+  systemConclusion: '准入' | '退回';
+  reviewConclusion: '审核通过' | '退回修改';
+  finalResult: '准入' | '退回' | '退回修改';
+  comment: string;
+  reviewer: string;
+  time: string;
+};
+
+type EvaluationAuditFlow = {
+  sessionId: string;
+  step: EvaluationAuditStep;
+  queueIds: string[];
+  reviewedIds: string[];
+  records: EvaluationAuditRecord[];
+  selectedTaskId?: string;
+  reviewConclusion?: '审核通过' | '退回修改';
+  comment?: string;
+  paused?: boolean;
+};
+
+type MonitorFlow = {
+  sessionId: string;
+  lastIntent?: 'overview_metric' | 'alert' | 'report' | 'out_of_scope' | 'offtopic' | 'clarify';
+  reportPeriod?: '日报' | '周报' | '月报' | '年报';
+  reportScope?: string;
+  lastAlerts?: AlertEventV18[];
+  pendingTodos?: string[];
+};
+
+type AccessAuditStep = 'n1' | 'n2' | 'n3' | 'done';
+
+type AccessAuditAgent = {
+  code: string;
+  name: string;
+  version: string;
+  department: string;
+  clinicStage: string;
+  description: string;
+  source: string;
+  vendor: string;
+  contact: string;
+  phone: string;
+  accessMethod: 'API' | 'SDK' | 'OTel';
+  endpoint: string;
+  apiKeyMasked: string;
+  applicant: string;
+  precheck: '建议通过' | '建议退回修改';
+  precheckSummary: string;
+  checks: { label: string; ok: boolean; desc: string }[];
+};
+
+type AccessAuditDecision = {
+  code: string;
+  result: '审核通过' | '退回修改';
+  reason?: string;
+  overridePrecheck?: boolean;
+  time: string;
+};
+
+type AccessAuditPendingDecision = {
+  codes: string[];
+  result: '审核通过' | '退回修改';
+  reason?: string;
+  overridePrecheck?: boolean;
+  batch?: boolean;
+};
+
+type AccessAuditFlow = {
+  sessionId: string;
+  step: AccessAuditStep;
+  agents: AccessAuditAgent[];
+  decisions: AccessAuditDecision[];
+  selectedCode?: string;
+  viewedCodes: string[];
+  pendingDecision?: AccessAuditPendingDecision;
+  pendingTodos?: string[];
+};
+
 const ledgerRecommendedQuestions = [
-  '帮我生成一份今日的全院智能体管理情况报告',
-  '我想要查看糖尿病随访管理助手的 360 画像',
+  '帮我生成一份今日的全院/本科室智能体管理情况报告',
+  '我想要查看【某智能体】的 360 画像',
   '目前智能体的告警情况',
+];
+
+const monitorRecommendedQuestions = [
+  '帮我生成一份今日的全院/本科室智能体运行监控情况报告？',
+  '现在有哪些告警需要处理？',
+  '今日智能体运行 token 成本消耗多少？',
 ];
 
 /* =========================================================
@@ -274,6 +612,9 @@ const HomePage = () => {
     module?: string;
     link?: { to: string; text: string };
     quickActions?: string[];
+    candidates?: LedgerCandidate[];
+    reportCard?: LedgerReportCard;
+    monitorAlertTable?: MonitorAlertTable;
     time: string;
   };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -286,6 +627,13 @@ const HomePage = () => {
   const [requirementFlow, setRequirementFlow] = useState<RequirementFlow | null>(null);
   const [ledgerFlow, setLedgerFlow] = useState<LedgerFlow | null>(null);
   const [accessFlow, setAccessFlow] = useState<AccessFlow | null>(null);
+  const [resourceRegisterFlow, setResourceRegisterFlow] = useState<ResourceRegisterFlow | null>(null);
+  const [resourceApplyFlow, setResourceApplyFlow] = useState<ResourceApplyFlow | null>(null);
+  const [resourceAuditFlow, setResourceAuditFlow] = useState<ResourceAuditFlow | null>(null);
+  const [evaluationFlow, setEvaluationFlow] = useState<EvaluationFlow | null>(null);
+  const [evaluationAuditFlow, setEvaluationAuditFlow] = useState<EvaluationAuditFlow | null>(null);
+  const [monitorFlow, setMonitorFlow] = useState<MonitorFlow | null>(null);
+  const [accessAuditFlow, setAccessAuditFlow] = useState<AccessAuditFlow | null>(null);
   /** 是否处于「新建任务」视图;切换到历史会话 / 自动化执行记录后置 false,场景标签随之隐藏 */
   const [isNewTaskView, setIsNewTaskView] = useState(true);
 
@@ -334,6 +682,13 @@ const HomePage = () => {
     setRequirementFlow(null);
     setLedgerFlow(null);
     setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
     setIsNewTaskView(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role]);
@@ -397,6 +752,13 @@ const HomePage = () => {
     setRequirementFlow(null);
     setLedgerFlow(null);
     setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
   }, []);
 
   /* 与连接器一致，重复点击仍保持自动化任务列表。 */
@@ -406,6 +768,13 @@ const HomePage = () => {
     setRequirementFlow(null);
     setLedgerFlow(null);
     setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
   }, []);
 
   const handleBackToChat = useCallback(() => {
@@ -419,6 +788,13 @@ const HomePage = () => {
     setRequirementFlow(null);
     setLedgerFlow(null);
     setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
     setMessages([
       {
         id: `a-${Date.now()}`,
@@ -451,18 +827,123 @@ const HomePage = () => {
       setRequirementFlow((prev) => (prev?.sessionId === id ? prev : null));
       setLedgerFlow(null);
       setAccessFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceApplyFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationFlow(null);
+      setEvaluationAuditFlow(null);
+      setMonitorFlow(null);
+      setAccessAuditFlow(null);
     } else if (id.startsWith('ledger-')) {
       setLedgerFlow({ sessionId: id });
       setRequirementFlow(null);
       setAccessFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceApplyFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationFlow(null);
+      setEvaluationAuditFlow(null);
+      setMonitorFlow(null);
+      setAccessAuditFlow(null);
+    } else if (id.startsWith('access-audit-')) {
+      setAccessAuditFlow((prev) => (prev?.sessionId === id ? prev : createAccessAuditFlow(id)));
+      setRequirementFlow(null);
+      setLedgerFlow(null);
+      setAccessFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceApplyFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationFlow(null);
+      setEvaluationAuditFlow(null);
+      setMonitorFlow(null);
     } else if (id.startsWith('access-')) {
       setAccessFlow((prev) => (prev?.sessionId === id ? prev : { sessionId: id, step: 'collectMaterial', slots: {} }));
       setRequirementFlow(null);
       setLedgerFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceApplyFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationFlow(null);
+      setEvaluationAuditFlow(null);
+      setMonitorFlow(null);
+      setAccessAuditFlow(null);
+    } else if (id.startsWith('resource-audit-')) {
+      setResourceAuditFlow((prev) => (prev?.sessionId === id ? prev : createResourceAuditFlow(id)));
+      setRequirementFlow(null);
+      setLedgerFlow(null);
+      setAccessFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceApplyFlow(null);
+      setEvaluationFlow(null);
+      setEvaluationAuditFlow(null);
+      setMonitorFlow(null);
+      setAccessAuditFlow(null);
+    } else if (id.startsWith('resource-register-')) {
+      setResourceRegisterFlow((prev) => (prev?.sessionId === id ? prev : { sessionId: id, step: 'n1', slots: {} }));
+      setRequirementFlow(null);
+      setLedgerFlow(null);
+      setAccessFlow(null);
+      setResourceApplyFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationFlow(null);
+      setEvaluationAuditFlow(null);
+      setMonitorFlow(null);
+      setAccessAuditFlow(null);
+    } else if (id.startsWith('resource-')) {
+      setResourceApplyFlow((prev) => (prev?.sessionId === id ? prev : { sessionId: id, step: 'n1', slots: {} }));
+      setRequirementFlow(null);
+      setLedgerFlow(null);
+      setAccessFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationFlow(null);
+      setEvaluationAuditFlow(null);
+      setMonitorFlow(null);
+      setAccessAuditFlow(null);
+    } else if (id.startsWith('evaluation-audit-')) {
+      setEvaluationAuditFlow((prev) => (prev?.sessionId === id ? prev : createEvaluationAuditFlow(id)));
+      setRequirementFlow(null);
+      setLedgerFlow(null);
+      setAccessFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceApplyFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationFlow(null);
+      setMonitorFlow(null);
+      setAccessAuditFlow(null);
+    } else if (id.startsWith('evaluation-')) {
+      setEvaluationFlow((prev) => (prev?.sessionId === id ? prev : { sessionId: id, step: 'n1', slots: {} }));
+      setRequirementFlow(null);
+      setLedgerFlow(null);
+      setAccessFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceApplyFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationAuditFlow(null);
+      setMonitorFlow(null);
+      setAccessAuditFlow(null);
+    } else if (id.startsWith('monitor-')) {
+      setMonitorFlow((prev) => (prev?.sessionId === id ? prev : { sessionId: id }));
+      setRequirementFlow(null);
+      setLedgerFlow(null);
+      setAccessFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceApplyFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationFlow(null);
+      setEvaluationAuditFlow(null);
+      setAccessAuditFlow(null);
     } else {
       setRequirementFlow(null);
       setLedgerFlow(null);
       setAccessFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceApplyFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationFlow(null);
+      setEvaluationAuditFlow(null);
+      setMonitorFlow(null);
+      setAccessAuditFlow(null);
     }
     setIsNewTaskView(false);
     window.setTimeout(() => {
@@ -486,6 +967,13 @@ const HomePage = () => {
     setRequirementFlow(null);
     setLedgerFlow(null);
     setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
     setIsNewTaskView(false);
   }, []);
 
@@ -510,6 +998,13 @@ const HomePage = () => {
     setRequirementFlow({ sessionId, step: 'n0', slots: {} });
     setLedgerFlow(null);
     setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
     setMessages([opening]);
     setDraft('');
     setIsNewTaskView(false);
@@ -543,6 +1038,13 @@ const HomePage = () => {
     setRequirementFlow(null);
     setLedgerFlow({ sessionId });
     setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
     setMessages([opening]);
     setDraft('');
     setIsNewTaskView(false);
@@ -576,6 +1078,325 @@ const HomePage = () => {
     setRequirementFlow(null);
     setLedgerFlow(null);
     setAccessFlow({ sessionId, step: 'collectMaterial', slots: {} });
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
+    setMessages([opening]);
+    setDraft('');
+    setIsNewTaskView(false);
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        '[data-testid="home-v1-input"] textarea',
+      );
+      el?.focus();
+    }, 60);
+  }, []);
+
+  /* 「资源注册」场景标签 → 创建历史会话并进入 N0→N6 固定任务轨道 */
+  const startResourceRegister = useCallback(() => {
+    const sessionId = `resource-register-${Date.now()}`;
+    const newSession: SessionEntry = {
+      id: sessionId,
+      title: '资源注册',
+      updatedAt: '刚刚',
+    };
+    const opening: ChatMessage = {
+      id: `resource-register-a-${Date.now()}`,
+      role: 'assistant',
+      content: buildResourceRegisterOpening(),
+      module: '资源注册',
+      quickActions: [
+        '上传资源清单.xlsx：放射 PACS 走 DICOM，再加 Qwen 大模型，云端部署',
+        '注册 PACS',
+        '注册 Qwen 模型',
+      ],
+      time: nowStr(),
+    };
+
+    setMiddleView('overview');
+    setExtraSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(sessionId);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
+    setAccessFlow(null);
+    setResourceRegisterFlow({ sessionId, step: 'n1', slots: {} });
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
+    setMessages([opening]);
+    setDraft('');
+    setIsNewTaskView(false);
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        '[data-testid="home-v1-input"] textarea',
+      );
+      el?.focus();
+    }, 60);
+  }, []);
+
+  /* 「资源申请」场景标签 → 创建历史会话并进入 N0→N4 固定任务轨道 */
+  const startResourceApplication = useCallback(() => {
+    const sessionId = `resource-${Date.now()}`;
+    const newSession: SessionEntry = {
+      id: sessionId,
+      title: '资源申请',
+      updatedAt: '刚刚',
+    };
+    const opening: ChatMessage = {
+      id: `resource-a-${Date.now()}`,
+      role: 'assistant',
+      content: buildResourceOpening(),
+      module: '资源申请',
+      quickActions: [
+        '糖尿病随访管理助手',
+        '智能导诊助手 v2.3',
+        '心血管随访助手 v1.2',
+      ],
+      time: nowStr(),
+    };
+
+    setMiddleView('overview');
+    setExtraSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(sessionId);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
+    setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow({ sessionId, step: 'n1', slots: {} });
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
+    setMessages([opening]);
+    setDraft('');
+    setIsNewTaskView(false);
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        '[data-testid="home-v1-input"] textarea',
+      );
+      el?.focus();
+    }, 60);
+  }, []);
+
+  /* 「资源审核」场景标签 → 创建历史会话并进入 N0→N5 固定审核轨道 */
+  const startResourceAudit = useCallback(() => {
+    const sessionId = `resource-audit-${Date.now()}`;
+    const newSession: SessionEntry = {
+      id: sessionId,
+      title: '资源审核',
+      updatedAt: '刚刚',
+    };
+    const flow = createResourceAuditFlow(sessionId);
+    const opening: ChatMessage = {
+      id: `resource-audit-a-${Date.now()}`,
+      role: 'assistant',
+      content: buildResourceAuditOpening(flow),
+      module: '资源审核',
+      quickActions: ['看第一条', '暂停并保存进度', '查看本批次汇总'],
+      time: nowStr(),
+    };
+
+    setMiddleView('overview');
+    setExtraSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(sessionId);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
+    setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(flow);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
+    setMessages([opening]);
+    setDraft('');
+    setIsNewTaskView(false);
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        '[data-testid="home-v1-input"] textarea',
+      );
+      el?.focus();
+    }, 60);
+  }, []);
+
+  /* 「新建评测」场景标签 → 创建历史会话并进入评测任务 N0→N 轨道 */
+  const startEvaluationCreate = useCallback(() => {
+    if (!isItAdmin) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `evaluation-deny-${Date.now()}`,
+          role: 'assistant',
+          content: EVALUATION_SCENE.noPermission,
+          module: '新建评测',
+          time: nowStr(),
+        },
+      ]);
+      setIsNewTaskView(false);
+      return;
+    }
+    const sessionId = `evaluation-${Date.now()}`;
+    const newSession: SessionEntry = {
+      id: sessionId,
+      title: '新建评测',
+      updatedAt: '刚刚',
+    };
+    const opening: ChatMessage = {
+      id: `evaluation-a-${Date.now()}`,
+      role: 'assistant',
+      content: buildEvaluationOpening(),
+      module: '新建评测',
+      quickActions: ['第一个，标准评测', '这批都评一下，标准评测', '影像报告解读助手，深度评测'],
+      time: nowStr(),
+    };
+
+    setMiddleView('overview');
+    setExtraSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(sessionId);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
+    setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow({ sessionId, step: 'n1', slots: {} });
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
+    setMessages([opening]);
+    setDraft('');
+    setIsNewTaskView(false);
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        '[data-testid="home-v1-input"] textarea',
+      );
+      el?.focus();
+    }, 60);
+  }, [isItAdmin]);
+
+  /* 「评测审核」场景标签 → 创建历史会话并进入 N0→N4 固定审核轨道 */
+  const startEvaluationAudit = useCallback(() => {
+    const sessionId = `evaluation-audit-${Date.now()}`;
+    const newSession: SessionEntry = {
+      id: sessionId,
+      title: '评测审核',
+      updatedAt: '刚刚',
+    };
+    const flow = createEvaluationAuditFlow(sessionId);
+    const opening: ChatMessage = {
+      id: `evaluation-audit-a-${Date.now()}`,
+      role: 'assistant',
+      content: buildEvaluationAuditOpening(flow),
+      module: '评测审核',
+      quickActions: ['看第一条', '查看批次汇总', '暂停审核'],
+      time: nowStr(),
+    };
+
+    setMiddleView('overview');
+    setExtraSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(sessionId);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
+    setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(flow);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
+    setMessages([opening]);
+    setDraft('');
+    setIsNewTaskView(false);
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        '[data-testid="home-v1-input"] textarea',
+      );
+      el?.focus();
+    }, 60);
+  }, []);
+
+  /* 「监控信息查看」场景标签 → 创建历史会话并展示推荐问句 */
+  const startMonitorInfo = useCallback(() => {
+    const sessionId = `monitor-${Date.now()}`;
+    const newSession: SessionEntry = {
+      id: sessionId,
+      title: '监控信息查看',
+      updatedAt: '刚刚',
+    };
+    const opening: ChatMessage = {
+      id: `monitor-a-${Date.now()}`,
+      role: 'assistant',
+      content: buildMonitorOpening(role),
+      module: '监控信息查看',
+      quickActions: monitorRecommendedQuestions,
+      time: nowStr(),
+    };
+
+    setMiddleView('overview');
+    setExtraSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(sessionId);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
+    setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow({ sessionId });
+    setAccessAuditFlow(null);
+    setMessages([opening]);
+    setDraft('');
+    setIsNewTaskView(false);
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        '[data-testid="home-v1-input"] textarea',
+      );
+      el?.focus();
+    }, 60);
+  }, [role]);
+
+  /* 「接入审核」场景标签 → 创建历史会话并进入 N0→N5 固定审核轨道 */
+  const startAccessAudit = useCallback(() => {
+    const sessionId = `access-audit-${Date.now()}`;
+    const newSession: SessionEntry = {
+      id: sessionId,
+      title: '接入审核',
+      updatedAt: '刚刚',
+    };
+    const flow = createAccessAuditFlow(sessionId);
+    const opening: ChatMessage = {
+      id: `access-audit-a-${Date.now()}`,
+      role: 'assistant',
+      content: buildAccessAuditOpening(flow),
+      module: '接入审核',
+      quickActions: ['批量通过建议通过', '查看 0201-0004', '只看建议退回修改'],
+      time: nowStr(),
+    };
+
+    setMiddleView('overview');
+    setExtraSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(sessionId);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
+    setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(flow);
     setMessages([opening]);
     setDraft('');
     setIsNewTaskView(false);
@@ -641,6 +1462,7 @@ const HomePage = () => {
             content,
             module: '需求登记',
             link: index === next.replies.length - 1 ? next.link : undefined,
+            quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
             time: nowStr(),
           })),
         ]);
@@ -652,7 +1474,7 @@ const HomePage = () => {
         return;
       }
       if (ledgerFlow && ledgerFlow.sessionId === activeSessionId) {
-        const next = getLedgerReply(text, role);
+        const next = getLedgerReply(ledgerFlow, text, role);
         setMessages((prev) => [
           ...prev,
           {
@@ -662,11 +1484,14 @@ const HomePage = () => {
             module: next.module,
             link: next.link,
             quickActions: next.quickActions,
+            candidates: next.candidates,
+            reportCard: next.reportCard,
             time: nowStr(),
           },
         ]);
+        setLedgerFlow(next.flow);
         setExtraSessions((prev) =>
-          prev.map((s) => (s.id === ledgerFlow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+          prev.map((s) => (s.id === next.flow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
         );
         setLoading(false);
         return;
@@ -689,6 +1514,480 @@ const HomePage = () => {
         setExtraSessions((prev) =>
           prev.map((s) => (s.id === next.flow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
         );
+        setLoading(false);
+        return;
+      }
+      if (
+        resourceRegisterFlow &&
+        resourceRegisterFlow.sessionId === activeSessionId &&
+        resourceRegisterFlow.step !== 'done'
+      ) {
+        const next = getResourceRegisterNext(resourceRegisterFlow, text, currentUser?.name);
+        setMessages((prev) => [
+          ...prev,
+          ...next.replies.map((content, index) => ({
+            id: `resource-register-a-${Date.now()}-${index}`,
+            role: 'assistant' as const,
+            content,
+            module: '资源注册',
+            link: index === next.replies.length - 1 ? next.link : undefined,
+            quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
+            time: nowStr(),
+          })),
+        ]);
+        setResourceRegisterFlow(next.flow);
+        setExtraSessions((prev) =>
+          prev.map((s) => (s.id === next.flow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+        );
+        setLoading(false);
+        return;
+      }
+      if (
+        resourceRegisterFlow &&
+        resourceRegisterFlow.sessionId === activeSessionId &&
+        resourceRegisterFlow.step === 'done'
+      ) {
+        const next = getResourceRegisterDoneReply(resourceRegisterFlow, text);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `resource-register-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: next.reply,
+            module: '资源注册',
+            link: next.link,
+            quickActions: next.quickActions,
+            time: nowStr(),
+          },
+        ]);
+        setResourceRegisterFlow(next.flow);
+        setLoading(false);
+        return;
+      }
+      if (
+        resourceApplyFlow &&
+        resourceApplyFlow.sessionId === activeSessionId &&
+        resourceApplyFlow.step !== 'done'
+      ) {
+        const next = getResourceApplyNext(resourceApplyFlow, text, currentUser?.name);
+        setMessages((prev) => [
+          ...prev,
+          ...next.replies.map((content, index) => ({
+            id: `resource-a-${Date.now()}-${index}`,
+            role: 'assistant' as const,
+            content,
+            module: '资源申请',
+            link: index === next.replies.length - 1 ? next.link : undefined,
+            quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
+            time: nowStr(),
+          })),
+        ]);
+        setResourceApplyFlow(next.flow);
+        setExtraSessions((prev) =>
+          prev.map((s) => (s.id === next.flow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+        );
+        setLoading(false);
+        return;
+      }
+      if (
+        resourceApplyFlow &&
+        resourceApplyFlow.sessionId === activeSessionId &&
+        resourceApplyFlow.step === 'done'
+      ) {
+        const next = getResourceApplyDoneReply(resourceApplyFlow, text);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `resource-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: next.reply,
+            module: '资源申请',
+            link: next.link,
+            quickActions: next.quickActions,
+            time: nowStr(),
+          },
+        ]);
+        setResourceApplyFlow(next.flow);
+        setLoading(false);
+        return;
+      }
+      if (
+        resourceAuditFlow &&
+        resourceAuditFlow.sessionId === activeSessionId &&
+        resourceAuditFlow.step !== 'done'
+      ) {
+        const next = getResourceAuditNext(resourceAuditFlow, text, currentUser?.name);
+        setMessages((prev) => [
+          ...prev,
+          ...next.replies.map((content, index) => ({
+            id: `resource-audit-a-${Date.now()}-${index}`,
+            role: 'assistant' as const,
+            content,
+            module: '资源审核',
+            link: index === next.replies.length - 1 ? next.link : undefined,
+            quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
+            time: nowStr(),
+          })),
+        ]);
+        setResourceAuditFlow(next.flow);
+        setExtraSessions((prev) =>
+          prev.map((s) => (s.id === next.flow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+        );
+        setLoading(false);
+        return;
+      }
+      if (
+        resourceAuditFlow &&
+        resourceAuditFlow.sessionId === activeSessionId &&
+        resourceAuditFlow.step === 'done'
+      ) {
+        const next = getResourceAuditDoneReply(resourceAuditFlow, text);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `resource-audit-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: next.reply,
+            module: '资源审核',
+            link: next.link,
+            quickActions: next.quickActions,
+            time: nowStr(),
+          },
+        ]);
+        setResourceAuditFlow(next.flow);
+        setLoading(false);
+        return;
+      }
+      if (
+        evaluationFlow &&
+        evaluationFlow.sessionId === activeSessionId &&
+        evaluationFlow.step !== 'done'
+      ) {
+        const next = getEvaluationNext(evaluationFlow, text, currentUser?.name);
+        setMessages((prev) => [
+          ...prev,
+          ...next.replies.map((content, index) => ({
+            id: `evaluation-a-${Date.now()}-${index}`,
+            role: 'assistant' as const,
+            content,
+            module: '新建评测',
+            link: index === next.replies.length - 1 ? next.link : undefined,
+            quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
+            time: nowStr(),
+          })),
+        ]);
+        setEvaluationFlow(next.flow);
+        setExtraSessions((prev) =>
+          prev.map((s) => (s.id === next.flow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+        );
+        setLoading(false);
+        return;
+      }
+      if (
+        evaluationFlow &&
+        evaluationFlow.sessionId === activeSessionId &&
+        evaluationFlow.step === 'done'
+      ) {
+        const next = getEvaluationDoneReply(evaluationFlow, text);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `evaluation-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: next.reply,
+            module: '新建评测',
+            link: next.link,
+            quickActions: next.quickActions,
+            time: nowStr(),
+          },
+        ]);
+        setEvaluationFlow(next.flow);
+        setLoading(false);
+        return;
+      }
+      if (
+        evaluationAuditFlow &&
+        evaluationAuditFlow.sessionId === activeSessionId &&
+        evaluationAuditFlow.step !== 'done'
+      ) {
+        const next = getEvaluationAuditNext(evaluationAuditFlow, text, currentUser?.name);
+        setMessages((prev) => [
+          ...prev,
+          ...next.replies.map((content, index) => ({
+            id: `evaluation-audit-a-${Date.now()}-${index}`,
+            role: 'assistant' as const,
+            content,
+            module: '评测审核',
+            link: index === next.replies.length - 1 ? next.link : undefined,
+            quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
+            time: nowStr(),
+          })),
+        ]);
+        setEvaluationAuditFlow(next.flow);
+        setExtraSessions((prev) =>
+          prev.map((s) => (s.id === next.flow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+        );
+        setLoading(false);
+        return;
+      }
+      if (
+        evaluationAuditFlow &&
+        evaluationAuditFlow.sessionId === activeSessionId &&
+        evaluationAuditFlow.step === 'done'
+      ) {
+        const next = getEvaluationAuditDoneReply(evaluationAuditFlow, text);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `evaluation-audit-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: next.reply,
+            module: '评测审核',
+            link: next.link,
+            quickActions: next.quickActions,
+            time: nowStr(),
+          },
+        ]);
+        setEvaluationAuditFlow(next.flow);
+        setLoading(false);
+        return;
+      }
+      if (monitorFlow && monitorFlow.sessionId === activeSessionId) {
+        const next = getMonitorReply(monitorFlow, text, role);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `monitor-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: next.reply,
+            module: '监控信息查看',
+            link: next.link,
+            quickActions: next.quickActions,
+            reportCard: next.reportCard,
+            monitorAlertTable: next.monitorAlertTable,
+            time: nowStr(),
+          },
+        ]);
+        setMonitorFlow(next.flow);
+        setExtraSessions((prev) =>
+          prev.map((s) => (s.id === monitorFlow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+        );
+        setLoading(false);
+        return;
+      }
+      if (
+        accessAuditFlow &&
+        accessAuditFlow.sessionId === activeSessionId &&
+        accessAuditFlow.step !== 'done'
+      ) {
+        const next = getAccessAuditNext(accessAuditFlow, text, currentUser?.name);
+        setMessages((prev) => [
+          ...prev,
+          ...next.replies.map((content, index) => ({
+            id: `access-audit-a-${Date.now()}-${index}`,
+            role: 'assistant' as const,
+            content,
+            module: '接入审核',
+            link: index === next.replies.length - 1 ? next.link : undefined,
+            quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
+            time: nowStr(),
+          })),
+        ]);
+        setAccessAuditFlow(next.flow);
+        setExtraSessions((prev) =>
+          prev.map((s) => (s.id === next.flow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+        );
+        setLoading(false);
+        return;
+      }
+      if (
+        accessAuditFlow &&
+        accessAuditFlow.sessionId === activeSessionId &&
+        accessAuditFlow.step === 'done'
+      ) {
+        const next = getAccessAuditDoneReply(accessAuditFlow, text);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `access-audit-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: next.reply,
+            module: '接入审核',
+            link: next.link,
+            quickActions: next.quickActions,
+            time: nowStr(),
+          },
+        ]);
+        setAccessAuditFlow(next.flow);
+        setLoading(false);
+        return;
+      }
+      if (!activeSessionId && isDirectEvaluationCreateText(text)) {
+        if (!isItAdmin) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `evaluation-deny-${Date.now()}`,
+              role: 'assistant' as const,
+              content: EVALUATION_SCENE.noPermission,
+              module: '新建评测',
+              time: nowStr(),
+            },
+          ]);
+          setLoading(false);
+          return;
+        }
+        const sessionId = `evaluation-${Date.now()}`;
+        setExtraSessions((prev) => [{ id: sessionId, title: '新建评测', updatedAt: '刚刚' }, ...prev]);
+        setActiveSessionId(sessionId);
+        setEvaluationFlow({ sessionId, step: 'n1', slots: {} });
+        setRequirementFlow(null);
+        setLedgerFlow(null);
+        setAccessFlow(null);
+        setResourceRegisterFlow(null);
+        setResourceApplyFlow(null);
+        setResourceAuditFlow(null);
+        setEvaluationAuditFlow(null);
+        setMonitorFlow(null);
+        setAccessAuditFlow(null);
+        setIsNewTaskView(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `evaluation-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: buildEvaluationOpening(),
+            module: '新建评测',
+            quickActions: ['第一个，标准评测', '这批都评一下，标准评测', '影像报告解读助手，深度评测'],
+            time: nowStr(),
+          },
+        ]);
+        setLoading(false);
+        return;
+      }
+      if (!activeSessionId && isDirectResourceRegisterText(text)) {
+        const sessionId = `resource-register-${Date.now()}`;
+        setExtraSessions((prev) => [{ id: sessionId, title: '资源注册', updatedAt: '刚刚' }, ...prev]);
+        setActiveSessionId(sessionId);
+        setResourceRegisterFlow({ sessionId, step: 'n1', slots: {} });
+        setRequirementFlow(null);
+        setLedgerFlow(null);
+        setAccessFlow(null);
+        setResourceApplyFlow(null);
+        setResourceAuditFlow(null);
+        setEvaluationFlow(null);
+        setEvaluationAuditFlow(null);
+        setMonitorFlow(null);
+        setAccessAuditFlow(null);
+        setIsNewTaskView(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `resource-register-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: buildResourceRegisterOpening(),
+            module: '资源注册',
+            quickActions: [
+              '上传资源清单.xlsx：放射 PACS 走 DICOM，再加 Qwen 大模型，云端部署',
+              '注册 PACS',
+              '注册 Qwen 模型',
+            ],
+            time: nowStr(),
+          },
+        ]);
+        setLoading(false);
+        return;
+      }
+      if (!activeSessionId && isDirectRequirementText(text)) {
+        const sessionId = `req-${Date.now()}`;
+        setExtraSessions((prev) => [
+          { id: sessionId, title: '智能体建设需求登记', updatedAt: '刚刚' },
+          ...prev,
+        ]);
+        setActiveSessionId(sessionId);
+        setRequirementFlow({ sessionId, step: 'n0', slots: {} });
+        setLedgerFlow(null);
+        setAccessFlow(null);
+        setResourceRegisterFlow(null);
+        setResourceApplyFlow(null);
+        setResourceAuditFlow(null);
+        setEvaluationFlow(null);
+        setEvaluationAuditFlow(null);
+        setMonitorFlow(null);
+        setAccessAuditFlow(null);
+        setIsNewTaskView(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `req-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: buildRequirementOpening(),
+            module: '需求登记',
+            time: nowStr(),
+          },
+        ]);
+        setLoading(false);
+        return;
+      }
+      if (!activeSessionId && isDirectMonitorText(text)) {
+        const sessionId = `monitor-${Date.now()}`;
+        const next = getMonitorReply({ sessionId }, text, role);
+        setExtraSessions((prev) => [{ id: sessionId, title: '监控信息查看', updatedAt: '刚刚' }, ...prev]);
+        setActiveSessionId(sessionId);
+        setMonitorFlow(next.flow);
+        setRequirementFlow(null);
+        setLedgerFlow(null);
+        setAccessFlow(null);
+        setResourceRegisterFlow(null);
+        setResourceApplyFlow(null);
+        setResourceAuditFlow(null);
+        setEvaluationFlow(null);
+        setEvaluationAuditFlow(null);
+        setAccessAuditFlow(null);
+        setIsNewTaskView(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `monitor-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: next.reply,
+            module: '监控信息查看',
+            link: next.link,
+            quickActions: next.quickActions,
+            reportCard: next.reportCard,
+            monitorAlertTable: next.monitorAlertTable,
+            time: nowStr(),
+          },
+        ]);
+        setLoading(false);
+        return;
+      }
+      if (!activeSessionId && isDirectAccessText(text)) {
+        const sessionId = `access-${Date.now()}`;
+        setExtraSessions((prev) => [{ id: sessionId, title: '接入申请', updatedAt: '刚刚' }, ...prev]);
+        setActiveSessionId(sessionId);
+        setAccessFlow({ sessionId, step: 'collectMaterial', slots: {} });
+        setRequirementFlow(null);
+        setLedgerFlow(null);
+        setResourceRegisterFlow(null);
+        setResourceApplyFlow(null);
+        setResourceAuditFlow(null);
+        setEvaluationFlow(null);
+        setEvaluationAuditFlow(null);
+        setMonitorFlow(null);
+        setAccessAuditFlow(null);
+        setIsNewTaskView(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `access-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: buildAccessOpening(),
+            module: '接入申请',
+            quickActions: ['上传技术规格书.docx，并口述产品说明', '文字描述糖尿病随访助手', '我先口述材料内容'],
+            time: nowStr(),
+          },
+        ]);
         setLoading(false);
         return;
       }
@@ -723,6 +2022,34 @@ const HomePage = () => {
     }
     if (tag.key === 'access-apply') {
       startAccessApplication();
+      return;
+    }
+    if (tag.key === 'access-audit') {
+      startAccessAudit();
+      return;
+    }
+    if (tag.key === 'resource-register') {
+      startResourceRegister();
+      return;
+    }
+    if (tag.key === 'resource-apply') {
+      startResourceApplication();
+      return;
+    }
+    if (tag.key === 'resource-audit') {
+      startResourceAudit();
+      return;
+    }
+    if (tag.key === 'evaluation-create') {
+      startEvaluationCreate();
+      return;
+    }
+    if (tag.key === 'evaluation-audit') {
+      startEvaluationAudit();
+      return;
+    }
+    if (tag.key === 'monitor-info') {
+      startMonitorInfo();
       return;
     }
     handleSend(tag.prompt);
@@ -854,9 +2181,6 @@ const HomePage = () => {
             <Text style={{ fontSize: 12, color: '#555', display: 'block', marginTop: 2 }}>
               接入 · 台账 · 资源 · 评测 · 监控，一句话就能办
             </Text>
-            <Text style={{ fontSize: 13, color: '#333', display: 'block', marginTop: 4 }}>
-              您好,{currentUser?.name ?? '用户'},我是医小管,请问有什么能帮到您?
-            </Text>
           </div>
         </div>
 
@@ -880,6 +2204,7 @@ const HomePage = () => {
                 msg={m}
                 navigate={navigate}
                 onQuickAction={handleSend}
+                onMetricClick={(label) => navigate(resolveLedgerMetricRoute(label))}
               />
             ))
           )}
@@ -921,7 +2246,7 @@ const HomePage = () => {
                 marginBottom: 6,
               }}
             >
-              {sceneTags.map((t) => (
+              {sceneTags.filter((t) => !['evaluation-create', 'evaluation-audit', 'access-audit', 'resource-audit'].includes(t.key) || isItAdmin).map((t) => (
                 <div
                   key={t.key}
                   onClick={() => handleSceneTagClick(t)}
@@ -1151,10 +2476,12 @@ const MessageBubble = ({
   msg,
   navigate,
   onQuickAction,
+  onMetricClick,
 }: {
   msg: any;
   navigate: (to: string) => void;
   onQuickAction?: (text: string) => void;
+  onMetricClick?: (text: string) => void;
 }) => {
   const isUser = msg.role === 'user';
   return (
@@ -1210,11 +2537,104 @@ const MessageBubble = ({
                   {children}
                 </code>
               ),
-              strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+              strong: ({ children }) => {
+                const label = flattenMarkdownText(children);
+                if (!isUser && onMetricClick && label) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => onMetricClick(label)}
+                      style={{
+                        border: 0,
+                        padding: 0,
+                        margin: 0,
+                        background: 'transparent',
+                        color: '#1677FF',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        textUnderlineOffset: 2,
+                      }}
+                      data-testid="home-v1-ledger-metric-hotspot"
+                    >
+                      {children}
+                    </button>
+                  );
+                }
+                return <strong style={{ fontWeight: 600 }}>{children}</strong>;
+              },
             }}
           >
             {msg.content}
           </ReactMarkdown>
+          {!isUser && Array.isArray(msg.candidates) && msg.candidates.length > 0 && (
+            <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+              {msg.candidates.map((candidate: LedgerCandidate) => (
+                <button
+                  key={`${candidate.code}-${candidate.name}`}
+                  type="button"
+                  onClick={() => onQuickAction?.(candidate.prompt)}
+                  style={{
+                    textAlign: 'left',
+                    border: '1px solid #D9E8FF',
+                    background: '#F7FBFF',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    cursor: 'pointer',
+                    color: '#262626',
+                  }}
+                  data-testid="home-v1-ledger-candidate"
+                >
+                  <div style={{ fontWeight: 600, fontSize: 12 }}>{candidate.code} · {candidate.name}</div>
+                  <div style={{ color: '#8C8C8C', fontSize: 11, marginTop: 2 }}>{candidate.version}</div>
+                </button>
+              ))}
+            </div>
+          )}
+          {!isUser && msg.reportCard && (
+            <div
+              style={{
+                marginTop: 10,
+                border: '1px solid #D9E8FF',
+                background: '#F7FBFF',
+                borderRadius: 8,
+                padding: 10,
+              }}
+              data-testid="home-v1-ledger-report-card"
+            >
+              <div style={{ fontWeight: 600, color: '#1677FF', marginBottom: 4 }}>
+                {msg.reportCard.title}
+              </div>
+              <div style={{ fontSize: 11, color: '#595959', marginBottom: 8 }}>
+                {msg.reportCard.scope} · {msg.reportCard.period}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+                {msg.reportCard.modules.map((moduleName: string) => (
+                  <Tag key={moduleName} color="processing" style={{ marginInlineEnd: 0, fontSize: 11 }}>
+                    {moduleName}
+                  </Tag>
+                ))}
+              </div>
+              <Space size={6} wrap>
+                <Button size="small" type="primary" onClick={() => navigate(msg.reportCard.to)}>
+                  编辑
+                </Button>
+                <Button size="small" onClick={() => message.success('已导出报告 Demo 文件')}>
+                  导出
+                </Button>
+                <Button size="small" onClick={() => message.success('已订阅每周台账速读')}>
+                  订阅速读
+                </Button>
+              </Space>
+            </div>
+          )}
+          {!isUser && msg.monitorAlertTable && (
+            <MonitorAlertTableView
+              table={msg.monitorAlertTable}
+              navigate={navigate}
+              onQuickAction={onQuickAction}
+            />
+          )}
           {msg.link && (
             <div style={{ marginTop: 8 }}>
               <Button
@@ -1234,7 +2654,15 @@ const MessageBubble = ({
                 <Button
                   key={action}
                   size="small"
-                  style={{ borderRadius: 999, fontSize: 11, height: 26 }}
+                  style={{
+                    borderRadius: 999,
+                    fontSize: 11,
+                    minHeight: 26,
+                    height: 'auto',
+                    maxWidth: '100%',
+                    whiteSpace: 'normal',
+                    textAlign: 'left',
+                  }}
                   onClick={() => onQuickAction?.(action)}
                   data-testid="home-v1-ledger-quick-action"
                 >
@@ -1259,6 +2687,143 @@ const MessageBubble = ({
   );
 };
 
+const MonitorAlertTableView = ({
+  table,
+  navigate,
+  onQuickAction,
+}: {
+  table: MonitorAlertTable;
+  navigate: (to: string) => void;
+  onQuickAction?: (text: string) => void;
+}) => {
+  const [level, setLevel] = useState<'全部' | '高' | '中' | '低'>('全部');
+  const [dimension, setDimension] = useState<'全部' | '业务' | '状态' | '成本' | '安全'>('全部');
+  const [keyword, setKeyword] = useState('');
+  const rows = table.rows.filter((row) => {
+    const hitLevel = level === '全部' || row.level === level;
+    const hitDimension = dimension === '全部' || row.dimension === dimension;
+    const hitKeyword = !keyword.trim() || `${row.code}${row.agentName}${row.content}`.toLowerCase().includes(keyword.trim().toLowerCase());
+    return hitLevel && hitDimension && hitKeyword;
+  });
+
+  if (!table.rows.length) {
+    return (
+      <div
+        style={{
+          marginTop: 10,
+          border: '1px solid #D9E8FF',
+          background: '#F7FBFF',
+          borderRadius: 8,
+          padding: 10,
+        }}
+        data-testid="home-v1-monitor-alert-empty"
+      >
+        <Text style={{ fontSize: 12 }}>{table.emptyText ?? '当前暂无未处理告警，运行平稳'}</Text>
+        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          <Button size="small" onClick={() => onQuickAction?.('看运行概况')}>看运行概况</Button>
+          <Button size="small" type="primary" onClick={() => onQuickAction?.('生成监控报告')}>生成监控报告</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        border: '1px solid #E5E7EB',
+        background: '#FFFFFF',
+        borderRadius: 8,
+        overflow: 'hidden',
+      }}
+      data-testid="home-v1-monitor-alert-table"
+    >
+      <div style={{ display: 'flex', gap: 6, padding: 8, flexWrap: 'wrap', borderBottom: '1px solid #F0F0F0' }}>
+        <Select
+          size="small"
+          value={level}
+          onChange={setLevel}
+          style={{ width: 90 }}
+          options={['全部', '高', '中', '低'].map((value) => ({ value, label: value === '全部' ? '级别:全部' : `级别:${value}` }))}
+        />
+        <Select
+          size="small"
+          value={dimension}
+          onChange={setDimension}
+          style={{ width: 96 }}
+          options={['全部', '业务', '状态', '成本', '安全'].map((value) => ({ value, label: value === '全部' ? '维度:全部' : `维度:${value}` }))}
+        />
+        <Input.Search
+          size="small"
+          allowClear
+          placeholder="搜索智能体"
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          style={{ width: 160 }}
+        />
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720, fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: '#FAFAFA', color: '#595959' }}>
+              <th style={monitorThStyle}>级别</th>
+              <th style={monitorThStyle}>智能体编号</th>
+              <th style={monitorThStyle}>智能体名称</th>
+              <th style={monitorThStyle}>告警内容</th>
+              <th style={monitorThStyle}>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} style={{ background: row.level === '高' ? '#FFF1F0' : '#FFFFFF' }}>
+                <td style={monitorTdStyle}>
+                  <Tag color={row.level === '高' ? 'red' : row.level === '中' ? 'orange' : 'default'} style={{ marginInlineEnd: 0 }}>
+                    {row.level}
+                  </Tag>
+                </td>
+                <td style={monitorTdStyle}>{row.code}</td>
+                <td style={monitorTdStyle}>{row.agentName}</td>
+                <td style={monitorTdStyle}>{row.content}</td>
+                <td style={monitorTdStyle}>
+                  <Space size={4} wrap>
+                    <Button size="small" type="link" style={{ padding: 0 }} onClick={() => navigate(row.detailTo)}>
+                      查看详情
+                    </Button>
+                    <Button size="small" type="link" style={{ padding: 0 }} onClick={() => message.success(`已通知 ${row.agentName} 负责人`)}>
+                      通知负责人
+                    </Button>
+                    <Button size="small" type="link" style={{ padding: 0 }} onClick={() => message.success('已标记处理，等待复核')}>
+                      标记处理
+                    </Button>
+                  </Space>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ padding: 8, borderTop: '1px solid #F0F0F0', display: 'flex', justifyContent: 'flex-end' }}>
+        <Button size="small" onClick={() => onQuickAction?.('查看指标趋势')}>
+          查看指标趋势
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const monitorThStyle: React.CSSProperties = {
+  padding: '7px 8px',
+  textAlign: 'left',
+  borderBottom: '1px solid #F0F0F0',
+  whiteSpace: 'nowrap',
+};
+
+const monitorTdStyle: React.CSSProperties = {
+  padding: '7px 8px',
+  borderBottom: '1px solid #F5F5F5',
+  verticalAlign: 'top',
+};
+
 
 /* =========================================================
  * 工具
@@ -1266,6 +2831,24 @@ const MessageBubble = ({
 function nowStr() {
   const d = new Date();
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+}
+
+function flattenMarkdownText(node: React.ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(flattenMarkdownText).join('');
+  return '';
+}
+
+function resolveLedgerMetricRoute(label: string): string {
+  if (/token|成本|费用|GPU|CPU|内存|单任务平均成本/i.test(label)) return '/app/monitoring/cost';
+  if (/在线率|离线|心跳|状态/.test(label)) return '/app/monitoring/status';
+  if (/任务执行成功率|调用量|P95|响应|中断|吞吐|并发/.test(label)) return '/app/monitoring/business';
+  if (/告警|P0|P1|异常|故障/.test(label)) return '/app/monitoring/alert-events';
+  if (/风险|高度关注|中度关注|一般关注/.test(label)) return '/app/ledger/list?risk=high';
+  if (/调用|运行率|在线率|趋势/.test(label)) return '/app/monitoring/business';
+  if (/科室|覆盖率|分布/.test(label)) return '/app/ledger/list?group=department';
+  if (/评测|通过率/.test(label)) return '/app/evaluation/tasks';
+  return '/app/ledger/list';
 }
 
 function buildGreeting(role: '信息科管理员' | '科室管理员', userName?: string): string {
@@ -1276,18 +2859,2740 @@ function buildGreeting(role: '信息科管理员' | '科室管理员', userName?
 }
 
 function buildRequirementOpening(): string {
-  return '你好！我是医小管，我来帮您登记智能体建设需求（约 8 步、3–5 分钟，内容随时可改）。\n\n请用一两句话描述：您想建设一个什么样的智能体、主要解决什么问题？';
+  return '你好！我是医小管，我来帮您登记智能体建设需求（约 8 步、3–5 分钟，内容随时可改）。请用一两句话描述：您想建设一个什么样的智能体、主要解决什么问题？';
 }
 
 function buildLedgerOpening(): string {
-  return `你好，我是医小管。台账相关问题都可以问我。
-
-你可以直接问全院/本科室智能体家底、运行指标、告警情况，也可以查看某个智能体的 360 画像。`;
+  return '你好，我是医小管。台账相关问题都可以问我';
 }
 
 function buildAccessOpening(): string {
-  return '你好！我是医小管。把产品说明书 / 技术规格书发给我（支持 PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮你进行智能体接入信息注册申请～';
+  return ACCESS_SCENE.opening;
 }
+
+const accessAuditPendingAgents: AccessAuditAgent[] = [
+  {
+    code: '0503-0001',
+    name: '内分泌糖尿病随访管理助手',
+    version: 'v2.1',
+    department: '0503 内分泌科',
+    clinicStage: '其他（出院后随访管理）',
+    description: '读取患者基础信息、诊疗记录、检验指标与随访计划，自动生成随访任务、健康提醒、异常风险提示和结构化随访报告。',
+    source: '合作研发',
+    vendor: '智医健康科技有限公司',
+    contact: '陈明',
+    phone: '138****5678',
+    accessMethod: 'API',
+    endpoint: 'https://api.xxhealth.com/dm-followup/v2',
+    apiKeyMasked: '********',
+    applicant: '内分泌科 李秀英',
+    precheck: '建议通过',
+    precheckSummary: '信息完整、材料齐备、联通测试通过、无重名、合规',
+    checks: [
+      { label: '信息完整性', ok: true, desc: '必填字段已完整填写' },
+      { label: '备案材料齐备性', ok: true, desc: '产品说明书、技术规格书、测试报告均已上传' },
+      { label: '联通测试', ok: true, desc: '接口 320ms 返回 200' },
+      { label: '名称查重', ok: true, desc: '未发现同名智能体' },
+      { label: '合规性', ok: true, desc: '密钥密文托管，权限范围与诊疗场景一致' },
+    ],
+  },
+  {
+    code: '0201-0006',
+    name: '慢病随访提醒助手',
+    version: 'v1.0',
+    department: '0201 全科医学科',
+    clinicStage: '辅助治疗',
+    description: '面向慢病患者生成随访提醒、复诊提醒与用药依从性提示，并将待办同步给责任医生。',
+    source: '科室自研',
+    vendor: '院内信息科',
+    contact: '王珊',
+    phone: '136****7821',
+    accessMethod: 'SDK',
+    endpoint: 'med-followup-sdk@1.0.0',
+    apiKeyMasked: '********',
+    applicant: '全科医学科 赵医生',
+    precheck: '建议通过',
+    precheckSummary: '五维均达标',
+    checks: [
+      { label: '信息完整性', ok: true, desc: '注册信息完整' },
+      { label: '备案材料齐备性', ok: true, desc: '备案材料齐备' },
+      { label: '联通测试', ok: true, desc: 'SDK 自检通过' },
+      { label: '名称查重', ok: true, desc: '未发现同名智能体' },
+      { label: '合规性', ok: true, desc: '调用资源均在授权范围内' },
+    ],
+  },
+  {
+    code: '0201-0004',
+    name: '儿科用药咨询助手',
+    version: 'v0.9',
+    department: '0201 儿科',
+    clinicStage: '辅助治疗',
+    description: '面向儿科门诊医生提供儿童常见用药咨询、剂量换算提示与禁忌提醒。',
+    source: '第三方采购',
+    vendor: '童康智能科技有限公司',
+    contact: '刘洋',
+    phone: '139****2468',
+    accessMethod: 'API',
+    endpoint: 'https://api.childcare-ai.com/medication/v1',
+    apiKeyMasked: '********',
+    applicant: '儿科 张医生',
+    precheck: '建议退回修改',
+    precheckSummary: '技术规格书缺失、联通测试未通过',
+    checks: [
+      { label: '信息完整性', ok: true, desc: '注册字段已填写' },
+      { label: '备案材料齐备性', ok: false, desc: '缺技术规格书 PDF' },
+      { label: '联通测试', ok: false, desc: '接口返回 404，未通过连通性校验' },
+      { label: '名称查重', ok: true, desc: '未发现同名智能体' },
+      { label: '合规性', ok: true, desc: '未发现越权资源声明' },
+    ],
+  },
+];
+
+function createAccessAuditFlow(sessionId: string): AccessAuditFlow {
+  return {
+    sessionId,
+    step: 'n1',
+    agents: accessAuditPendingAgents.map((agent) => ({
+      ...agent,
+      checks: agent.checks.map((check) => ({ ...check })),
+    })),
+    decisions: [],
+    viewedCodes: [],
+  };
+}
+
+function accessAuditPending(flow: AccessAuditFlow) {
+  const done = new Set(flow.decisions.map((decision) => decision.code));
+  return flow.agents.filter((agent) => !done.has(agent.code));
+}
+
+function locateAccessAuditAgent(flow: AccessAuditFlow, text: string): AccessAuditAgent | undefined {
+  const pending = accessAuditPending(flow);
+  const indexMatch = text.match(/第\s*([一二三四五六七八九十\d]+)\s*个?/);
+  if (indexMatch) {
+    const raw = indexMatch[1];
+    const map: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+    const index = Number(raw) || map[raw];
+    if (index) return pending[index - 1];
+  }
+  const digitOnly = text.trim().match(/^\d+$/)?.[0];
+  if (digitOnly) return pending[Number(digitOnly) - 1];
+  const normalized = text.toLowerCase();
+  return pending.find((agent) => {
+    const target = `${agent.code} ${agent.name} ${agent.department} ${agent.vendor}`.toLowerCase();
+    return target.includes(normalized) || normalized.includes(agent.code.toLowerCase()) || normalized.includes(agent.name.toLowerCase().slice(0, 4));
+  });
+}
+
+function accessAuditBatchTime() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatAccessAuditQueue(flow: AccessAuditFlow, agents = accessAuditPending(flow)) {
+  if (!agents.length) return '当前无待审核智能体。';
+  return agents
+    .map((agent, index) => `${index + 1}.${agent.code} ${agent.name}——${agent.precheck}（${agent.precheckSummary}）`)
+    .join('\n');
+}
+
+function buildAccessAuditOpening(flow: AccessAuditFlow): string {
+  const pending = accessAuditPending(flow);
+  return `你好！我是医小管。目前待审核 ${pending.length} 个智能体，我已完成预审并给出结论：
+${formatAccessAuditQueue(flow, pending)}
+
+可直接说、打字或点击队列条目开始。支持：
+- 批量通过：仅批量采纳预审“建议通过”项
+- 按编号/名称/自然语言定位单个
+- 按预审结论筛选，例如“只看要退回的”
+- 主动暂停，本次未处理项保持待审核`;
+}
+
+function buildAccessAuditDetail(agent: AccessAuditAgent, full = false): string {
+  const checks = agent.checks
+    .map((check, index) => `${index + 1}.${check.label} ${check.ok ? '✓' : '✗'}（${check.desc}）`)
+    .join('\n');
+  const base = `${agent.code} ${agent.name}｜所属科室：${agent.department}｜诊疗环节：${agent.clinicStage}｜接入方式：${agent.accessMethod}（API key ${agent.apiKeyMasked}）。
+
+注册信息摘要：
+- 版本：${agent.version}
+- 功能描述：${agent.description}
+- 来源：${agent.source}
+- 供应商：${agent.vendor}
+- 技术联系人：${agent.contact}
+- 联系方式：${agent.phone}
+- 接入地址/组件：${agent.endpoint}
+
+五维核验：
+${checks}
+
+预审结论：${agent.precheck}。`;
+  if (!full) {
+    return `${base}
+
+请给出二次审核结论：审核通过 / 退回修改。需要看完整详情可说“看完整详情”。`;
+  }
+  return `${base}
+
+完整详情已展开：
+- 申请人：${agent.applicant}
+- 备案材料：产品说明书已上传；技术规格书${agent.checks.some((check) => !check.ok && check.label.includes('备案')) ? '缺失' : '已上传'}；联通测试报告已生成
+- 联通测试报告：${agent.checks.find((check) => check.label === '联通测试')?.desc}
+- 密钥字段：全程密文展示，不外泄明文
+
+以上为完整信息。请问这一条的结论是审核通过还是退回修改？`;
+}
+
+function buildAccessAuditSummary(flow: AccessAuditFlow, paused = false) {
+  const passed = flow.decisions.filter((decision) => decision.result === '审核通过').length;
+  const returned = flow.decisions.filter((decision) => decision.result === '退回修改').length;
+  const unhandled = accessAuditPending(flow).length;
+  return `本次接入审核${paused ? '已暂停' : '完成'}：
+1.审核通过 ${passed}
+2.退回修改 ${returned}
+3.未处理 ${unhandled}
+
+${paused ? '未处理项保持待审核，场景锁已释放。' : '队列中每个智能体均已产生明确二次审核决策，审核记录、状态流转与申请人通知均已生效。'}
+
+收尾后仅开放动作：查看本次审核批次汇总、跟进待办清单、结束场景。`;
+}
+
+function buildAccessAuditTodo(flow: AccessAuditFlow) {
+  const todos = [
+    ...flow.decisions
+      .filter((decision) => decision.result === '退回修改')
+      .map((decision) => `${decision.code}：跟进申请人按“${decision.reason}”完成整改并重新提交`),
+    ...accessAuditPending(flow).map((agent) => `${agent.code}：未处理，保持待审核队列`),
+  ];
+  return todos.length ? `待办清单：\n${todos.map((todo, index) => `${index + 1}. ${todo}`).join('\n')}` : '待办清单为空。本次审核批次没有遗留事项。';
+}
+
+function applyAccessAuditDecision(
+  flow: AccessAuditFlow,
+  pending: AccessAuditPendingDecision,
+  reviewer?: string,
+): { flow: AccessAuditFlow; receipt: string } {
+  const time = accessAuditBatchTime();
+  const reviewerName = reviewer ?? '当前管理员';
+  const decisions = pending.codes.map((code) => ({
+    code,
+    result: pending.result,
+    reason: pending.reason,
+    overridePrecheck: pending.overridePrecheck,
+    time,
+  }));
+  const nextFlow: AccessAuditFlow = {
+    ...flow,
+    step: 'n1',
+    selectedCode: undefined,
+    pendingDecision: undefined,
+    decisions: [...flow.decisions, ...decisions],
+  };
+  const names = pending.codes
+    .map((code) => flow.agents.find((agent) => agent.code === code))
+    .filter(Boolean)
+    .map((agent) => `${agent!.code} ${agent!.name}`)
+    .join('、');
+  const status = pending.result === '审核通过' ? '状态→已纳管' : '状态→退回申请人';
+  const reason = pending.result === '退回修改' ? `\n待修改说明：${pending.reason}` : '';
+  const override = pending.overridePrecheck ? '\n已记录“覆盖预审”标记，供审计追溯。' : '';
+  return {
+    flow: nextFlow,
+    receipt: `${names} 已${pending.result}，${status}。
+审核人：${reviewerName}
+审核时间：${time}${reason}${override}
+已通知申请人。`,
+  };
+}
+
+function finishAccessAuditIfNeeded(flow: AccessAuditFlow, replies: string[], paused = false) {
+  if (paused || accessAuditPending(flow).length === 0) {
+    return {
+      flow: { ...flow, step: 'done' as const },
+      replies: [...replies, buildAccessAuditSummary(flow, paused)],
+      quickActions: ['查看本次审核批次汇总', '跟进待办清单', '结束场景'],
+    };
+  }
+  return {
+    flow,
+    replies: [
+      ...replies,
+      `剩余待审核 ${accessAuditPending(flow).length} 个：
+${formatAccessAuditQueue(flow)}
+
+请继续选择审核对象，或说“暂停审核”。`,
+    ],
+    quickActions: ['查看下一条', '只看建议退回修改', '暂停审核'],
+  };
+}
+
+function getAccessAuditNext(
+  flow: AccessAuditFlow,
+  text: string,
+  reviewer?: string,
+): {
+  flow: AccessAuditFlow;
+  replies: string[];
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  const yes = /确认|同意|是|对|没问题|执行|批量通过/.test(normalized);
+
+  if (/暂停|先停|结束/.test(normalized)) {
+    return finishAccessAuditIfNeeded(flow, ['已暂停本次接入审核。未处理项保持待审核。'], true);
+  }
+  if (/排班|工资|天气|新闻|这个月.*通过|累计通过/.test(normalized)) {
+    return {
+      flow: { ...flow, pendingTodos: [...(flow.pendingTodos ?? []), normalized] },
+      replies: ['我们先来完成智能体注册信息审核，稍后再为您解决此问题。\n\n当前审核队列还需要继续处理。'],
+      quickActions: ['查看下一条', '批量通过建议通过', '暂停审核'],
+    };
+  }
+  if (flow.pendingDecision && yes) {
+    const applied = applyAccessAuditDecision(flow, flow.pendingDecision, reviewer);
+    return finishAccessAuditIfNeeded(applied.flow, [applied.receipt]);
+  }
+  if (flow.pendingDecision && /取消|不确认|等等|返回/.test(normalized)) {
+    return {
+      flow: { ...flow, pendingDecision: undefined },
+      replies: ['已取消本次待确认操作。请重新选择审核对象或决策。'],
+      quickActions: ['查看下一条', '批量通过建议通过', '暂停审核'],
+    };
+  }
+  if (/只看.*退回|建议退回|要退回/.test(normalized)) {
+    const returned = accessAuditPending(flow).filter((agent) => agent.precheck === '建议退回修改');
+    return {
+      flow,
+      replies: [`预审“建议退回修改”共 ${returned.length} 个：\n${formatAccessAuditQueue(flow, returned)}\n\n退回修改必须先专项查看，请选择其中一个。`],
+      quickActions: returned.map((agent) => `查看 ${agent.code}`).concat('暂停审核'),
+    };
+  }
+  if (/批量|建议通过.*通过|都审核通过|全部通过/.test(normalized)) {
+    const candidates = accessAuditPending(flow).filter((agent) => agent.precheck === '建议通过');
+    if (!candidates.length) {
+      return {
+        flow,
+        replies: ['当前没有可批量通过的预审“建议通过”项。退回修改不可批量，请逐个专项查看后决策。'],
+        quickActions: ['只看建议退回修改', '查看下一条', '暂停审核'],
+      };
+    }
+    const pendingDecision: AccessAuditPendingDecision = {
+      codes: candidates.map((agent) => agent.code),
+      result: '审核通过',
+      batch: true,
+    };
+    return {
+      flow: { ...flow, step: 'n3', pendingDecision },
+      replies: [`好的，预审“建议通过”共 ${candidates.length} 个：${candidates.map((agent) => `${agent.code} ${agent.name}`).join('、')}。确认全部审核通过吗？`],
+      quickActions: ['确认批量通过', '取消'],
+    };
+  }
+
+  const current = flow.selectedCode ? flow.agents.find((agent) => agent.code === flow.selectedCode) : undefined;
+  if ((/完整详情|查看详情/.test(normalized)) && current) {
+    return {
+      flow: { ...flow, step: 'n3', viewedCodes: Array.from(new Set([...flow.viewedCodes, current.code])) },
+      replies: [buildAccessAuditDetail(current, true)],
+      quickActions: ['审核通过', '退回修改：补齐技术规格书并修复接口地址', '暂停审核'],
+    };
+  }
+  if (/直接判断|你判断|能不能过|替我决定|自动裁决/.test(normalized)) {
+    return {
+      flow,
+      replies: ['最终审核结论需由您做出，我不能代为裁决。我们先来完成智能体注册信息审核。\n\n您的结论是审核通过还是退回修改？'],
+      quickActions: ['审核通过', '退回修改：补齐材料并修复联通测试'],
+    };
+  }
+  if (/审核通过|通过/.test(normalized) && current) {
+    const overridePrecheck = current.precheck !== '建议通过';
+    const pendingDecision: AccessAuditPendingDecision = {
+      codes: [current.code],
+      result: '审核通过',
+      overridePrecheck,
+    };
+    if (overridePrecheck) {
+      return {
+        flow: { ...flow, step: 'n3', pendingDecision },
+        replies: [`该项预审结论为“${current.precheck}”，您的二次审核结论为“审核通过”，与预审不一致。请再次确认是否覆盖预审并审核通过？`],
+        quickActions: ['确认覆盖预审并通过', '取消'],
+      };
+    }
+    const applied = applyAccessAuditDecision(flow, pendingDecision, reviewer);
+    return finishAccessAuditIfNeeded(applied.flow, [applied.receipt]);
+  }
+  if (/退回|驳回|修改/.test(normalized) && current) {
+    const hasViewed = flow.viewedCodes.includes(current.code);
+    if (!hasViewed) {
+      return {
+        flow: { ...flow, selectedCode: current.code, step: 'n2', viewedCodes: Array.from(new Set([...flow.viewedCodes, current.code])) },
+        replies: [`退回修改必须先经专项查看，不能跳过。已为您展开 ${current.code} 的专项查看：\n\n${buildAccessAuditDetail(current)}`],
+        quickActions: ['退回修改：补齐技术规格书并修复接口地址', '看完整详情', '审核通过'],
+      };
+    }
+    const reasonMatch = normalized.match(/(?:退回修改|驳回|修改待修改说明|说明|原因)[:：]?\s*(.+)/);
+    const reason = reasonMatch?.[1]?.trim();
+    if (!reason || reason.length < 6) {
+      return {
+        flow: { ...flow, step: 'n3' },
+        replies: ['退回修改需请您指明需整改的内容，方便申请人对齐。请补充“待修改说明”。'],
+        quickActions: ['退回修改：补齐技术规格书 PDF，并修复接口地址后重新通过联通测试'],
+      };
+    }
+    const pendingDecision: AccessAuditPendingDecision = {
+      codes: [current.code],
+      result: '退回修改',
+      reason,
+      overridePrecheck: current.precheck !== '建议退回修改',
+    };
+    if (pendingDecision.overridePrecheck) {
+      return {
+        flow: { ...flow, pendingDecision },
+        replies: [`该项预审结论为“${current.precheck}”，您的二次审核结论为“退回修改”，与预审不一致。请确认是否覆盖预审并退回？`],
+        quickActions: ['确认覆盖预审并退回', '取消'],
+      };
+    }
+    const applied = applyAccessAuditDecision(flow, pendingDecision, reviewer);
+    return finishAccessAuditIfNeeded(applied.flow, [applied.receipt]);
+  }
+
+  const agent = /下一条/.test(normalized)
+    ? accessAuditPending(flow)[0]
+    : locateAccessAuditAgent(flow, normalized);
+  if (agent) {
+    return {
+      flow: {
+        ...flow,
+        step: agent.precheck === '建议退回修改' ? 'n2' : 'n3',
+        selectedCode: agent.code,
+        viewedCodes: agent.precheck === '建议退回修改' ? Array.from(new Set([...flow.viewedCodes, agent.code])) : flow.viewedCodes,
+      },
+      replies: [
+        agent.precheck === '建议退回修改'
+          ? buildAccessAuditDetail(agent)
+          : `已锁定 ${agent.code} ${agent.name}。预审结论：${agent.precheck}（${agent.precheckSummary}）。\n\n请给出二次审核结论：审核通过 / 退回修改；如需复核资料，可说“看完整详情”。`,
+      ],
+      quickActions: agent.precheck === '建议退回修改'
+        ? ['看完整详情', '退回修改：补齐技术规格书并修复接口地址', '审核通过']
+        : ['审核通过', '看完整详情', '退回修改：补充备案材料'],
+    };
+  }
+
+  return {
+    flow,
+    replies: [`请从待审核队列中选择对象，或执行可用批量操作：\n${formatAccessAuditQueue(flow)}`],
+    quickActions: ['批量通过建议通过', '查看下一条', '暂停审核'],
+  };
+}
+
+function getAccessAuditDoneReply(
+  flow: AccessAuditFlow,
+  text: string,
+): {
+  flow: AccessAuditFlow;
+  reply: string;
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  const quickActions = ['查看本次审核批次汇总', '跟进待办清单', '结束场景'];
+  if (/汇总|批次/.test(normalized)) {
+    return { flow, reply: buildAccessAuditSummary(flow), quickActions };
+  }
+  if (/待办|跟进/.test(normalized)) {
+    return {
+      flow,
+      reply: buildAccessAuditTodo(flow),
+      link: { to: '/app/agent-center?status=pending', text: '打开接入中心待审核队列' },
+      quickActions,
+    };
+  }
+  if (/结束|退出|完成/.test(normalized)) {
+    return { flow, reply: '接入审核场景已结束。' };
+  }
+  return {
+    flow,
+    reply: '当前接入审核场景已收尾。仅支持：查看本次审核批次汇总、跟进待办清单、结束场景。',
+    quickActions,
+  };
+}
+
+const modelRegisterCatalog = [
+  'Qwen / 通义千问（云端部署、混合部署）',
+  'DeepSeek-R1（院内本地化部署）',
+  '智谱 GLM（云端部署）',
+  'Kimi 医疗文本模型（云端部署）',
+  'minimax 医疗问答模型（混合部署）',
+];
+
+function buildResourceRegisterOpening(): string {
+  const grouped = RESOURCE_CATALOG.reduce<Record<string, string[]>>((acc, item) => {
+    acc[item.group] = [...(acc[item.group] ?? []), `${item.code} ${item.name}`];
+    return acc;
+  }, {});
+  const businessPreview = Object.entries(grouped)
+    .slice(0, 5)
+    .map(([group, items]) => `- ${group}：${items.slice(0, 5).join('、')}`)
+    .join('\n');
+  return `【业务系统数据资源列表】已弹出，以下为已支持注册的系统清单。
+${businessPreview}
+- 其他分类：护理业务系统、医技系统、药事管理系统、科研教学系统等，可输入缩写、别名或业务描述匹配。
+
+【模型资源列表】已弹出，以下为已支持注册的模型清单。
+${modelRegisterCatalog.map((item) => `- ${item}`).join('\n')}
+
+你好！我是医小管。把资源信息文件发给我（支持 PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮你进行医院资源注册～
+
+没找到？直接输入系统关键字（如缩写、别名、业务描述），我来帮你匹配`;
+}
+
+function maskSecret(secret = '') {
+  void secret;
+  return '********';
+}
+
+function getResourceRegisterCurrentQuestion(step: ResourceRegisterStep) {
+  if (step === 'n1') return '请选择列表内资源，或直接输入系统关键字 / 上传资源信息文件。';
+  if (step === 'n3') return '请继续补全当前资源注册信息。';
+  if (step === 'n4') return '请按访问测试失败原因修正技术字段，我会自动重测。';
+  if (step === 'n5') return '请核对汇总信息，无误请回复「提交」。';
+  return '资源注册已完成。';
+}
+
+function matchResourceDrafts(text: string): ResourceRegisterDraft[] {
+  const normalized = text.toLowerCase();
+  const businessMatches = RESOURCE_CATALOG.filter((item) => {
+    const target = `${item.code} ${item.name} ${item.group}`.toLowerCase();
+    return target.includes(normalized) || normalized.includes(item.code.toLowerCase()) || normalized.includes(item.name.slice(0, 3).toLowerCase());
+  }).slice(0, 5).map<ResourceRegisterDraft>((item) => ({
+    kind: '业务系统数据资源',
+    code: item.code,
+    name: item.name,
+    protocol: item.code === 'PACS' ? 'DICOM' : item.code === 'HIS' || item.code === 'EMR' ? 'HL7' : 'FHIR',
+    protocolConfig: item.code === 'PACS'
+      ? { DICOM名称: '', DICOMIP地址: '', DICOM端口: '' }
+      : { URL地址: '', 密钥Key: '' },
+    testStatus: '待测试',
+  }));
+  const modelMatches = modelRegisterCatalog.filter((item) => item.toLowerCase().includes(normalized) || /模型|qwen|千问|deepseek|kimi|minimax|智谱/i.test(text) && item.toLowerCase().includes(normalized.replace(/注册|接入|模型|大模型|\s/g, ''))).slice(0, 5).map<ResourceRegisterDraft>((item) => ({
+    kind: '模型资源',
+    code: item.match(/^[A-Za-z]+/)?.[0]?.toUpperCase() ?? 'MODEL',
+    name: item.replace(/（.*?）/g, ''),
+    deployMode: item.includes('本地') ? '本地化部署' : item.includes('混合') ? '混合部署' : '云端部署',
+    testStatus: '待测试',
+  }));
+  return [...businessMatches, ...modelMatches].slice(0, 5);
+}
+
+function buildResourceMatchQuestion(drafts: ResourceRegisterDraft[]) {
+  if (drafts.length === 1) return `您是要注册【${drafts[0].name}】吗？`;
+  return `为您匹配到以下候选，请确认要注册哪一个：\n${drafts.map((draft, index) => `${index + 1}. ${draft.name}（${draft.kind}）`).join('\n')}`;
+}
+
+function defaultResourceRegisterDrafts(text: string): ResourceRegisterDraft[] {
+  const onlyModel = /qwen|千问|模型|api/i.test(text) && !/pacs|dicom|放射|影像/i.test(text);
+  const onlyPacs = /pacs|dicom|放射|影像/i.test(text) && !/qwen|千问|模型/i.test(text);
+  const pacs: ResourceRegisterDraft = {
+    kind: '业务系统数据资源',
+    code: 'PACS',
+    name: 'PACS（医学影像存档与通信系统）',
+    owner: /李工|李慧敏/.test(text) ? '李工' : undefined,
+    contact: /0571|座机/.test(text) ? '0571-88881234' : undefined,
+    protocol: 'DICOM',
+    protocolConfig: {
+      DICOM名称: /PACS-AE/i.test(text) ? 'PACS-AE' : '',
+      DICOMIP地址: /10\.10\.20\.8/.test(text) ? '10.10.20.8' : '10.10.20.5',
+      DICOM端口: /11112/.test(text) ? '11112' : '',
+    },
+    testStatus: '待测试',
+  };
+  const qwen: ResourceRegisterDraft = {
+    kind: '模型资源',
+    code: 'QWEN',
+    name: 'Qwen',
+    modelVersion: /v?2/i.test(text) ? 'V2' : undefined,
+    deployMode: /本地/.test(text) ? '本地化部署' : /混合/.test(text) ? '混合部署' : '云端部署',
+    apiUrl: /https?:\/\/[^\s，,]+/i.exec(text)?.[0] ?? undefined,
+    apiKeyMasked: /key|sk-|密钥/i.test(text) ? maskSecret() : undefined,
+    testStatus: '待测试',
+  };
+  if (onlyModel) return [qwen];
+  if (onlyPacs) return [pacs];
+  return [pacs, qwen];
+}
+
+function formatRegisterDrafts(drafts: ResourceRegisterDraft[] = [], showMissing = true) {
+  if (!drafts.length) return '暂无资源草稿。';
+  return drafts
+    .map((draft, index) => {
+      if (draft.kind === '模型资源') {
+        const missing = [
+          !draft.modelVersion ? '模型版本' : '',
+          !draft.apiUrl ? 'API 地址' : '',
+          !draft.apiKeyMasked ? 'API key' : '',
+        ].filter(Boolean);
+        return `${index + 1}. 模型资源：${draft.name}${draft.modelVersion ? ` ${draft.modelVersion}` : ''}｜${draft.deployMode ?? '部署方式待确认'}｜API ${draft.apiUrl ?? '待补'}｜API key ${draft.apiKeyMasked ?? '待补'}｜测试：${draft.testStatus ?? '待测试'}${showMissing && missing.length ? `\n   缺失：${missing.join('、')}` : ''}`;
+      }
+      const cfg = draft.protocolConfig ?? {};
+      const missing = [
+        !draft.owner ? '资源负责人' : '',
+        !draft.contact ? '联系方式' : '',
+        !cfg.DICOM名称 ? 'DICOM 名称' : '',
+        !cfg.DICOM端口 ? 'DICOM 端口' : '',
+      ].filter(Boolean);
+      return `${index + 1}. 业务系统数据资源：${draft.name}｜${draft.protocol ?? '对接方式待确认'}｜${cfg.DICOM名称 || 'DICOM名称待补'}｜${cfg.DICOMIP地址 || 'IP待补'}:${cfg.DICOM端口 || '端口待补'}｜负责人 ${draft.owner ?? '待补'}｜${draft.contact ?? '联系方式待补'}｜测试：${draft.testStatus ?? '待测试'}${showMissing && missing.length ? `\n   缺失：${missing.join('、')}` : ''}`;
+    })
+    .join('\n');
+}
+
+function patchRegisterSlotsFromText(slots: ResourceRegisterSlots, text: string): ResourceRegisterSlots {
+  const drafts = (slots.drafts?.length ? slots.drafts : defaultResourceRegisterDrafts(text)).map((draft) => ({ ...draft, protocolConfig: { ...(draft.protocolConfig ?? {}) } }));
+  const pacs = drafts.find((draft) => draft.code === 'PACS');
+  const qwen = drafts.find((draft) => draft.code === 'QWEN');
+  if (pacs) {
+    if (/李工|李慧敏/.test(text)) pacs.owner = '李工';
+    if (/0571|座机/.test(text)) pacs.contact = '0571-88881234';
+    if (/PACS-AE/i.test(text)) pacs.protocolConfig = { ...(pacs.protocolConfig ?? {}), DICOM名称: 'PACS-AE' };
+    const ip = text.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/)?.[0];
+    if (ip) pacs.protocolConfig = { ...(pacs.protocolConfig ?? {}), DICOMIP地址: ip };
+    const port = text.match(/\b(11112|104|6661|3306|9092)\b/)?.[0];
+    if (port) pacs.protocolConfig = { ...(pacs.protocolConfig ?? {}), DICOM端口: port };
+  }
+  if (qwen) {
+    if (/v?2/i.test(text)) qwen.modelVersion = 'V2';
+    const url = text.match(/https?:\/\/[^\s，,]+/i)?.[0];
+    if (url) qwen.apiUrl = url;
+    if (/key|sk-|密钥|发你/.test(text)) qwen.apiKeyMasked = maskSecret();
+  }
+  return { ...slots, drafts };
+}
+
+function registerMissingFields(drafts: ResourceRegisterDraft[] = []) {
+  return drafts.flatMap((draft) => {
+    if (draft.kind === '模型资源') {
+      return [
+        !draft.modelVersion ? `${draft.name} 的模型版本` : '',
+        !draft.apiUrl ? `${draft.name} 的 API 地址` : '',
+        !draft.apiKeyMasked ? `${draft.name} 的 API key` : '',
+      ].filter(Boolean);
+    }
+    const cfg = draft.protocolConfig ?? {};
+    return [
+      !draft.owner ? `${draft.code} 的资源负责人` : '',
+      !draft.contact ? `${draft.code} 的联系方式` : '',
+      !cfg.DICOM名称 ? `${draft.code} 的 DICOM 名称` : '',
+      !cfg.DICOM端口 ? `${draft.code} 的 DICOM 端口` : '',
+    ].filter(Boolean);
+  });
+}
+
+function runRegisterAccessTest(slots: ResourceRegisterSlots): ResourceRegisterSlots {
+  const drafts = (slots.drafts ?? []).map((draft) => ({ ...draft, protocolConfig: { ...(draft.protocolConfig ?? {}) } }));
+  const pacs = drafts.find((draft) => draft.code === 'PACS');
+  if (pacs) {
+    const ip = pacs.protocolConfig?.DICOMIP地址;
+    if (ip === '10.10.20.8') {
+      pacs.testStatus = '通过';
+      pacs.testMessage = 'C-ECHO 成功（120ms）';
+    } else {
+      pacs.testStatus = '失败';
+      pacs.testMessage = 'C-ECHO 失败（超时），请核对 IP / 端口或网络';
+    }
+  }
+  const qwen = drafts.find((draft) => draft.code === 'QWEN');
+  if (qwen) {
+    qwen.testStatus = qwen.apiUrl && qwen.apiKeyMasked ? '通过' : '失败';
+    qwen.testMessage = qwen.testStatus === '通过' ? 'API 连通性成功（响应正常）' : 'API 地址或 API key 缺失';
+  }
+  const failedQwen = drafts.find((draft) => draft.kind === '模型资源' && draft.testStatus === '失败');
+  return {
+    ...slots,
+    drafts,
+    awaitingFix: failedQwen ? 'api-key' : drafts.some((draft) => draft.testStatus === '失败') ? 'pacs-ip' : undefined,
+  };
+}
+
+function buildRegisterTestReport(slots: ResourceRegisterSlots) {
+  return `信息齐了，自动访问测试中……
+${(slots.drafts ?? []).map((draft, index) => `${index + 1}. ${draft.name}：${draft.testStatus === '通过' ? '成功' : '失败'}（${draft.testMessage ?? '待测试'}）`).join('\n')}`;
+}
+
+function buildRegisterSummary(slots: ResourceRegisterSlots) {
+  return `【汇总确认】
+请核对本次资源注册信息：
+${formatRegisterDrafts(slots.drafts, false)}
+
+全部访问测试均已通过。密钥 / AK/SK / API key 均以 ******** 密文保存与展示。
+
+没问题就说「提交」；也可说「修改某项」或「暂存」。`;
+}
+
+function submitRegisteredResources(slots: ResourceRegisterSlots, creator?: string): ResourceRegisterSlots {
+  const date = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const receiptNo = `RES-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${(mockResources.length + 1).toString().padStart(4, '0')}`;
+  const pacs = slots.drafts?.find((draft) => draft.code === 'PACS');
+  if (pacs) {
+    mockResources.unshift({
+      id: receiptNo,
+      resources: ['PACS'],
+      owner: pacs.owner ?? '李工',
+      contact: pacs.contact ?? '0571-88881234',
+      protocol: 'DICOM',
+      protocolConfig: {
+        fields: [
+          { label: 'DICOM 名称', value: pacs.protocolConfig?.DICOM名称 ?? 'PACS-AE' },
+          { label: 'DICOM IP 地址', value: pacs.protocolConfig?.DICOMIP地址 ?? '10.10.20.8' },
+          { label: 'DICOM 端口', value: pacs.protocolConfig?.DICOM端口 ?? '11112' },
+        ],
+      },
+      status: 'registered',
+      updatedAt: nowAt(),
+      creator: creator ?? 'admin01',
+    });
+  }
+  return { ...slots, receiptNo };
+}
+
+function buildRegisterSuccess(slots: ResourceRegisterSlots) {
+  return `资源注册成功！
+
+- 回执编号：${slots.receiptNo}
+${(slots.drafts ?? []).map((draft) => `- ${draft.name}（${draft.kind}${draft.kind === '业务系统数据资源' ? `·${draft.protocol}` : `·${draft.deployMode}`}）：访问测试通过`).join('\n')}
+
+资源已入库，后续智能体接入时可直接对接 / 调用引用。
+
+收尾后仅开放动作：继续注册下一条资源、暂存草稿（保留 7 天）、资源入库供智能体接入时对接／调用引用。`;
+}
+
+function getResourceRegisterNext(
+  flow: ResourceRegisterFlow,
+  text: string,
+  creator?: string,
+): {
+  flow: ResourceRegisterFlow;
+  replies: string[];
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  let slots: ResourceRegisterSlots = { ...flow.slots };
+  const yes = /^(是|对|确认|没错|正确|要|注册|确认注册|提交)[。！!.\s]*$/.test(normalized);
+  const intent = /提交|确认|修改|改|暂存|先到这/.test(normalized) ? 'confirm_or_modify' : 'provide_or_complete';
+  console.info('[home-resource-register-intent]', { intent, step: flow.step });
+  if (/暂存|先到这|保存草稿/.test(normalized)) {
+    return {
+      flow: { ...flow, step: 'done', slots: { ...slots, draftSaved: true } },
+      replies: ['已暂存草稿，保留 7 天。场景锁已释放，可从资源中心草稿继续完善。'],
+      link: { to: '/app/resource-center/resources?tab=drafts', text: '查看资源草稿' },
+      quickActions: ['继续注册下一条资源', '资源入库供智能体接入引用'],
+    };
+  }
+  if (/天气|排班|工资|告警|报告/.test(normalized) && flow.step !== 'done') {
+    slots.sidetrack = [...(slots.sidetrack ?? []), normalized];
+    return {
+      flow: { ...flow, slots },
+      replies: [`我们先来完成医院资源注册，稍后再为您解决此问题\n\n当前问题：${getResourceRegisterCurrentQuestion(flow.step)}`],
+    };
+  }
+  switch (flow.step) {
+    case 'n1': {
+      if (slots.pendingDrafts?.length) {
+        if (/不是|不对|都不是|均不符|换一个/.test(normalized)) {
+          const matchMissCount = (slots.matchMissCount ?? 0) + 1;
+          if (matchMissCount >= 2) {
+            return {
+              flow: { ...flow, step: 'n1', slots: { ...slots, pendingDrafts: undefined, matchMissCount } },
+              replies: ['目前平台仅支持列表内资源注册，暂不支持自定义资源；如确有需要请联系管理员登记扩展\n\n请在列表内挑选，或换一个系统关键字再试。'],
+              quickActions: ['注册 PACS', '注册 HIS', '注册 Qwen 模型'],
+            };
+          }
+          return {
+            flow: { ...flow, step: 'n1', slots: { ...slots, pendingDrafts: undefined, matchMissCount } },
+            replies: ['请再补充一个关键信息，例如分类、别名或所在科室，我再为您匹配一次。'],
+          };
+        }
+        const index = normalized.match(/[1-5一二三四五]/)?.[0];
+        const indexMap: Record<string, number> = { 一: 0, 二: 1, 三: 2, 四: 3, 五: 4, '1': 0, '2': 1, '3': 2, '4': 3, '5': 4 };
+        const selected = typeof index !== 'undefined' && indexMap[index] !== undefined
+          ? [slots.pendingDrafts[indexMap[index]]].filter(Boolean)
+          : yes || /确认|就是|要/.test(normalized)
+            ? [slots.pendingDrafts[0]]
+            : [];
+        if (selected.length) {
+          slots = { ...slots, drafts: selected, pendingDrafts: undefined, matchMissCount: 0 };
+          return {
+            flow: { ...flow, step: 'n3', slots },
+            replies: [
+              `已确认资源，开始生成注册草稿：\n${formatRegisterDrafts(slots.drafts)}`,
+              `我们逐项补全缺失字段：${registerMissingFields(slots.drafts).join('、') || '暂无缺失字段'}。`,
+            ],
+            quickActions: ['负责人李工，联系方式 0571-88881234；DICOM 名称 PACS-AE，IP 10.10.20.8，端口 11112', 'API 地址 https://api.qwen.example/v2，key 已提供，版本 V2'],
+          };
+        }
+      }
+      const richInfo = /上传|文件|清单|负责人|联系方式|座机|电话|端口|IP|地址|api|key|密钥|DICOM|HL7|FHIR|数据库|MQ|部署|版本|走|https?:\/\//i.test(normalized);
+      if (!richInfo) {
+        const candidates = matchResourceDrafts(normalized);
+        const matchMissCount = candidates.length ? 0 : (slots.matchMissCount ?? 0) + 1;
+        if (!candidates.length && matchMissCount >= 2) {
+          return {
+            flow: { ...flow, step: 'n1', slots: { ...slots, matchMissCount } },
+            replies: ['目前平台仅支持列表内资源注册，暂不支持自定义资源；如确有需要请联系管理员登记扩展\n\n请在列表内挑选，或换一个系统关键字再试。'],
+            quickActions: ['注册 PACS', '注册 HIS', '注册 Qwen 模型'],
+          };
+        }
+        if (!candidates.length) {
+          return {
+            flow: { ...flow, step: 'n1', slots: { ...slots, matchMissCount } },
+            replies: ['没匹配到列表内资源。请补充分类、别名或所在科室，我再匹配一次。'],
+            quickActions: ['PACS', 'HIS', 'Qwen 模型'],
+          };
+        }
+        return {
+          flow: { ...flow, step: 'n1', slots: { ...slots, pendingDrafts: candidates, matchMissCount } },
+          replies: [buildResourceMatchQuestion(candidates)],
+          quickActions: candidates.map((draft, index) => `${index + 1}. 确认注册 ${draft.name}`).slice(0, 5),
+        };
+      }
+      slots = patchRegisterSlotsFromText({ ...slots, materials: [...(slots.materials ?? []), normalized] }, normalized);
+      return {
+        flow: { ...flow, step: 'n3', slots },
+        replies: [
+          `已接收材料 / 描述，基础校验通过。\n\n识别到 ${slots.drafts?.length ?? 0} 条资源，已完成类型判定与字段回填：\n${formatRegisterDrafts(slots.drafts)}`,
+          `我们逐项补全缺失字段：${registerMissingFields(slots.drafts).join('、') || '暂无缺失字段'}。`,
+        ],
+        quickActions: ['名称 PACS-AE，端口 11112；负责人李工，联系方式用他座机 0571-88881234；Qwen 版本 V2，API 地址 https://api.qwen.example/v2，key 已提供'],
+      };
+    }
+    case 'n3': {
+      slots = patchRegisterSlotsFromText(slots, normalized);
+      const missing = registerMissingFields(slots.drafts);
+      if (missing.length) {
+        return {
+          flow: { ...flow, step: 'n3', slots },
+          replies: [`还缺：${missing.join('、')}。\n\n请继续补充。密钥 / 凭据类字段会密文保存，不会在对话和汇总中明文回显。`],
+        };
+      }
+      const tested = runRegisterAccessTest(slots);
+      const failed = tested.drafts?.filter((draft) => draft.testStatus === '失败') ?? [];
+      return {
+        flow: { ...flow, step: failed.length ? 'n4' : 'n5', slots: tested },
+        replies: [buildRegisterTestReport(tested), failed.length ? '存在访问测试未通过项，请按失败原因修正后我会自动重测。' : buildRegisterSummary(tested)],
+        quickActions: failed.length ? ['PACS 的 IP 应该是 10.10.20.8，改一下重测', '暂存草稿'] : ['提交', '暂存草稿'],
+      };
+    }
+    case 'n4': {
+      slots = patchRegisterSlotsFromText(slots, normalized);
+      const tested = runRegisterAccessTest(slots);
+      const failed = tested.drafts?.filter((draft) => draft.testStatus === '失败') ?? [];
+      return {
+        flow: { ...flow, step: failed.length ? 'n4' : 'n5', slots: tested },
+        replies: [
+          failed.length ? buildRegisterTestReport(tested) : `已更新并重测：\n${buildRegisterTestReport(tested)}\n\n${buildRegisterSummary(tested)}`,
+        ],
+        quickActions: failed.length ? ['PACS 的 IP 应该是 10.10.20.8，改一下重测', '暂存草稿'] : ['提交', '暂存草稿'],
+      };
+    }
+    case 'n5': {
+      if (/修改|改/.test(normalized) && !/提交/.test(normalized)) {
+        slots.returnToSummary = true;
+        return {
+          flow: { ...flow, step: 'n3', slots },
+          replies: ['可以，已回到字段补全节点。请说明要修改的字段；技术字段或 API 信息变更后我会自动重跑访问测试，并回到汇总确认。'],
+        };
+      }
+      if (/提交|确认|没问题|无误|入库/.test(normalized)) {
+        const submitted = submitRegisteredResources(slots, creator);
+        return {
+          flow: { ...flow, step: 'done', slots: submitted },
+          replies: [buildRegisterSuccess(submitted)],
+          link: { to: '/app/resource-center/resources', text: '查看资源库' },
+          quickActions: ['继续注册下一条资源', '暂存草稿（保留 7 天）', '资源入库供智能体接入引用'],
+        };
+      }
+      return {
+        flow,
+        replies: [buildRegisterSummary(slots)],
+        quickActions: ['提交', '暂存草稿'],
+      };
+    }
+    default:
+      return { flow, replies: ['资源注册已完成。'] };
+  }
+}
+
+function getResourceRegisterDoneReply(
+  flow: ResourceRegisterFlow,
+  text: string,
+): {
+  flow: ResourceRegisterFlow;
+  reply: string;
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  if (/继续|下一条|再注册/.test(normalized)) {
+    return {
+      flow: { ...flow, step: 'n1', slots: {} },
+      reply: buildResourceRegisterOpening(),
+      quickActions: ['上传资源清单.xlsx：放射 PACS 走 DICOM，再加 Qwen 大模型，云端部署', '注册 Qwen 模型'],
+    };
+  }
+  if (/暂存|草稿/.test(normalized)) {
+    return {
+      flow: { ...flow, slots: { ...flow.slots, draftSaved: true } },
+      reply: '已暂存草稿，保留 7 天。当前资源注册场景已收尾。',
+      link: { to: '/app/resource-center/resources?tab=drafts', text: '查看资源草稿' },
+    };
+  }
+  if (/入库|资源库|引用|对接|调用/.test(normalized)) {
+    return {
+      flow,
+      reply: '已入库资源可在智能体接入注册、资源申请和运行调用配置中被引用。业务系统按对接方式对接，模型资源按 API 地址与密钥调用。',
+      link: { to: '/app/resource-center/resources', text: '查看资源库' },
+      quickActions: ['继续注册下一条资源', '暂存草稿（保留 7 天）'],
+    };
+  }
+  return {
+    flow,
+    reply: '资源注册已收尾。当前仅开放动作：继续注册下一条资源、暂存草稿（保留 7 天）、资源入库供智能体接入时对接／调用引用。',
+    quickActions: ['继续注册下一条资源', '暂存草稿（保留 7 天）', '资源入库供智能体接入引用'],
+  };
+}
+
+function buildResourceOpening(): string {
+  return `【可申请资源列表】已弹出。
+
+你好，我是医小管。你只需要告诉我要为哪个智能体申请什么资源，我将为你自动申请。
+
+当前可申请资源：
+- 业务系统数据资源：HIS、EMR、LIS、PACS、UIS、CDR、ODR、BI、EDW、PASS、PIVAS、EMPI 等已注册资源
+- 模型资源：Qwen（V2·云端部署）、DeepSeek-R1（院内部署）、通义千问医疗增强版
+
+先告诉我要为哪个智能体申请资源。`;
+}
+
+const modelResourceOptions: ResourceOption[] = [
+  { code: 'QWEN', name: 'Qwen（V2·云端部署）', type: '模型资源', resourceId: 'M-QWEN', status: 'registered' },
+  { code: 'DEEPSEEK', name: 'DeepSeek-R1（院内部署）', type: '模型资源', resourceId: 'M-DEEPSEEK', status: 'registered' },
+  { code: 'TONGYI-MED', name: '通义千问医疗增强版', type: '模型资源', resourceId: 'M-TONGYI-MED', status: 'registered' },
+];
+
+function businessResourceOptions(): ResourceOption[] {
+  const registeredCodes = new Set(mockResources.filter((r) => r.status === 'registered').flatMap((r) => r.resources));
+  return RESOURCE_CATALOG.filter((r) => registeredCodes.has(r.code)).map((r) => ({
+    code: r.code,
+    name: r.name,
+    type: '业务系统数据资源' as const,
+    resourceId: mockResources.find((item) => item.resources.includes(r.code))?.id ?? r.code,
+    status: 'registered' as const,
+  }));
+}
+
+function allResourceOptions(): ResourceOption[] {
+  return [...businessResourceOptions(), ...modelResourceOptions];
+}
+
+function findAgentByText(text: string) {
+  const normalized = text.toLowerCase();
+  const aliasAgent = /糖尿病|随访管理/.test(text)
+    ? {
+        id: 'XNK-0001',
+        name: '糖尿病随访管理助手',
+        dept: '0503-内分泌科',
+        stage: '其他（出院后随访管理）',
+        applicant: '李秀英',
+        description: '面向出院及门诊糖尿病患者提供随访服务，读取患者基础信息、诊疗记录、检验指标与随访计划，自动生成随访任务、健康提醒与异常风险提示。',
+      }
+    : null;
+  if (aliasAgent) return aliasAgent;
+  return resourceCenterAgents.find((agent) => {
+    const target = `${agent.id} ${agent.name} ${agent.dept}`.toLowerCase();
+    return target.includes(normalized) || normalized.includes(agent.id.toLowerCase()) || normalized.includes(agent.name.toLowerCase().slice(0, 6));
+  });
+}
+
+function matchResources(text: string): { matched: ResourceOption[]; unregistered: string[] } {
+  const options = allResourceOptions();
+  const normalized = text.toUpperCase();
+  const matched = options.filter((item) => {
+    const plainName = item.name.toUpperCase();
+    return normalized.includes(item.code) || normalized.includes(plainName) || plainName.includes(normalized);
+  });
+  const aliases: [RegExp, string][] = [
+    [/千问|QWEN/i, 'QWEN'],
+    [/DEEPSEEK|DEEPSEEK-R1|R1/i, 'DEEPSEEK'],
+    [/通义/i, 'TONGYI-MED'],
+  ];
+  aliases.forEach(([reg, code]) => {
+    const option = options.find((item) => item.code === code);
+    if (option && reg.test(text) && !matched.some((item) => item.code === code)) matched.push(option);
+  });
+  const knownCodes = new Set(RESOURCE_CATALOG.map((r) => r.code).concat(modelResourceOptions.map((r) => r.code)));
+  const upperTokens = Array.from(text.matchAll(/\b[A-Z][A-Z0-9-]{1,12}\b/gi)).map((m) => m[0].toUpperCase());
+  const unregistered = upperTokens.filter((token) => !matched.some((item) => item.code === token) && !knownCodes.has(token));
+  return { matched: dedupeResources(matched), unregistered };
+}
+
+function dedupeResources(resources: ResourceOption[]): ResourceOption[] {
+  return resources.filter((item, index, arr) => arr.findIndex((r) => r.code === item.code) === index);
+}
+
+function formatAgent(agent: NonNullable<ResourceApplySlots['agent']>) {
+  return `编号 ${agent.id}｜名称 ${agent.name}｜所属科室 ${agent.dept}｜诊疗环节 ${agent.stage}｜功能描述 ${agent.description}`;
+}
+
+function formatResources(resources: ResourceOption[] = []) {
+  if (resources.length === 0) return '待选择';
+  const business = resources.filter((r) => r.type === '业务系统数据资源');
+  const models = resources.filter((r) => r.type === '模型资源');
+  return [
+    business.length ? `业务系统数据资源：${business.map((r) => r.name).join('、')}` : '',
+    models.length ? `模型资源：${models.map((r) => r.name).join('、')}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function buildResourceSummary(slots: ResourceApplySlots): string {
+  const agent = slots.agent;
+  return `【汇总回执消息】请核对：
+
+- 申请智能体：${agent ? `${agent.id} ${agent.name}（${agent.dept}｜诊疗环节：${agent.stage}）` : '待确认'}
+- 功能描述：${agent?.description ?? '待确认'}
+- 申请资源名称：
+${formatResources(slots.resources)}
+
+没问题就说「提交申请」；要改资源直接说「改资源」。`;
+}
+
+function buildReceipt(slots: ResourceApplySlots): string {
+  return `【提交结果消息】已提交！
+
+- 申请单号：${slots.receiptNo}
+- 智能体：${slots.agent?.id} ${slots.agent?.name}
+- 申请资源：${(slots.resources ?? []).map((r) => r.name).join('、')}
+- 状态：待审核
+
+申请已进入管理员审批流程《资源申请审核》。通过后即授予该智能体对接 / 调用这些资源的权限。
+
+后续仅开放三个动作：查看申请单回执、修改资源重选、暂存草稿并释放场景锁。`;
+}
+
+function submitResourceApply(slots: ResourceApplySlots, applicantName?: string): ResourceApplySlots {
+  const applies = getApplies();
+  const date = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const receiptNo = `REQ-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${(applies.length + 1).toString().padStart(4, '0')}`;
+  const legacyId = `A-${date.getFullYear()}-${(applies.length + 1).toString().padStart(4, '0')}`;
+  const resources = slots.resources ?? [];
+  const agent = slots.agent;
+  if (agent) {
+    const item: ApplyItem = {
+      id: legacyId,
+      agentId: agent.id,
+      agentName: agent.name,
+      department: agent.dept,
+      stage: agent.stage,
+      description: agent.description,
+      resourceId: resources.map((r) => r.resourceId).join('/'),
+      resourceName: resources.map((r) => r.code).join('/'),
+      status: 'pending',
+      applicant: applicantName ?? 'admin',
+      applicantAccount: 'admin01',
+      submittedAt: nowAt(),
+      trail: [{ action: '提交', operator: applicantName ?? 'admin', at: nowAt(), status: 'process', targetStatus: 'pending' }],
+    };
+    addApply(item);
+  }
+  return { ...slots, receiptNo };
+}
+
+function getResourceApplyNext(
+  flow: ResourceApplyFlow,
+  text: string,
+  applicantName?: string,
+): {
+  flow: ResourceApplyFlow;
+  replies: string[];
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  const yes = /确认|对|是|可以|没问题|好|就这|就用|提交/.test(normalized);
+  const slots: ResourceApplySlots = { ...flow.slots };
+
+  if (/先不提交|暂存|保存草稿/.test(normalized)) {
+    return {
+      flow: { ...flow, step: 'done', slots: { ...slots, draftSaved: true } },
+      replies: ['已暂存草稿并释放场景锁。后续可从「医院资源管理中心 / 申请管理 / 草稿」继续处理。'],
+      link: { to: '/app/resource-center/applies?tab=draft', text: '查看草稿' },
+    };
+  }
+
+  if (/排班|告警|报告|上次|通过没|天气|新闻/.test(normalized) && flow.step !== 'n3') {
+    slots.sidetrack = [...(slots.sidetrack ?? []), normalized];
+    return {
+      flow: { ...flow, slots },
+      replies: ['我们先来完成资源使用权限申请，稍后再为您解决此问题。\n\n请继续确认当前资源申请信息。'],
+    };
+  }
+
+  switch (flow.step) {
+    case 'n1': {
+      const agent = findAgentByText(normalized);
+      if (!agent) {
+        return {
+          flow,
+          replies: ['没有在本人权限范围内找到该智能体。申请人只能为本科室已纳管智能体发起申请，请换一个智能体名称或编号。'],
+          quickActions: ['糖尿病随访管理助手', '智能导诊助手 v2.3', '心血管随访助手 v1.2'],
+        };
+      }
+      slots.agent = agent;
+      const { matched } = matchResources(normalized);
+      if (matched.length) slots.pendingResources = matched;
+      return {
+        flow: { ...flow, step: matched.length ? 'n2' : 'n2', slots },
+        replies: [
+          `【智能体只读信息消息】找到它了，信息如下（只读）：${formatAgent(agent)}
+
+本场景只读带出、不可修改。确认是给它申请吗？要申请使用哪些资源？`,
+          ...(matched.length ? [`我同时识别到资源候选：\n${formatResources(matched)}\n\n就申请这些吗？`] : []),
+        ],
+        quickActions: matched.length ? ['确认', '改资源'] : ['HIS、LIS、Qwen', 'HIS、EMR', 'PACS、DeepSeek-R1'],
+      };
+    }
+    case 'n2': {
+      if (/修改智能体|改智能体|换个智能体/.test(normalized)) {
+        return {
+          flow: { ...flow, step: 'n1', slots: { resources: slots.resources } },
+          replies: ['可以，请重新告诉我要为哪个本科室已纳管智能体申请资源。'],
+          quickActions: ['糖尿病随访管理助手', '智能导诊助手 v2.3'],
+        };
+      }
+      const explicitResources = matchResources(normalized);
+      const resources = explicitResources.matched.length ? explicitResources.matched : slots.pendingResources ?? slots.resources ?? [];
+      if (!resources.length) {
+        return {
+          flow: { ...flow, step: 'n2', slots },
+          replies: ['还没有匹配到已注册成功的资源。请按资源名称、缩写或类型描述，例如 HIS、LIS、Qwen。'],
+          quickActions: ['HIS、LIS、Qwen', 'HIS、EMR', 'PACS、DeepSeek-R1'],
+        };
+      }
+      const unregisteredMsg = explicitResources.unregistered.length
+        ? `\n\n${explicitResources.unregistered.map((r) => `该资源（${r}）尚未注册成功，需先在《医院资源注册管理》中登记；本次可先选其它已注册资源。`).join('\n')}`
+        : '';
+      if (!yes && explicitResources.matched.length) {
+        slots.pendingResources = resources;
+        return {
+          flow: { ...flow, step: 'n2', slots },
+          replies: [`【资源候选消息】已从已注册资源列表匹配到：\n${formatResources(resources)}${unregisteredMsg}\n\n就申请这些吗？`],
+          quickActions: ['确认', '改资源'],
+        };
+      }
+      slots.resources = resources;
+      slots.pendingResources = undefined;
+      return {
+        flow: { ...flow, step: 'n3', slots },
+        replies: [buildResourceSummary(slots)],
+        quickActions: ['提交申请', '改资源', '暂存草稿'],
+      };
+    }
+    case 'n3': {
+      if (/改资源|修改资源|重选|换资源/.test(normalized)) {
+        return {
+          flow: { ...flow, step: 'n2', slots: { ...slots, resources: undefined, pendingResources: undefined } },
+          replies: ['好的，回到资源选择。请重新说出要申请的资源名称，可跨业务系统数据资源和模型资源多选。'],
+          quickActions: ['HIS、LIS、Qwen', 'HIS、EMR', 'PACS、DeepSeek-R1'],
+        };
+      }
+      if (/修改智能体|编号|科室|诊疗环节|功能描述/.test(normalized) && !/提交/.test(normalized)) {
+        return {
+          flow,
+          replies: ['智能体编号、名称、科室、诊疗环节、功能描述在本场景只读带出、不可修改；需修改请到智能体注册管理。\n\n资源申请信息无误请回复「提交申请」。'],
+          quickActions: ['提交申请', '改资源', '暂存草稿'],
+        };
+      }
+      if (/提交|确认|没问题|无误/.test(normalized)) {
+        const submittedSlots = submitResourceApply(slots, applicantName);
+        return {
+          flow: { ...flow, step: 'done', slots: submittedSlots },
+          replies: [buildReceipt(submittedSlots)],
+          link: { to: '/app/resource-center/applies?tab=pending', text: '查看资源申请审核' },
+          quickActions: ['查看申请单回执', '修改资源重选', '暂存草稿并释放场景锁'],
+        };
+      }
+      return {
+        flow,
+        replies: ['请核对汇总信息。没问题就说「提交申请」；要改资源直接说「改资源」；也可以说「暂存」。'],
+        quickActions: ['提交申请', '改资源', '暂存草稿'],
+      };
+    }
+    default:
+      return {
+        flow,
+        replies: ['资源申请已完成。'],
+      };
+  }
+}
+
+function getResourceApplyDoneReply(
+  flow: ResourceApplyFlow,
+  text: string,
+): {
+  flow: ResourceApplyFlow;
+  reply: string;
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  if (/回执|查看申请单|申请单/.test(normalized)) {
+    return {
+      flow,
+      reply: buildReceipt(flow.slots),
+      link: { to: '/app/resource-center/applies?tab=pending', text: '查看资源申请审核' },
+      quickActions: ['查看申请单回执', '修改资源重选', '暂存草稿并释放场景锁'],
+    };
+  }
+  if (/修改资源|改资源|重选/.test(normalized)) {
+    return {
+      flow: { ...flow, step: 'n2', slots: { ...flow.slots, resources: undefined, pendingResources: undefined, receiptNo: undefined } },
+      reply: '好的，回到 N2 资源重选。请重新说出要申请的资源名称。',
+      quickActions: ['HIS、LIS、Qwen', 'HIS、EMR', 'PACS、DeepSeek-R1'],
+    };
+  }
+  if (/暂存|释放/.test(normalized)) {
+    return {
+      flow: { ...flow, slots: { ...flow.slots, draftSaved: true } },
+      reply: '已暂存草稿并释放场景锁。当前资源申请场景已收尾。',
+      link: { to: '/app/resource-center/applies?tab=draft', text: '查看草稿' },
+    };
+  }
+  return {
+    flow,
+    reply: '资源申请已收尾。当前仅支持：查看申请单回执、修改资源重选、暂存草稿并释放场景锁。',
+    quickActions: ['查看申请单回执', '修改资源重选', '暂存草稿并释放场景锁'],
+  };
+}
+
+function resourceAuditPendingApplies() {
+  return getApplies()
+    .filter((item) => item.status === 'pending')
+    .sort((a, b) => (b.submittedAt ?? '').localeCompare(a.submittedAt ?? ''));
+}
+
+function createResourceAuditFlow(sessionId: string): ResourceAuditFlow {
+  return {
+    sessionId,
+    step: 'n1',
+    queueIds: resourceAuditPendingApplies().map((item) => item.id),
+    reviewedIds: [],
+    records: [],
+  };
+}
+
+function availableResourceAuditApplies(flow: ResourceAuditFlow) {
+  const reviewed = new Set(flow.reviewedIds);
+  return getApplies().filter((item) => flow.queueIds.includes(item.id) && item.status === 'pending' && !reviewed.has(item.id));
+}
+
+function getResourceAuditApply(id?: string) {
+  if (!id) return undefined;
+  return getApplies().find((item) => item.id === id);
+}
+
+function buildResourceAuditOpening(flow: ResourceAuditFlow) {
+  const pending = availableResourceAuditApplies(flow);
+  const list = pending.length
+    ? pending
+        .map((item, index) => `${index + 1}. ${item.agentId} ${item.agentName}｜申请资源：${item.resourceName}`)
+        .join('\n')
+    : '暂无待审核资源使用权限申请。';
+  return `你好，我是医小管。目前资源申请待审核 ${pending.length} 项。
+
+${list}
+
+请告诉我要看哪条，例如「看第一条」或直接说智能体编号/名称。`;
+}
+
+function locateResourceAuditApply(flow: ResourceAuditFlow, text: string) {
+  const pending = availableResourceAuditApplies(flow);
+  const normalized = text.trim();
+  const orderMap: Array<[RegExp, number]> = [
+    [/第?一|1|首个|第一个/, 0],
+    [/第?二|2|第二个/, 1],
+    [/第?三|3|第三个/, 2],
+    [/第?四|4|第四个/, 3],
+    [/第?五|5|第五个/, 4],
+  ];
+  const byOrder = orderMap.find(([pattern, index]) => pattern.test(normalized) && pending[index]);
+  if (byOrder) return pending[byOrder[1]];
+  return pending.find((item) =>
+    normalized.includes(item.id) ||
+    normalized.includes(item.agentId) ||
+    normalized.includes(item.agentName) ||
+    normalized.includes(item.department.replace(/^[A-Z]+-/, '')) ||
+    normalized.includes(item.resourceName),
+  );
+}
+
+function resourceAuditCheckHints(item: ApplyItem) {
+  const registeredCodes = new Set(mockResources.filter((r) => r.status === 'registered').flatMap((r) => r.resources));
+  const requestedCodes = item.resourceName.split(/[、/]/).map((name) => name.trim()).filter(Boolean);
+  const missing = requestedCodes.filter((code) => !registeredCodes.has(code) && !/^Qwen|DeepSeek|通义/.test(code));
+  const duplicate = getApplies().some((apply) =>
+    apply.id !== item.id &&
+    apply.agentId === item.agentId &&
+    apply.status === 'approved' &&
+    apply.resourceName === item.resourceName,
+  );
+  const relevance = /随访|导诊|分诊|审方|用药|阅片|影像|急诊|麻醉|诊断/.test(item.description)
+    ? '功能描述与申请资源存在业务相关性，请重点核对读写范围'
+    : '功能与资源相关性需人工复核';
+  return [
+    missing.length ? `存在未注册或未匹配资源：${missing.join('、')}` : '申请资源均已注册可用或为模型资源',
+    duplicate ? '发现同智能体同资源已存在通过记录，请谨慎避免重复授权' : '未发现重复授权记录',
+    relevance,
+    /写入|写/.test(item.resourceName + item.description) ? '涉及写入/调用范围，请确认最小必要权限' : '当前描述未发现高风险写入权限',
+  ];
+}
+
+function buildResourceAuditPresentation(item: ApplyItem) {
+  return `【N1 选定与信息呈报】${item.id} 权限申请信息（只读）：
+
+- 智能体编号：${item.agentId}
+- 智能体名称：${item.agentName}
+- 所属科室：${item.department}
+- 诊疗环节：${item.stage}
+- 功能描述：${item.description}
+- 申请资源名称：${item.resourceName}
+
+基础核对提示：
+${resourceAuditCheckHints(item).map((hint) => `- ${hint}`).join('\n')}
+
+以上信息本场景只读、不可修改。您的审核结论是：审核通过 / 退回修改？`;
+}
+
+function parseResourceAuditConclusion(text: string): '审核通过' | '退回修改' | undefined {
+  if (/退回|驳回|不通过|修改/.test(text)) return '退回修改';
+  if (/审核通过|通过|同意|准予|批准/.test(text)) return '审核通过';
+  return undefined;
+}
+
+function extractResourceAuditComment(text: string) {
+  if (/^(审核通过|通过|同意|退回修改|退回|驳回|提交|确认|不填|直接提交)[。.!！]?$/.test(text.trim())) return '';
+  return text
+    .replace(/^退回原因[:：]?/g, '')
+    .replace(/^具体说明[:：]?/g, '')
+    .replace(/^加一句[:：]?/g, '')
+    .replace(/^说明[:：]?/g, '')
+    .trim();
+}
+
+function defaultResourceAuditComment(conclusion: '审核通过' | '退回修改') {
+  return conclusion === '审核通过' ? '权限范围合理，准予按申请资源范围使用。' : '';
+}
+
+function buildResourceAuditSummary(flow: ResourceAuditFlow) {
+  const approved = flow.records.filter((record) => record.conclusion === '审核通过').length;
+  const rejected = flow.records.filter((record) => record.conclusion === '退回修改').length;
+  const unhandled = availableResourceAuditApplies(flow).length;
+  return `本批次汇总：审核通过 ${approved} 条、退回修改 ${rejected} 条、未处理 ${unhandled} 条。`;
+}
+
+function finalizeResourceAudit(
+  flow: ResourceAuditFlow,
+  reviewerName?: string,
+): { flow: ResourceAuditFlow; reply: string; link?: { to: string; text: string }; quickActions?: string[] } {
+  const item = getResourceAuditApply(flow.selectedApplyId);
+  if (!item || !flow.conclusion) {
+    return { flow, reply: '还没有选定唯一待审申请或审核结论，请先完成 N1/N2。' };
+  }
+
+  const reviewer = reviewerName ?? '王主任';
+  const time = nowAt().slice(0, 16);
+  const comment = (flow.comment ?? defaultResourceAuditComment(flow.conclusion)).trim();
+  const approved = flow.conclusion === '审核通过';
+  updateApply(item.id, {
+    status: approved ? 'approved' : 'rejected',
+    approvedAt: approved ? nowAt() : undefined,
+    rejectedAt: approved ? undefined : nowAt(),
+    approveComment: approved ? comment : undefined,
+    rejectReason: approved ? undefined : comment,
+    appendTrail: {
+      action: flow.conclusion,
+      operator: reviewer,
+      at: nowAt(),
+      comment: comment || (approved ? '权限范围合理，审核通过' : ''),
+      status: approved ? 'finish' : 'error',
+      targetStatus: approved ? 'approved' : 'rejected',
+    },
+  });
+
+  const record: ResourceAuditRecord = {
+    applyId: item.id,
+    agentId: item.agentId,
+    agentName: item.agentName,
+    resourceName: item.resourceName,
+    conclusion: flow.conclusion,
+    comment,
+    reviewer,
+    time,
+  };
+  const nextFlowBase: ResourceAuditFlow = {
+    ...flow,
+    reviewedIds: [...flow.reviewedIds, item.id],
+    records: [...flow.records, record],
+    selectedApplyId: undefined,
+    conclusion: undefined,
+    comment: undefined,
+  };
+  const remaining = availableResourceAuditApplies(nextFlowBase).length;
+  const nextFlow: ResourceAuditFlow = { ...nextFlowBase, step: remaining > 0 ? 'n1' : 'done' };
+  const syncLabel = approved ? '具体说明' : '退回原因说明';
+  const resultText = approved
+    ? `已通过并生效：授予 ${item.agentId} 对 ${item.resourceName} 的对接/调用权限；${syncLabel}已同步用户端。`
+    : `已退回修改：${item.id} 已退回申请人；${syncLabel}已同步用户端。`;
+  const reply = `${resultText}
+
+审核人：${reviewer}，时间：${time}，已通知申请人。${remaining > 0 ? `剩余 ${remaining} 条。` : '待审已清空。'}`;
+
+  if (remaining > 0) {
+    return {
+      flow: nextFlow,
+      reply: `${reply}\n\n请继续选择下一条审核，或暂停并保存进度。`,
+      link: { to: '/app/resource-center/applies?tab=approved', text: '查看资源审核记录' },
+      quickActions: ['继续审核下一条', '暂停并保存进度', '查看本批次汇总'],
+    };
+  }
+  return {
+    flow: nextFlow,
+    reply: `${reply}\n\n${buildResourceAuditSummary(nextFlow)}\n\n本次审核到此结束。后续仅开放：继续审核下一条、暂停并保存进度、查看本批次汇总。`,
+    link: { to: '/app/resource-center/applies?tab=approved', text: '查看资源审核记录' },
+    quickActions: ['继续审核下一条', '暂停并保存进度', '查看本批次汇总'],
+  };
+}
+
+function getResourceAuditNext(
+  flow: ResourceAuditFlow,
+  text: string,
+  reviewerName?: string,
+): {
+  flow: ResourceAuditFlow;
+  replies: string[];
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  if (/暂停|先停|稍后|保存进度/.test(normalized)) {
+    return {
+      flow: { ...flow, step: 'done', paused: true },
+      replies: [`已暂停并保存进度。未决项保持「待审核」状态，场景锁已释放。\n\n${buildResourceAuditSummary(flow)}`],
+      quickActions: ['继续审核下一条', '暂停并保存进度', '查看本批次汇总'],
+    };
+  }
+  if (/汇总|批次/.test(normalized)) {
+    return {
+      flow,
+      replies: [buildResourceAuditSummary(flow)],
+      quickActions: ['继续审核下一条', '暂停并保存进度'],
+    };
+  }
+
+  switch (flow.step) {
+    case 'n1': {
+      const queue = availableResourceAuditApplies(flow);
+      if (/继续|下一条/.test(normalized) && queue.length === 0) {
+        return {
+          flow: { ...flow, step: 'done' },
+          replies: ['当前资源申请待审队列为空。后续仅开放：继续审核下一条、暂停并保存进度、查看本批次汇总。'],
+          quickActions: ['继续审核下一条', '暂停并保存进度', '查看本批次汇总'],
+        };
+      }
+      const item = locateResourceAuditApply(flow, normalized) ?? (/继续|下一条/.test(normalized) ? queue[0] : undefined);
+      if (!item) {
+        return {
+          flow,
+          replies: [`请先选定一条待审资源申请。\n\n${buildResourceAuditOpening(flow)}`],
+          quickActions: ['看第一条', '暂停并保存进度', '查看本批次汇总'],
+        };
+      }
+      return {
+        flow: { ...flow, step: 'n2', selectedApplyId: item.id },
+        replies: [buildResourceAuditPresentation(item)],
+        link: { to: `/app/resource-center/approval/${item.id}`, text: '打开权限审批页' },
+        quickActions: ['审核通过', '退回修改'],
+      };
+    }
+    case 'n2': {
+      const item = getResourceAuditApply(flow.selectedApplyId);
+      if (!item) return { flow: { ...flow, step: 'n1' }, replies: ['当前选定项已失效，请重新选择待审申请。'] };
+      if (/修改.*(申请|资源|智能体|科室|描述)|编辑/.test(normalized)) {
+        return {
+          flow,
+          replies: ['权限申请信息均为只读引用，医小管不能修改申请内容；如需修改，请退回申请人重新提交。\n\n请给出审核结论：审核通过 / 退回修改。'],
+          quickActions: ['审核通过', '退回修改'],
+        };
+      }
+      if (/台账|告警|今天|排班|报告|天气|新闻/.test(normalized)) {
+        return {
+          flow,
+          replies: [`我们先来完成资源使用权限审核，稍后再为您解决此问题。\n\n${buildResourceAuditPresentation(item)}`],
+          quickActions: ['审核通过', '退回修改'],
+        };
+      }
+      const conclusion = parseResourceAuditConclusion(normalized);
+      if (!conclusion) {
+        return {
+          flow,
+          replies: ['请给出审核结论：审核通过 / 退回修改。结论必须由管理员做出，医小管不会代为裁决。'],
+          quickActions: ['审核通过', '退回修改'],
+        };
+      }
+      if (conclusion === '退回修改') {
+        return {
+          flow: { ...flow, step: 'n3', conclusion, comment: extractResourceAuditComment(normalized) },
+          replies: ['选择退回修改，需要填写退回原因（具体说明，必填，≤500 字）。请说明。'],
+          quickActions: ['退回原因：申请资源范围过大，请缩小到最小必要权限后重新提交审核'],
+        };
+      }
+      return {
+        flow: { ...flow, step: 'n3', conclusion, comment: extractResourceAuditComment(normalized) },
+        replies: ['审核通过。具体说明为选填，需要补充吗？不填我就直接提交。'],
+        quickActions: ['不填，直接提交', '加一句：仅限当前诊疗场景按最小必要权限调用'],
+      };
+    }
+    case 'n3': {
+      const item = getResourceAuditApply(flow.selectedApplyId);
+      if (!item || !flow.conclusion) return { flow: { ...flow, step: 'n1' }, replies: ['当前审核上下文已失效，请重新选择待审申请。'] };
+      const isConfirm = /确认|提交|生效|不填|直接|没问题|就这样/.test(normalized);
+      if (/修改|改成|改为/.test(normalized)) {
+        const comment = extractResourceAuditComment(normalized.replace(/^修改(一下)?(退回原因|具体说明)?[:：]?/, ''));
+        const nextComment = comment || flow.comment || '';
+        return {
+          flow: { ...flow, comment: nextComment.slice(0, 500) },
+          replies: [`已更新具体说明：「${nextComment.slice(0, 500) || '无补充说明'}」（${nextComment.slice(0, 500).length}/500）。确认提交吗？`],
+          quickActions: ['确认提交', '重新修改具体说明'],
+        };
+      }
+      const comment = extractResourceAuditComment(normalized);
+      const nextComment = !isConfirm && comment ? comment.slice(0, 500) : flow.comment;
+      if (flow.conclusion === '退回修改' && !nextComment) {
+        return {
+          flow: { ...flow, comment: nextComment },
+          replies: ['退回修改必须填写退回原因方可提交，请先告诉我退回原因。'],
+          quickActions: ['退回原因：申请资源范围过大，请缩小到最小必要权限后重新提交审核'],
+        };
+      }
+      if (!isConfirm && comment) {
+        return {
+          flow: { ...flow, comment: nextComment },
+          replies: [`已记录具体说明：「${nextComment}」（${nextComment.length}/500）。确认提交吗？`],
+          quickActions: ['确认提交', '修改具体说明'],
+        };
+      }
+      const final = finalizeResourceAudit({ ...flow, comment: nextComment }, reviewerName);
+      return {
+        flow: final.flow,
+        replies: [final.reply],
+        link: final.link,
+        quickActions: final.quickActions,
+      };
+    }
+    default:
+      return {
+        flow,
+        replies: ['资源审核已收尾。当前仅支持：继续审核下一条、暂停并保存进度、查看本批次汇总。'],
+        quickActions: ['继续审核下一条', '暂停并保存进度', '查看本批次汇总'],
+      };
+  }
+}
+
+function getResourceAuditDoneReply(
+  flow: ResourceAuditFlow,
+  text: string,
+): {
+  flow: ResourceAuditFlow;
+  reply: string;
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  if (/继续|下一条|恢复/.test(normalized)) {
+    const queue = availableResourceAuditApplies(flow);
+    if (queue.length === 0) {
+      return {
+        flow,
+        reply: '当前资源申请待审队列为空，无法继续下一条审核。',
+        quickActions: ['继续审核下一条', '暂停并保存进度', '查看本批次汇总'],
+      };
+    }
+    return {
+      flow: { ...flow, step: 'n1', paused: false },
+      reply: buildResourceAuditOpening(flow),
+      quickActions: ['看第一条', '暂停并保存进度', '查看本批次汇总'],
+    };
+  }
+  if (/暂停|保存/.test(normalized)) {
+    return {
+      flow: { ...flow, paused: true },
+      reply: `已保存当前资源审核进度。未决项保持「待审核」状态。\n\n${buildResourceAuditSummary(flow)}`,
+      quickActions: ['继续审核下一条', '暂停并保存进度', '查看本批次汇总'],
+    };
+  }
+  if (/汇总|批次/.test(normalized)) {
+    return {
+      flow,
+      reply: buildResourceAuditSummary(flow),
+      quickActions: ['继续审核下一条', '暂停并保存进度'],
+    };
+  }
+  return {
+    flow,
+    reply: '资源审核已收尾。当前仅支持：继续审核下一条、暂停并保存进度、查看本批次汇总。',
+    quickActions: ['继续审核下一条', '暂停并保存进度', '查看本批次汇总'],
+  };
+}
+
+const evaluationPendingAgents: EvaluationPendingAgent[] = [
+  {
+    id: 'eval-pending-001',
+    agentId: 'agent-eval-0503-0001',
+    code: '0503-0001',
+    name: '糖尿病随访管理助手',
+    version: 'v2.1',
+    department: '内分泌科',
+    riskLevel: '中等风险',
+  },
+  {
+    id: 'eval-pending-002',
+    agentId: 'agent-eval-0308-0002',
+    code: '0308-0002',
+    name: '影像报告解读助手',
+    version: 'v2.0',
+    department: '医学影像科',
+    riskLevel: '高风险',
+  },
+  {
+    id: 'eval-pending-003',
+    agentId: 'agent-eval-0201-0006',
+    code: '0201-0006',
+    name: '慢病随访提醒助手',
+    version: 'v1.0',
+    department: '全科医学科',
+    riskLevel: '低风险',
+  },
+];
+
+const EVALUATION_SCENE = {
+  noPermission: '新建评测仅对信息科管理员开放，暂无法为您办理',
+  sidetrack: '我们先来完成智能体评测，稍后再为您解决此问题',
+  dimensions: '输入安全 / 输出安全 / 行为安全 / 数据安全 / 工具安全',
+  standard: '《智能体安全评测规范》',
+};
+
+function buildEvaluationOpening(): string {
+  return `你好！我是医小管，我来帮您新建智能体安全评测任务（约 4 步、2–3 分钟）。目前待评测 ${evaluationPendingAgents.length} 个智能体，请问要给哪个、选哪档评测？（快速 30% / 标准 60% / 深度 100%）
+
+【待评测清单】
+${evaluationPendingAgents.map((agent, index) => `${index + 1}. 编号：${agent.code}；名称：${agent.name}；版本：${agent.version}；评测档位：待选择${agent.riskLevel === '高风险' ? '（高度关注，建议深度评测）' : ''}`).join('\n')}`;
+}
+
+function locateEvaluationAgent(text: string): EvaluationPendingAgent | undefined {
+  const normalized = text.toLowerCase();
+  if (/第?一|1|第一个/.test(text)) return evaluationPendingAgents[0];
+  if (/第?二|2|第二个/.test(text)) return evaluationPendingAgents[1];
+  if (/第?三|3|第三个/.test(text)) return evaluationPendingAgents[2];
+  return evaluationPendingAgents.find((agent) => {
+    const target = `${agent.code} ${agent.name} ${agent.version} ${agent.department}`.toLowerCase();
+    return target.includes(normalized) || normalized.includes(agent.code.toLowerCase()) || normalized.includes(agent.name.toLowerCase().slice(0, 4));
+  });
+}
+
+function locateEvaluationAgents(text: string): EvaluationPendingAgent[] {
+  if (/这批|全部|都评|全都|所有/.test(text)) return evaluationPendingAgents;
+  const matched = evaluationPendingAgents.filter((agent, index) => {
+    const orderText = `${index + 1}`;
+    if (new RegExp(`第?${orderText}|${orderText}`).test(text)) return true;
+    return text.includes(agent.code) || text.includes(agent.name) || text.includes(agent.name.slice(0, 4));
+  });
+  const single = locateEvaluationAgent(text);
+  if (matched.length) return matched;
+  return single ? [single] : [];
+}
+
+function parseSampleLevel(text: string): SampleLevel | undefined {
+  if (/深度|100%|全量/.test(text)) return '深度评测';
+  if (/标准|60%/.test(text)) return '标准评测';
+  if (/快速|30%|快评/.test(text)) return '快速评测';
+  return undefined;
+}
+
+function sampleLevelLabel(level?: SampleLevel): string {
+  if (!level) return '待选择';
+  return `${level}（抽题 ${sampleLevelPercent[level]}%）`;
+}
+
+function defaultEvaluationLevels(level: SampleLevel): Record<EvalDimension, SampleLevel> {
+  return ALL_DIMENSIONS.reduce((acc, dimension) => {
+    acc[dimension] = level;
+    return acc;
+  }, {} as Record<EvalDimension, SampleLevel>);
+}
+
+function patchDimensionLevels(
+  text: string,
+  previous: Record<EvalDimension, SampleLevel> | undefined,
+): Record<EvalDimension, SampleLevel> | undefined {
+  const baseLevel = parseSampleLevel(text);
+  if (baseLevel) return defaultEvaluationLevels(baseLevel);
+  return previous;
+}
+
+function formatEvaluationLevels(levels?: Record<EvalDimension, SampleLevel>): string {
+  if (!levels) return '待选择';
+  const level = levels['输入安全'];
+  return `五维度统一：${sampleLevelLabel(level)}
+维度：${EVALUATION_SCENE.dimensions}`;
+}
+
+function buildEvaluationConfirm(slots: EvaluationSlots): string {
+  const agents = slots.agents?.length ? slots.agents : slots.agent ? [slots.agent] : [];
+  return `【评测配置确认消息】
+
+- 智能体：
+${agents.length ? agents.map((agent) => `  - ${agent.code} ${agent.name} ${agent.version}；风险等级：${agent.riskLevel}`).join('\n') : '  - 待选择'}
+- 评测标准：${EVALUATION_SCENE.standard}
+- 固定五维度：${EVALUATION_SCENE.dimensions}
+- 评测档位：
+${formatEvaluationLevels(slots.levels)}
+
+确认新建并自动开始评测吗？可回复「确认新建」；要改档位或换智能体也可以直接说。`;
+}
+
+function createEvaluationTask(slots: EvaluationSlots, creator?: string): EvaluationSlots {
+  const agents = slots.agents?.length ? slots.agents : slots.agent ? [slots.agent] : [evaluationPendingAgents[0]];
+  const levels = slots.levels ?? defaultEvaluationLevels('标准评测');
+  const date = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const now = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  const dimensionScores: Record<EvalDimension, number> = {
+    输入安全: 90,
+    输出安全: 86,
+    行为安全: 89,
+    数据安全: levels['数据安全'] === '深度评测' ? 84 : 82,
+    工具安全: 91,
+  };
+  const totalScore = Math.round((Object.values(dimensionScores).reduce((sum, score) => sum + score, 0) / ALL_DIMENSIONS.length) * 10) / 10;
+  const taskIds: string[] = [];
+  const taskNos: string[] = [];
+  agents.forEach((agent, index) => {
+    const taskId = `task-chat-${Date.now()}-${index}`;
+    const taskNo = `EVL-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${(mockEvaluationTasks.length + 1).toString().padStart(4, '0')}`;
+    taskIds.push(taskId);
+    taskNos.push(taskNo);
+    const task: EvaluationTask = {
+      id: taskId,
+      taskNo,
+      agentCode: agent.code,
+      agentId: agent.agentId,
+      agentName: agent.name,
+      version: agent.version,
+      riskLevel: agent.riskLevel,
+      department: agent.department,
+      status: '评测完成',
+      sampleLevel: levels['输入安全'],
+      dimensions: ALL_DIMENSIONS.map((dimension) => ({ dimension, sampleLevel: levels[dimension] })),
+      createTime: now,
+      submitTime: now,
+      evalCompleteTime: now,
+      progress: 100,
+      progressText: `${sampleLevelPercent[levels['输入安全']] * 5} / ${sampleLevelPercent[levels['输入安全']] * 5}`,
+      creator: creator ?? 'admin',
+      totalScore,
+      systemRiskLevel: agent.riskLevel === '高风险' ? '中等风险' : '低风险',
+      evalResult: '准入',
+      evalResultDesc: '五维安全评测综合表现达到准入要求，数据安全维度建议持续关注。',
+    };
+    mockEvaluationTasks.unshift(task);
+    mockEvaluationReports[taskId] = {
+      taskId,
+      conclusion: '准入',
+      overallRisk: task.systemRiskLevel ?? '中等风险',
+      conclusionDesc: '五维安全评测综合表现达到准入要求。',
+      detailDesc: '系统已按团体标准《智能体安全评测规范》完成输入、输出、行为、数据、工具安全五维评测，结果已回填台账评测结果信息。',
+      redLineTriggered: false,
+      dimensionScores: ALL_DIMENSIONS.map((dimension) => ({
+        dimension,
+        indicator: dimension === '输出安全' ? 'GCR' : dimension === '数据安全' ? 'PLR' : dimension === '输入安全' ? 'ASR' : 'RR',
+        rawValue: dimensionScores[dimension],
+        score: dimensionScores[dimension],
+        riskLevel: dimensionScores[dimension] >= 90 ? '低风险' : '中等风险',
+      })),
+    };
+  });
+  return { ...slots, agent: agents[0], agents, taskId: taskIds[0], taskNo: taskNos[0], taskIds, taskNos, totalProgress: 100, totalScore, dimensionScores };
+}
+
+function buildEvaluationProgress(slots: EvaluationSlots): string {
+  const levels = slots.levels ?? defaultEvaluationLevels('标准评测');
+  const totalByLevel: Record<SampleLevel, number> = { 快速评测: 30, 标准评测: 60, 深度评测: 100 };
+  const agents = slots.agents?.length ? slots.agents : slots.agent ? [slots.agent] : [];
+  const level = levels['输入安全'];
+  const total = totalByLevel[level];
+  const taskLines = (slots.taskNos ?? [slots.taskNo]).filter(Boolean).map((taskNo, index) => {
+    const agent = agents[index] ?? agents[0];
+    return `- ${taskNo}：${agent?.code ?? '0503-0001'} ${agent?.name ?? '糖尿病随访管理助手'}，总进度 100%，当前维度：工具安全`;
+  }).join('\n');
+  return `评测任务已创建并自动开始执行。
+
+${taskLines}
+
+五维度进度（已跑/总题）：
+- 输入安全：${total}/${total}
+- 输出安全：${total}/${total}
+- 行为安全：${total}/${total}
+- 数据安全：${total}/${total}
+- 工具安全：${total}/${total}
+
+评测引擎已完成本轮执行，正在回填台账「评测结果信息」。`;
+}
+
+function buildEvaluationResult(slots: EvaluationSlots): string {
+  const scores = slots.dimensionScores;
+  const agents = slots.agents?.length ? slots.agents : slots.agent ? [slots.agent] : [];
+  const resultHeader = agents.length > 1
+    ? agents.map((agent) => `- ${agent.code} ${agent.name}：总分 ${slots.totalScore ?? 88}，较上次 +2.3`).join('\n')
+    : `${agents[0]?.code ?? '0503-0001'} ${agents[0]?.name ?? '糖尿病随访管理助手'}：总分 ${slots.totalScore ?? 88}，较上次 +2.3`;
+  return `评测完成：
+
+${resultHeader}
+
+- 输入安全：${scores?.['输入安全'] ?? 90}
+- 输出安全：${scores?.['输出安全'] ?? 86}
+- 行为安全：${scores?.['行为安全'] ?? 89}
+- 数据安全：${scores?.['数据安全'] ?? 84}
+- 工具安全：${scores?.['工具安全'] ?? 91}
+
+结果已回填智能体台账「评测结果信息」。数据安全维度相对偏低，建议关注。
+
+收尾动作入口：查看评测进度、查看评测结果详情、新建下一个评测。`;
+}
+
+function getEvaluationNext(
+  flow: EvaluationFlow,
+  text: string,
+  creator?: string,
+): {
+  flow: EvaluationFlow;
+  replies: string[];
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  const slots: EvaluationSlots = { ...flow.slots };
+  const currentQuestion = flow.step === 'n1'
+    ? '请指定待评测智能体与统一评测档位。'
+    : '请确认评测配置，或回复「修改智能体 / 修改档位」。';
+  const intent = /确认|开始|新建|暂存|先存/.test(normalized)
+    ? 'confirm_or_lifecycle'
+    : /修改|改档位|换智能体|快速|标准|深度|第一个|第二个|第三个|这批|全部|都评|0503|0308|0201/.test(normalized)
+      ? 'collect_config'
+      : /直接.*分|打个 ?90|跳过评测|改分|篡改|改标准|改维度|分维度/.test(normalized)
+        ? 'boundary'
+        : /告警|台账|资源|审批|天气|新闻|闲聊|讲个笑话/.test(normalized)
+          ? 'offtopic'
+          : 'collect_config';
+  console.info('[home-evaluation-intent]', { intent, step: flow.step });
+
+  if (/暂存|先存/.test(normalized)) {
+    return {
+      flow: { ...flow, step: 'done', slots: { ...slots, draftSaved: true } },
+      replies: ['已保存评测任务草稿，草稿保留 7 天，尚未执行评测。'],
+      link: { to: '/app/evaluation/tasks?tab=草稿', text: '查看评测草稿' },
+      quickActions: ['新建下一个评测'],
+    };
+  }
+  if (intent === 'offtopic' && flow.step !== 'running') {
+    slots.sidetrack = [...(slots.sidetrack ?? []), normalized];
+    return {
+      flow: { ...flow, slots },
+      replies: [`${EVALUATION_SCENE.sidetrack}\n\n当前节点：${currentQuestion}`],
+      quickActions: ['确认新建', '改档位', '换智能体'],
+    };
+  }
+  if (intent === 'boundary') {
+    return {
+      flow,
+      replies: ['评测结果需由评测引擎依团体标准产生，无法直接给分、跳过评测、篡改结果或改评测标准维度。合规替代方案：可提高到深度评测后重跑，或维持当前配置开始。'],
+      quickActions: ['维持当前配置开始', '五维度统一深度评测'],
+    };
+  }
+
+  switch (flow.step) {
+    case 'n1': {
+      const agents = locateEvaluationAgents(normalized);
+      const selectedAgents = agents.length ? agents : slots.agents ?? (slots.agent ? [slots.agent] : []);
+      const agent = selectedAgents[0];
+      const levels = patchDimensionLevels(normalized, slots.levels);
+      if (!selectedAgents.length || !levels) {
+        return {
+          flow: { ...flow, step: 'n1', slots: { ...slots, agent, agents: selectedAgents, levels } },
+          replies: [
+            `${!selectedAgents.length ? '还需要选定评测智能体。' : ''}${!levels ? '还需要选择五维度统一评测档位。' : ''}\n\n定位后将同步使用固定评测标准${EVALUATION_SCENE.standard}与固定五维度：${EVALUATION_SCENE.dimensions}。\n\n可直接说「第一个，标准评测」或「这批都评一下，标准评测」。`,
+          ],
+          quickActions: ['第一个，标准评测', '这批都评一下，标准评测', '第二个，深度评测'],
+        };
+      }
+      const nextSlots = { ...slots, agent, agents: selectedAgents, levels };
+      return {
+        flow: { ...flow, step: 'n2', slots: nextSlots },
+        replies: [buildEvaluationConfirm(nextSlots)],
+        quickActions: ['确认新建', '改档位为深度评测', '换智能体'],
+      };
+    }
+    case 'n2': {
+      if (/换智能体|改智能体/.test(normalized)) {
+        return {
+          flow: { ...flow, step: 'n1', slots: { levels: slots.levels } },
+          replies: ['可以，请重新选择待评测智能体。'],
+          quickActions: ['第一个', '第二个', '这批都评一下'],
+        };
+      }
+      if (/改档位|档位|快速|标准|深度/.test(normalized) && !/确认|开始|维持|新建/.test(normalized)) {
+        const levels = patchDimensionLevels(normalized, slots.levels);
+        const nextSlots = { ...slots, levels };
+        return {
+          flow: { ...flow, step: 'n2', slots: nextSlots },
+          replies: [`已更新评测档位：\n${formatEvaluationLevels(levels)}\n\n本版本不支持分维度分别设置，五维度使用同一档位。确认就自动新建并开始评测。`],
+          quickActions: ['确认新建', '五维度统一深度评测'],
+        };
+      }
+      if (/确认|开始|维持|提交|新建/.test(normalized)) {
+        const submittedSlots = createEvaluationTask(slots, creator);
+        return {
+          flow: { ...flow, step: 'done', slots: submittedSlots },
+          replies: [buildEvaluationProgress(submittedSlots), buildEvaluationResult(submittedSlots)],
+          link: { to: `/app/evaluation/tasks/${submittedSlots.taskId}/progress`, text: '查看评测进度' },
+          quickActions: ['查看评测进度', '查看评测结果详情', '新建下一个评测'],
+        };
+      }
+      return {
+        flow,
+        replies: [buildEvaluationConfirm(slots)],
+        quickActions: ['确认新建', '改档位', '换智能体'],
+      };
+    }
+    default:
+      return {
+        flow,
+        replies: ['评测任务已完成。'],
+      };
+  }
+}
+
+function getEvaluationDoneReply(
+  flow: EvaluationFlow,
+  text: string,
+): {
+  flow: EvaluationFlow;
+  reply: string;
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  if (/进度/.test(normalized)) {
+    return {
+      flow,
+      reply: buildEvaluationProgress(flow.slots),
+      link: { to: `/app/evaluation/tasks/${flow.slots.taskId}/progress`, text: '查看评测进度' },
+      quickActions: ['查看评测进度', '查看评测结果详情', '新建下一个评测'],
+    };
+  }
+  if (/结果|详情|报告/.test(normalized)) {
+    return {
+      flow,
+      reply: buildEvaluationResult(flow.slots),
+      link: { to: `/app/evaluation/tasks/${flow.slots.taskId}/report`, text: '查看评测结果详情' },
+      quickActions: ['查看评测进度', '查看评测结果详情', '新建下一个评测'],
+    };
+  }
+  if (/下一个|新建/.test(normalized)) {
+    return {
+      flow: { ...flow, step: 'n1', slots: {} },
+      reply: buildEvaluationOpening(),
+      quickActions: ['第一个，标准评测', '第二个，深度评测', '第三个，快速评测'],
+    };
+  }
+  return {
+    flow,
+    reply: '当前评测场景已收尾。仅支持：查看评测进度、查看评测结果详情、新建下一个评测。',
+    quickActions: ['查看评测进度', '查看评测结果详情', '新建下一个评测'],
+  };
+}
+
+function evaluationAuditQueue(): EvaluationTask[] {
+  return mockEvaluationTasks.filter((task) =>
+    ['待审核', '评测完成'].includes(task.status) && task.evalResult !== '准入' && task.evalResult !== '退回',
+  );
+}
+
+function createEvaluationAuditFlow(sessionId: string): EvaluationAuditFlow {
+  return {
+    sessionId,
+    step: 'n1',
+    queueIds: evaluationAuditQueue().map((task) => task.id),
+    reviewedIds: [],
+    records: [],
+  };
+}
+
+function getEvaluationAuditTask(id?: string) {
+  return id ? mockEvaluationTasks.find((task) => task.id === id) : undefined;
+}
+
+function getEvaluationSystemConclusion(task: EvaluationTask): '准入' | '退回' {
+  const reportConclusion = getReportByTaskId(task.id)?.conclusion;
+  if (reportConclusion === '准入' || reportConclusion === '退回') return reportConclusion;
+  return (task.totalScore ?? 0) >= 80 ? '准入' : '退回';
+}
+
+function getEvaluationAuditDetail(task: EvaluationTask) {
+  const report = getReportByTaskId(task.id);
+  const systemConclusion = getEvaluationSystemConclusion(task);
+  const detail = systemConclusion === '退回' && report?.conclusion === '待人工复核'
+    ? '输出安全 GCR=90 处于阈值边缘，总分未达本批准入线，建议退回修改并补充安全样本后重新评测。'
+    : report?.detailDesc ?? task.evalResultDesc ?? '评测已完成，等待管理员审核。';
+  const dimensions = report?.dimensionScores
+    .map((item) => `${item.dimension}${item.score}分（${item.riskLevel}）`)
+    .join('、') ?? '暂无维度明细';
+  return { report, systemConclusion, detail, dimensions };
+}
+
+function availableEvaluationAuditTasks(flow: EvaluationAuditFlow) {
+  const reviewed = new Set(flow.reviewedIds);
+  return flow.queueIds
+    .map((id) => getEvaluationAuditTask(id))
+    .filter((task): task is EvaluationTask => Boolean(task) && !reviewed.has(task.id));
+}
+
+function buildEvaluationAuditOpening(flow: EvaluationAuditFlow): string {
+  const queue = availableEvaluationAuditTasks(flow);
+  if (queue.length === 0) {
+    return '你好！我是医小管。目前系统已评测待审队列为空。\n\n本次审核到此结束。后续仅开放：查看审核记录、查看批次汇总。';
+  }
+  return `你好！我是医小管。目前系统已评测 ${queue.length} 个智能体待审核，已为您拉取「已评测待审队列」：
+
+${queue.map((task, index) => {
+  const { systemConclusion, detail } = getEvaluationAuditDetail(task);
+  return `${index + 1}. ${task.agentCode} ${task.agentName} ${task.version} · 系统结论：${systemConclusion}；说明摘要：${detail}`;
+}).join('\n')}
+
+请按编号、名称或序号选定一条，我会沿 N0→N4 轨道逐条呈报评测结果并完成审核。`;
+}
+
+function locateEvaluationAuditTask(flow: EvaluationAuditFlow, text: string) {
+  const queue = availableEvaluationAuditTasks(flow);
+  const indexMatch = text.match(/第?\s*([一二三四五六七八九十\d]+)\s*(条|个)?|^([1-9]\d*)$/);
+  if (indexMatch) {
+    const raw = indexMatch[1] ?? indexMatch[3];
+    const cnMap: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+    const index = /^\d+$/.test(raw) ? Number(raw) : cnMap[raw] ?? 1;
+    return queue[index - 1];
+  }
+  const normalized = text.toLowerCase();
+  return queue.find((task) => {
+    const target = `${task.taskNo} ${task.agentCode} ${task.agentName} ${task.version} ${task.department}`.toLowerCase();
+    return target.includes(normalized) || normalized.includes(task.agentCode.toLowerCase()) || normalized.includes(task.agentName.toLowerCase().slice(0, 4));
+  });
+}
+
+function buildEvaluationAuditPresentation(task: EvaluationTask): string {
+  const { systemConclusion, detail, dimensions } = getEvaluationAuditDetail(task);
+  return `已选定 ${task.agentCode} ${task.agentName}，信息如下（只读）：
+
+- 智能体编号：${task.agentCode}
+- 智能体名称：${task.agentName}
+- 版本：${task.version}
+- 所属科室：${task.department}
+- 任务编号：${task.taskNo}
+- 总分：${task.totalScore ?? '待回填'}
+- 系统核心结论：${systemConclusion}
+- 具体说明（评测规则生成）：${detail}
+- 维度明细：${dimensions}
+
+请给出审核结论：审核通过 / 退回修改。`;
+}
+
+function parseEvaluationAuditConclusion(text: string): '审核通过' | '退回修改' | undefined {
+  if (/退回|驳回|修改|整改|重评|重测/.test(text)) return '退回修改';
+  if (/通过|同意|准予|准入|采纳|没问题/.test(text)) return '审核通过';
+  return undefined;
+}
+
+function defaultEvaluationAuditComment(conclusion: '审核通过' | '退回修改', task: EvaluationTask) {
+  const { systemConclusion } = getEvaluationAuditDetail(task);
+  if (conclusion === '审核通过') {
+    return systemConclusion === '准入' ? '准予准入，上线后按季度复评。' : '采纳系统退回结论，请申请人按评测说明整改后重新提交。';
+  }
+  return '';
+}
+
+function extractEvaluationAuditComment(text: string) {
+  if (/^(审核通过|通过|退回修改|退回|驳回|修改)[。.!！]?$/.test(text.trim())) return '';
+  return text
+    .replace(/^退回原因[:：]?/g, '')
+    .replace(/^具体说明[:：]?/g, '')
+    .replace(/^加一句[:：]?/g, '')
+    .replace(/^说明[:：]?/g, '')
+    .trim();
+}
+
+function finalizeEvaluationAudit(
+  flow: EvaluationAuditFlow,
+  reviewerName?: string,
+): { flow: EvaluationAuditFlow; reply: string; link?: { to: string; text: string }; quickActions?: string[] } {
+  const task = getEvaluationAuditTask(flow.selectedTaskId);
+  if (!task || !flow.reviewConclusion) {
+    return { flow, reply: '还没有选定唯一评测结果或审核结论，请先完成 N1/N2。' };
+  }
+  const { systemConclusion } = getEvaluationAuditDetail(task);
+  const finalResult: EvaluationAuditRecord['finalResult'] =
+    flow.reviewConclusion === '审核通过' ? systemConclusion : '退回修改';
+  const reviewer = reviewerName ?? '王主任';
+  const time = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const comment = (flow.comment ?? defaultEvaluationAuditComment(flow.reviewConclusion, task)).trim();
+
+  task.status = flow.reviewConclusion === '审核通过' ? '审核通过' : '退回重测';
+  task.reviewComment = comment;
+  task.reviewer = reviewer;
+  task.reviewCompleteTime = `${time}:00`;
+  task.evalResult = finalResult === '退回修改' ? '退回' : finalResult as EvaluationConclusion;
+  task.evalResultDesc = finalResult === '准入'
+    ? '管理员审核通过，最终准入评测结果为准入。'
+    : finalResult === '退回'
+      ? '管理员审核通过并采纳系统退回结论，最终准入评测结果为退回。'
+      : '管理员退回修改，等待申请人整改后重新评测。';
+  if (finalResult !== '准入') task.rejectTime = `${time}:00`;
+
+  const record: EvaluationAuditRecord = {
+    taskId: task.id,
+    agentCode: task.agentCode,
+    agentName: task.agentName,
+    systemConclusion,
+    reviewConclusion: flow.reviewConclusion,
+    finalResult,
+    comment,
+    reviewer,
+    time,
+  };
+  const nextFlow: EvaluationAuditFlow = {
+    ...flow,
+    step: availableEvaluationAuditTasks({ ...flow, reviewedIds: [...flow.reviewedIds, task.id] }).length > 0 ? 'n1' : 'done',
+    reviewedIds: [...flow.reviewedIds, task.id],
+    records: [...flow.records, record],
+    selectedTaskId: undefined,
+    reviewConclusion: undefined,
+    comment: undefined,
+  };
+  const remaining = availableEvaluationAuditTasks(nextFlow).length;
+  const syncLabel = finalResult === '退回修改' ? '退回原因说明' : '具体说明';
+  const resultReply = `已生效。下方最终结果：
+
+${task.agentCode} ${task.agentName}｜最终评测结果：${finalResult}｜${syncLabel}：${comment || '无补充说明'}
+
+审核人：${reviewer}，时间：${time}，已完成状态流转、同步用户端并通知申请人${finalResult === '准入' ? '，智能体可正式纳管／上线' : '整改或重评'}。${remaining > 0 ? `剩余 ${remaining} 条。` : '待审已清空。'}`;
+  if (remaining > 0) {
+    return {
+      flow: nextFlow,
+      reply: `${resultReply}\n\n请继续选择下一条审核。`,
+      link: { to: '/app/evaluation/tasks?tab=审核通过', text: '查看审核记录' },
+      quickActions: ['继续下一条审核', '查看审核记录', '查看批次汇总'],
+    };
+  }
+  return {
+    flow: nextFlow,
+    reply: `${resultReply}\n\n${buildEvaluationAuditBatchSummary(nextFlow)}\n\n本次审核到此结束。后续仅开放：继续下一条审核、查看审核记录、查看批次汇总。`,
+    link: { to: '/app/evaluation/tasks?tab=审核通过', text: '查看审核记录' },
+    quickActions: ['继续下一条审核', '查看审核记录', '查看批次汇总'],
+  };
+}
+
+function buildEvaluationAuditBatchSummary(flow: EvaluationAuditFlow) {
+  const admitted = flow.records.filter((record) => record.finalResult === '准入').length;
+  const returned = flow.records.filter((record) => record.finalResult !== '准入').length;
+  const unhandled = availableEvaluationAuditTasks(flow).length;
+  return `本批完成：准入 ${admitted}、退回修改 ${returned}、未处理 ${unhandled}。`;
+}
+
+function buildEvaluationAuditRecords(flow: EvaluationAuditFlow) {
+  if (flow.records.length === 0) return '本次会话暂无已提交审核记录。';
+  return `本次会话审核记录：
+
+${flow.records.map((record, index) =>
+  `${index + 1}. ${record.agentCode} ${record.agentName}｜系统结论：${record.systemConclusion}｜审核结论：${record.reviewConclusion}｜最终结果：${record.finalResult}｜审核人：${record.reviewer}｜时间：${record.time}｜说明：${record.comment || '无'}`
+).join('\n')}`;
+}
+
+function getEvaluationAuditNext(
+  flow: EvaluationAuditFlow,
+  text: string,
+  reviewerName?: string,
+): {
+  flow: EvaluationAuditFlow;
+  replies: string[];
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  if (/暂停|先停|稍后|保存进度/.test(normalized)) {
+    const nextFlow = { ...flow, step: 'done' as const, paused: true };
+    return {
+      flow: nextFlow,
+      replies: ['已暂停评测审核，未决项保持「待审核」状态，当前进度已自动保存。\n\n后续仅开放：继续下一条审核、查看审核记录、查看批次汇总。'],
+      quickActions: ['继续下一条审核', '查看审核记录', '查看批次汇总'],
+    };
+  }
+  if (/审核记录|记录/.test(normalized)) {
+    return {
+      flow,
+      replies: [buildEvaluationAuditRecords(flow)],
+      link: { to: '/app/evaluation/tasks?tab=审核通过', text: '查看审核记录' },
+      quickActions: ['继续下一条审核', '查看批次汇总'],
+    };
+  }
+  if (/批次|汇总/.test(normalized)) {
+    return {
+      flow,
+      replies: [buildEvaluationAuditBatchSummary(flow)],
+      quickActions: ['继续下一条审核', '查看审核记录'],
+    };
+  }
+
+  switch (flow.step) {
+    case 'n1': {
+      const queue = availableEvaluationAuditTasks(flow);
+      if (/继续|下一条/.test(normalized) && queue.length === 0) {
+        return {
+          flow: { ...flow, step: 'done' },
+          replies: ['当前已评测待审队列为空。后续仅开放：查看审核记录、查看批次汇总。'],
+          quickActions: ['查看审核记录', '查看批次汇总'],
+        };
+      }
+      const task = locateEvaluationAuditTask(flow, normalized) ?? (/继续|下一条/.test(normalized) ? queue[0] : undefined);
+      if (!task) {
+        return {
+          flow,
+          replies: [`请先选定一条待审评测结果。\n\n${buildEvaluationAuditOpening(flow)}`],
+          quickActions: ['看第一条', '查看批次汇总', '暂停审核'],
+        };
+      }
+      return {
+        flow: { ...flow, step: 'n2', selectedTaskId: task.id },
+        replies: [buildEvaluationAuditPresentation(task)],
+        link: { to: `/app/evaluation/tasks/${task.id}/report`, text: '查看评测结果详情' },
+        quickActions: ['审核通过', '退回修改', '查看维度明细'],
+      };
+    }
+    case 'n2': {
+      const task = getEvaluationAuditTask(flow.selectedTaskId);
+      if (!task) return { flow: { ...flow, step: 'n1' }, replies: ['当前选定项已失效，请重新选择待审评测结果。'] };
+      if (/维度|明细|详情/.test(normalized)) {
+        return {
+          flow,
+          replies: [`${task.agentCode} ${task.agentName} 维度明细：${getEvaluationAuditDetail(task).dimensions}\n\n请继续给出审核结论：审核通过 / 退回修改。`],
+          link: { to: `/app/evaluation/tasks/${task.id}/report`, text: '查看评测结果详情' },
+          quickActions: ['审核通过', '退回修改'],
+        };
+      }
+      if (/台账|告警|今天|准入了几个|资源|排班/.test(normalized)) {
+        return {
+          flow,
+          replies: [`我们先来完成准入评测结果审核，稍后再为您解决此问题。\n\n${buildEvaluationAuditPresentation(task)}`],
+          quickActions: ['审核通过', '退回修改'],
+        };
+      }
+      const conclusion = parseEvaluationAuditConclusion(normalized);
+      if (!conclusion) {
+        return {
+          flow,
+          replies: ['请给出审核结论：审核通过 / 退回修改。管理员如对系统评测结论有异议，只能选择「退回修改」打回重评，不能直接修改系统分数或结论。'],
+          quickActions: ['审核通过', '退回修改'],
+        };
+      }
+      const { systemConclusion } = getEvaluationAuditDetail(task);
+      if (conclusion === '退回修改') {
+        return {
+          flow: { ...flow, step: 'n3', reviewConclusion: conclusion, comment: extractEvaluationAuditComment(normalized) },
+          replies: ['选择退回修改，需要填写退回原因（具体说明，必填，≤500 字）。请说明。'],
+          quickActions: ['退回原因：数据安全与行为安全未达标，请整改后重新提交'],
+        };
+      }
+      return {
+        flow: { ...flow, step: 'n3', reviewConclusion: conclusion, comment: extractEvaluationAuditComment(normalized) },
+        replies: [`审核通过，将采纳系统结论「${systemConclusion}」为最终结果。具体说明为选填，需要补充吗？不填我就提交。`],
+        quickActions: ['不填，直接提交', '加一句：准予准入，上线后按季度复评'],
+      };
+    }
+    case 'n3': {
+      const task = getEvaluationAuditTask(flow.selectedTaskId);
+      if (!task || !flow.reviewConclusion) return { flow: { ...flow, step: 'n1' }, replies: ['当前审核上下文已失效，请重新选择待审评测结果。'] };
+      const isConfirm = /确认|提交|生效|不填|直接|没问题|就这样/.test(normalized);
+      if (/修改具体说明|修改说明|改成|改为/.test(normalized)) {
+        const comment = normalized
+          .replace(/^修改具体说明[:：]?/, '')
+          .replace(/^修改说明[:：]?/, '')
+          .replace(/^把/, '')
+          .trim();
+        return {
+          flow: { ...flow, comment: comment || flow.comment },
+          replies: [`已更新具体说明：${comment || flow.comment || '无补充说明'}。请确认。`],
+          quickActions: ['确认', '重新修改具体说明'],
+        };
+      }
+      const comment = extractEvaluationAuditComment(normalized);
+      const nextComment = !isConfirm && comment ? comment.slice(0, 500) : flow.comment;
+      if (flow.reviewConclusion === '退回修改' && !nextComment) {
+        return {
+          flow: { ...flow, comment: nextComment },
+          replies: ['抱歉，选择「退回修改」必须填写退回原因才能提交。请补充具体说明。'],
+          quickActions: ['退回原因：数据安全与行为安全未达标，请整改后重新提交'],
+        };
+      }
+      if (!isConfirm && comment) {
+        return {
+          flow: { ...flow, comment: nextComment },
+          replies: [`已记录具体说明：${nextComment}。请确认。`],
+          quickActions: ['确认', '修改具体说明'],
+        };
+      }
+      const final = finalizeEvaluationAudit({ ...flow, comment: nextComment }, reviewerName);
+      return {
+        flow: final.flow,
+        replies: [final.reply],
+        link: final.link,
+        quickActions: final.quickActions,
+      };
+    }
+    default:
+      return {
+        flow,
+        replies: ['评测审核已收尾。当前仅支持：继续下一条审核、查看审核记录、查看批次汇总。'],
+        quickActions: ['继续下一条审核', '查看审核记录', '查看批次汇总'],
+      };
+  }
+}
+
+function getEvaluationAuditDoneReply(
+  flow: EvaluationAuditFlow,
+  text: string,
+): {
+  flow: EvaluationAuditFlow;
+  reply: string;
+  link?: { to: string; text: string };
+  quickActions?: string[];
+} {
+  const normalized = text.trim();
+  if (/继续|下一条|恢复/.test(normalized)) {
+    const queue = availableEvaluationAuditTasks(flow);
+    if (queue.length === 0) {
+      return {
+        flow,
+        reply: '当前已评测待审队列为空，无法继续下一条审核。',
+        quickActions: ['查看审核记录', '查看批次汇总'],
+      };
+    }
+    return {
+      flow: { ...flow, step: 'n1', paused: false },
+      reply: buildEvaluationAuditOpening(flow),
+      quickActions: ['看第一条', '查看批次汇总', '暂停审核'],
+    };
+  }
+  if (/记录/.test(normalized)) {
+    return {
+      flow,
+      reply: buildEvaluationAuditRecords(flow),
+      link: { to: '/app/evaluation/tasks?tab=审核通过', text: '查看审核记录' },
+      quickActions: ['继续下一条审核', '查看批次汇总'],
+    };
+  }
+  if (/汇总|批次/.test(normalized)) {
+    return {
+      flow,
+      reply: buildEvaluationAuditBatchSummary(flow),
+      quickActions: ['继续下一条审核', '查看审核记录'],
+    };
+  }
+  return {
+    flow,
+    reply: '评测审核已收尾。当前仅支持：继续下一条审核、查看审核记录、查看批次汇总。',
+    quickActions: ['继续下一条审核', '查看审核记录', '查看批次汇总'],
+  };
+}
+
+function buildMonitorOpening(role: '信息科管理员' | '科室管理员'): string {
+  return '你好，我是医小管。运行监控相关问题都可以问我';
+}
+
+function monitorScope(role: '信息科管理员' | '科室管理员') {
+  return role === '信息科管理员' ? '全院' : '本科室';
+}
+
+function openMonitorAlerts(role: '信息科管理员' | '科室管理员') {
+  const openStatuses = new Set(['pending_assign', 'pending_handle', 'handling', 'pending_review', 'reviewing']);
+  const scopeDept = role === '信息科管理员' ? null : '内科';
+  return mockAlertEventsV18
+    .filter((event) => openStatuses.has(event.status))
+    .filter((event) => !scopeDept || event.department === scopeDept)
+    .sort((a, b) => monitorAlertLevelWeight(b) - monitorAlertLevelWeight(a));
+}
+
+function monitorAlertLevel(event: AlertEventV18): '高' | '中' | '低' {
+  if (event.eventType === 'security' || event.triggerContent.trigger_action === 'disable') return '高';
+  if (event.eventType === 'cost' || event.triggerContent.trigger_action === 'warn') return '高';
+  if (event.status === 'pending_handle' || event.status === 'handling') return '中';
+  return '低';
+}
+
+function monitorAlertLevelWeight(event: AlertEventV18) {
+  return { 高: 3, 中: 2, 低: 1 }[monitorAlertLevel(event)];
+}
+
+function monitorAlertCode(event: AlertEventV18, index: number) {
+  const codeMap: Record<string, string> = {
+    'agent-006': '0503-0001',
+    'agent-002': '0308-0002',
+    'agent-005': '0611-0004',
+    'agent-008': '0702-0003',
+  };
+  return codeMap[event.agentId] ?? `0${index + 1}00-000${index + 1}`;
+}
+
+function buildOpenAlertList(role: '信息科管理员' | '科室管理员') {
+  const alerts = openMonitorAlerts(role);
+  if (alerts.length === 0) {
+    return {
+      alerts,
+      rows: [] as MonitorAlertRow[],
+      reply: '当前暂无未处理告警，运行平稳',
+    };
+  }
+  const rows = alerts.map(monitorAlertToRow);
+  return {
+    alerts,
+    rows,
+    reply: `为您弹出当前未处理告警共 ${alerts.length} 条（按级别高→低）：\n\n需要我展开某条的触发详情或处置建议吗？可回复序号`,
+  };
+}
+
+function monitorDimensionLabel(event: AlertEventV18): MonitorAlertRow['dimension'] {
+  if (event.eventType === 'business') return '业务';
+  if (event.eventType === 'status') return '状态';
+  if (event.eventType === 'cost') return '成本';
+  return '安全';
+}
+
+function monitorAlertToRow(event: AlertEventV18, index: number): MonitorAlertRow {
+  const condition = event.triggerContent.trigger_condition;
+  return {
+    id: event.id,
+    level: monitorAlertLevel(event),
+    dimension: monitorDimensionLabel(event),
+    code: monitorAlertCode(event, index),
+    agentName: event.agentName,
+    content: `${condition.metric} ${condition.description}，命中〔${monitorAlertLevel(event)}〕级告警规则（阈值 ${condition.threshold}${condition.thresholdUnit ?? ''}）`,
+    detailTo: `/app/monitoring/alert-events/${event.id}`,
+  };
+}
+
+function buildMonitorMetricReply(text: string, role: '信息科管理员' | '科室管理员') {
+  const scope = monitorScope(role);
+  const today = /本周|周/.test(text) ? '本周' : /本月|月/.test(text) ? '本月' : '今日';
+  const onlineRate = ((statusKpiV18.online / statusKpiV18.total) * 100).toFixed(1);
+  if (/token|成本|费用|消耗/.test(text)) {
+    return `**直答**：${today}${scope} **token 使用量** ${costKpiV18.token.today.toLocaleString()} tokens，单任务输入 Token 均值 **1.8k**、输出 Token 均值 **0.6k**；单次会话平均成本 **¥0.12**，单任务平均成本 **¥0.35**。
+
+**口径**：统计范围为${scope}，时间范围为${today === '今日' ? '今日 00:00 至当前' : today}；成本类同时保留日/周/月趋势。
+
+**下钻**：点击 **token 使用量** 可看日/周/月趋势，点击 **单任务平均成本** 可看成本明细。
+
+**告警对照 + 引导报告**：「胸部 CT 影像智能分析平台」已触发〔高〕告警，这条已产生告警，要看未处理告警吗？需要我据此生成《智能体运行监控情况报告》吗？`;
+  }
+  if (/在线|离线|状态|健康|心跳/.test(text)) {
+    return `**直答**：${today}${scope}智能体 **在线率** ${onlineRate}%，在线 **${statusKpiV18.online}** 个、离线 **${statusKpiV18.offline}** 个、异常 **${statusKpiV18.abnormal}** 个、禁用 **${statusKpiV18.disabled}** 个。
+
+**口径**：统计范围为${scope}，时间范围为${today === '今日' ? '今日 00:00 至当前' : today}。
+
+**下钻**：点击 **在线率**、**离线时长**、**心跳成功率** 可查看日/周/月趋势。
+
+**告警对照 + 引导报告**：「智能导诊与分诊系统」心跳成功率为 0%，已触发〔中〕告警，这条已产生告警，要看未处理告警吗？需要我据此生成《智能体运行监控情况报告》吗？`;
+  }
+  return `**直答**：${today}${scope}当日调用 **${businessKpiV18.todayCalls.toLocaleString()} 次**，**任务执行成功率** ${businessKpiV18.todaySuccessRate}%，任务中断率 **6.8%**，自助解决率 **78%**，**P95 响应时间** 4.8s；状态维度在线率 ${onlineRate}%，成本维度今日 Token ${costKpiV18.token.today.toLocaleString()}，安全维度当前高危输入已拦截。
+
+**口径**：统计范围为${scope}，时间范围为${today === '今日' ? '今日 00:00 至当前' : today}；总体问法按业务 / 状态 / 成本 / 安全四维汇总。
+
+**下钻**：点击 **任务执行成功率**、**调用量**、**P95 响应时间** 可进入监控明细 / 趋势页。
+
+**告警对照 + 引导报告**：部分影像与导诊智能体已触发〔高/中〕告警，这条已产生告警，要看未处理告警吗？需要我据此生成《智能体运行监控情况报告》吗？`;
+}
+
+function buildMonitorReport(flow: MonitorFlow, text: string, role: '信息科管理员' | '科室管理员') {
+  const scope = /放射科/.test(text) ? '放射科' : /影像科/.test(text) ? '影像科' : /全院\/本科室/.test(text) ? monitorScope(role) : flow.reportScope ?? monitorScope(role);
+  const period = /年报|今年/.test(text)
+    ? '年报'
+    : /月报|本月|这个月/.test(text)
+      ? '月报'
+      : /周报|本周/.test(text)
+        ? '周报'
+        : /日报|今日|今天/.test(text)
+          ? '日报'
+          : flow.reportPeriod;
+  if (!period) {
+    return {
+      flow: { ...flow, lastIntent: 'report' as const, reportScope: scope },
+      reply: '好的。请问要看哪个统计周期的报告——日报、周报、月报还是年报？',
+      quickActions: ['日报', '周报', '月报', '年报'],
+    };
+  }
+  return {
+    flow: { ...flow, lastIntent: 'report' as const, reportPeriod: period, reportScope: scope },
+    reply: `已生成《智能体运行监控情况报告》草稿（${scope}·${period}）。
+
+报告按四维组织：
+- 业务监控：调用量、成功率、响应时间、任务中断率
+- 状态监控：在线率、离线/异常智能体、心跳与实例健康
+- 成本监控：Token、CPU/GPU/内存使用、成本趋势
+- 安全监控：注入攻击、越权访问、敏感信息外发拦截
+
+已汇总当前告警与关注项，支持在线编辑/批注，并可导出用于汇报。`,
+    link: { to: '/app/monitoring', text: '打开报告编辑页' },
+    quickActions: ['查看未处理告警', '查看日/周/月趋势', '订阅运行速读'],
+    reportCard: {
+      title: '智能体运行监控情况报告',
+      scope,
+      period,
+      modules: ['业务', '状态', '成本', '安全'],
+      to: '/app/monitoring',
+    },
+  };
+}
+
+function buildMonitorAlertDetail(flow: MonitorFlow, text: string) {
+  const indexMatch = text.match(/\d+/);
+  const index = indexMatch ? Number(indexMatch[0]) - 1 : 0;
+  const alert = flow.lastAlerts?.[index];
+  if (!alert) {
+    return {
+      reply: '暂未找到对应序号的告警。可回复告警序号，或说「查看未处理告警」重新弹出清单。',
+      link: { to: '/app/monitoring/alert-events', text: '查看告警事件管理' },
+    };
+  }
+  const condition = alert.triggerContent.trigger_condition;
+  return {
+    reply: `【告警触发详情】
+
+- 智能体：${alert.agentName}
+- 告警级别：${monitorAlertLevel(alert)}
+- 触发指标：${condition.metric}
+- 实测/阈值：${condition.description}
+- 触发时间：${alert.triggerTime}
+- 规则名称：${alert.triggerContent.rule_name}
+- 负责人：${alert.notifyTarget.owner}
+
+处置建议：先查看详情确认影响范围；如仍在持续，通知负责人 ${alert.notifyTarget.owner}；确认恢复后可标记处理。`,
+    link: { to: `/app/monitoring/alert-events/${alert.id}`, text: '查看告警详情' },
+    quickActions: ['通知负责人', '标记处理', '继续看下一条'],
+  };
+}
+
+function getMonitorReply(
+  flow: MonitorFlow,
+  text: string,
+  role: '信息科管理员' | '科室管理员',
+): {
+  flow: MonitorFlow;
+  reply: string;
+  link?: { to: string; text: string };
+  quickActions?: string[];
+  reportCard?: LedgerReportCard;
+  monitorAlertTable?: MonitorAlertTable;
+} {
+  const normalized = text.trim();
+  const intent = classifyMonitorIntent(normalized, flow);
+  console.info('[home-monitor-intent]', { text: normalized, intent });
+
+  if (/API ?key|密钥|明文|患者隐私明文|越权/.test(normalized)) {
+    return {
+      flow: { ...flow, lastIntent: 'out_of_scope' },
+      reply: '按平台安全规则，密钥与敏感字段仅可密文展示（********），我不能展示明文或越权数据。\n\n运行监控这边可以继续查看指标、告警清单或生成报告。',
+      quickActions: monitorRecommendedQuestions,
+    };
+  }
+
+  if (intent === 'out_of_scope') {
+    return {
+      flow: { ...flow, lastIntent: 'out_of_scope' },
+      reply: '问题超出平台现有信息，我们将持续优化完善哟~\n\n目前我能提供的是近 30 天成本趋势、日/周/月 Token 使用量与单任务成本。需要看哪一项？',
+      quickActions: ['查看近 30 天成本趋势', '今日智能体运行 token 成本消耗多少', '生成监控报告'],
+    };
+  }
+  if (intent === 'offtopic') {
+    return {
+      flow: { ...flow, lastIntent: 'offtopic', pendingTodos: [...(flow.pendingTodos ?? []), normalized] },
+      reply: '我们先看运行监控，稍后再为您解决此问题\n\n运行监控这边还需要看什么？',
+      quickActions: monitorRecommendedQuestions,
+    };
+  }
+
+  if (flow.lastIntent === 'overview_metric' && /^(否|不用|不需要|先不)[。！!.\s]*$/.test(normalized)) {
+    return {
+      flow: { ...flow, lastIntent: 'overview_metric' },
+      reply: '好的，暂不生成报告。运行监控这边还需要看什么？',
+      quickActions: ['查看未处理告警', '查看日/周/月趋势', '今日智能体运行 token 成本消耗多少？'],
+    };
+  }
+
+  if (flow.lastIntent === 'alert' && (/^\d+$/.test(normalized) || /第\s*\d+|详情|通知负责人|标记处理/.test(normalized))) {
+    const detail = buildMonitorAlertDetail(flow, normalized);
+    return {
+      flow: { ...flow, lastIntent: 'alert' },
+      reply: detail.reply,
+      link: detail.link,
+      quickActions: detail.quickActions,
+    };
+  }
+
+  if (intent === 'report') {
+    return buildMonitorReport(flow, normalized, role);
+  }
+
+  if (intent === 'alert') {
+    if (/^\d+$/.test(normalized) || /第\s*\d+|详情|通知负责人|标记处理/.test(normalized)) {
+      const detail = buildMonitorAlertDetail(flow, normalized);
+      return {
+        flow: { ...flow, lastIntent: 'alert' },
+        reply: detail.reply,
+        link: detail.link,
+        quickActions: detail.quickActions,
+      };
+    }
+    const { alerts, rows, reply } = buildOpenAlertList(role);
+    return {
+      flow: { ...flow, lastIntent: 'alert', lastAlerts: alerts },
+      reply,
+      link: { to: '/app/monitoring/alert-events', text: '打开未处理告警清单' },
+      quickActions: alerts.length ? ['展开第 1 条', '只看高危', '生成监控报告'] : ['看运行概况', '生成监控报告'],
+      monitorAlertTable: { rows, emptyText: '当前暂无未处理告警，运行平稳' },
+    };
+  }
+
+  if (intent === 'overview_metric' && /趋势|日\/周\/月|日周月|下钻/.test(normalized)) {
+    return {
+      flow: { ...flow, lastIntent: 'overview_metric', reportScope: monitorScope(role), reportPeriod: '日报' },
+      reply: `已切到指标下钻视角：
+
+- 今日调用量：4.2 万次，较昨日 +6.1%
+- 本周调用量：28.6 万次，工作日 09:00–11:00 峰值明显
+- 本月调用量：124.8 万次，环比 +12.4%
+- P95 响应时间：今日 4.8s，本周均值 4.5s，本月均值 4.2s
+
+口径：${monitorScope(role)}，监控中心业务/状态/成本/安全四维指标。需要我据此生成报告吗？`,
+      link: { to: '/app/monitoring/business', text: '查看业务监控明细' },
+      quickActions: ['是', '否', '查看未处理告警'],
+    };
+  }
+
+  if (intent === 'overview_metric') {
+    const period = /本周|周/.test(normalized) ? '周报' : /本月|月/.test(normalized) ? '月报' : '日报';
+    return {
+      flow: { ...flow, lastIntent: 'overview_metric', reportScope: monitorScope(role), reportPeriod: period },
+      reply: buildMonitorMetricReply(normalized, role),
+      link: { to: '/app/monitoring/business', text: '查看监控明细' },
+      quickActions: ['是', '否', '查看未处理告警'],
+    };
+  }
+
+  return {
+    flow: { ...flow, lastIntent: 'clarify' },
+    reply: '您是想看运行监控指标，还是未处理告警清单？',
+    quickActions: ['看运行概况', '现在有哪些告警需要处理？'],
+  };
+}
+
+function classifyMonitorIntent(text: string, flow: MonitorFlow): 'overview_metric' | 'alert' | 'out_of_scope' | 'offtopic' | 'clarify' | 'report' {
+  if (/明年|未来|预测|预算预测|未采集|无数据源|外部平台/.test(text)) return 'out_of_scope';
+  if (/排班|挂号|医保|工资|请假|采购|天气|新闻|门诊排班/.test(text)) return 'offtopic';
+  if (flow.lastIntent === 'overview_metric' && /^(是|要|需要|生成|好的|好|可以|确认)[。！!.\s]*$/.test(text)) return 'report';
+  if (/报告|导出|编辑|汇报|速读/.test(text)) return 'report';
+  if (/告警|报警|警报|待处理|未处理|有哪些要处理|异常|触发.*阈值|处置|高危|负责人|标记处理|只看高/.test(text)) return 'alert';
+  if (/运行|情况|稳不稳|总览|总体|概况|调用|成功率|中断|自助|响应|token|成本|在线|离线|状态|GPU|CPU|内存|指标|趋势|日\/周\/月|日周月|下钻|吞吐|并发/.test(text)) return 'overview_metric';
+  if (flow.lastIntent === 'report' && /日报|周报|月报|年报|今日|今天|本周|本月|今年/.test(text)) return 'report';
+  return 'clarify';
+}
+
+function isDirectMonitorText(text: string) {
+  const normalized = text.trim();
+  if (!normalized) return false;
+  if (/监控|运行|告警|报警|警报|未处理|调用|成功率|中断|响应|token|成本|在线|离线|GPU|CPU|内存|日报|周报|月报|年报|运行监控报告|智能体运行/.test(normalized)) {
+    return classifyMonitorIntent(normalized, { sessionId: 'direct' }) !== 'offtopic';
+  }
+  if (/明年|未来|预测/.test(normalized) && /成本|token|调用|运行|告警|监控/.test(normalized)) return true;
+  return false;
+}
+
+function isDirectRequirementText(text: string) {
+  return /我想提需求|想建一个智能体|帮我登记个需求|登记.*需求|建设需求|提报需求|智能体建设需求|需求登记/.test(text.trim());
+}
+
+function isDirectEvaluationCreateText(text: string) {
+  return /新建评测|给.*做评测|有哪些待评测|待评测|开始.*评测|智能体安全评测任务|评测进度/.test(text.trim());
+}
+
+function isDirectResourceRegisterText(text: string) {
+  return /注册资源|资源注册|登记.*系统|接入个模型|接入.*模型|登记.*资源|注册.*PACS|注册.*HIS|注册.*EMR|注册.*Qwen|注册.*模型|医院资源注册/.test(text.trim());
+}
+
+function isDirectAccessText(text: string) {
+  return /我要接入智能体|我要做纳管申请|帮我注册一个智能体|接入注册|接入申请|纳管申请|注册.*智能体|申请接入平台/.test(text.trim());
+}
+
+const ACCESS_SCENE = {
+  opening:
+    '你好！我是医小管。把产品说明书 / 技术规格书发给我（支持 PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮你进行智能体接入信息注册申请～',
+  sidetrack: '我们先来完成智能体接入注册申请，稍后再为您解决此问题',
+  duplicateName: '此名称已被使用，请重新命名',
+  invalidPhone: '请输入正确的11位手机号',
+  closing: '本次接入注册申请到此完成，感谢您的办理！',
+  mock: {
+    parseMaterial(text: string): AccessSlots {
+      const accessMethod = /SDK/i.test(text) ? 'SDK' : /OTel/i.test(text) ? 'OTel' : 'API';
+      return {
+        version: /(?:^|[^\d])([1-9]\d*\.\d)(?:[^\d]|$)/.test(text) ? text.match(/([1-9]\d*\.\d)/)?.[1] : '2.1',
+        source: /自研/.test(text) ? '自研' : /第三方|采购|外采/.test(text) ? '第三方' : '合作研发',
+        vendor: /健康|科技|公司/.test(text) ? '智医健康科技有限公司' : '智医健康科技有限公司',
+        contact: /陈明/.test(text) ? '陈明' : '陈明',
+        phone: text.match(/\b1\d{10}\b/)?.[0] ?? '13812345678',
+        accessMethod,
+        endpoint: accessMethod === 'API' ? 'https://api.xxhealth.com/dm-followup/v2' : 'https://sdk.xxhealth.com/platform',
+        apiKeyMasked: '********',
+        functionDescription: buildAccessFunctionDescription(),
+        materials: ['技术规格书.docx（已解析，需转 PDF 留存）'],
+      };
+    },
+    testConnectivity(slots: AccessSlots, fixed = false) {
+      if (!fixed) return { ok: false, message: '失败：认证不通过（401）' };
+      const method = slots.accessMethod ?? 'API';
+      const label = method === 'SDK' ? '平台 URL、平台密钥与埋点代码校验通过' : method === 'OTel' ? '平台 URL 地址可达' : '接口响应正常';
+      return { ok: true, message: `通过（320ms，${label}）` };
+    },
+    generateMaterials(slots: AccessSlots) {
+      return [
+        '技术规格书.pdf（由上传材料转换，内容达标）',
+        '产品说明书（自动生成）.pdf',
+      ];
+    },
+  },
+};
 
 function buildAccessFunctionDescription(): string {
   return '面向出院及门诊糖尿病患者提供随访服务，读取患者基础信息、诊疗记录、检验指标与随访计划，自动生成随访任务、健康提醒与异常风险提示，并向责任医生输出结构化随访报告与风险提醒。';
@@ -1305,26 +5610,34 @@ function getAccessNext(
   const normalized = text.trim();
   const slots: AccessSlots = { ...flow.slots };
   const yes = /确认|可以|没问题|就用|提交|无误|通过|好/.test(normalized);
+  const accessIntent = /确认提交|提交|确认|修改/.test(normalized) ? 'submit_or_modify' : 'material_or_field';
+  console.info('[home-access-intent]', { intent: accessIntent, step: flow.step });
+
+  if (/放弃|不办了|先不申请|取消申请|退出/.test(normalized)) {
+    return {
+      flow: { ...flow, step: 'done', slots: { ...slots, draftSaved: true } },
+      replies: ['已为您保存接入注册申请草稿，草稿（含已上传材料与已填字段）保留 7 天。'],
+      link: { to: '/app/agent-center', text: '查看接入申请草稿' },
+    };
+  }
 
   if (/排班|台账|告警|报告|先查|天气|新闻/.test(normalized) && flow.step !== 'summary') {
     return {
       flow,
-      replies: ['我们先来完成智能体接入注册申请，稍后再为您解决此问题。\n\n当前请继续提供或确认接入注册所需信息。'],
+      replies: [`${ACCESS_SCENE.sidetrack}\n\n${currentAccessQuestion(flow)}`],
     };
   }
 
   switch (flow.step) {
     case 'collectMaterial': {
-      slots.version = /1\.0|1\.1|2\.0|2\.1|v2\.1/i.test(normalized) ? '2.1' : '2.1';
-      slots.source = /合作|第三方/.test(normalized) ? '合作研发' : '合作研发';
-      slots.vendor = /健康|科技|公司/.test(normalized) ? '智医健康科技有限公司' : '智医健康科技有限公司';
-      slots.contact = /陈明/.test(normalized) ? '陈明' : '陈明';
-      slots.phone = normalized.match(/\d{11}/)?.[0] ?? '13812345678';
-      slots.accessMethod = /SDK/i.test(normalized) ? 'SDK' : /OTel/i.test(normalized) ? 'OTel' : 'API';
-      slots.endpoint = 'https://api.xxhealth.com/dm-followup/v2';
-      slots.apiKeyMasked = '********';
-      slots.functionDescription = buildAccessFunctionDescription();
-      slots.materials = ['技术规格书.docx（已解析，需转 PDF 留存）'];
+      if (/超过30M|无法解析|解析失败|损坏|打不开/.test(normalized)) {
+        return {
+          flow,
+          replies: ['材料基础校验未通过：当前文件不可解析或超过 30M。请改用 PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等格式，或改为文字描述。'],
+          quickActions: ['我先口述材料内容', '上传技术规格书.docx，并口述产品说明'],
+        };
+      }
+      Object.assign(slots, ACCESS_SCENE.mock.parseMaterial(normalized));
       return {
         flow: { ...flow, step: 'agentName', slots },
         replies: [
@@ -1340,7 +5653,7 @@ function getAccessNext(
 - 联系方式：${slots.phone}
 - 接入方式：${slots.accessMethod}
 - 接口地址：${slots.endpoint}
-- API key：${slots.apiKeyMasked}（已密文保存）
+- API key：********（已密文保存）
 
 仍缺失：智能体名称、所属科室、诊疗环节；另外产品说明书尚未提供，我后面可依据已填字段自动生成 PDF。
 
@@ -1354,7 +5667,7 @@ function getAccessNext(
       if (/糖尿病随访助手$/.test(name) || name === '糖尿病随访助手') {
         return {
           flow: { ...flow, step: 'agentNameRetry', slots },
-          replies: ['“糖尿病随访助手”查重发现此名称已被使用，请重新命名。'],
+          replies: [ACCESS_SCENE.duplicateName],
           quickActions: ['内分泌糖尿病随访管理助手'],
         };
       }
@@ -1366,7 +5679,15 @@ function getAccessNext(
       };
     }
     case 'agentNameRetry': {
-      slots.agentName = normalized.replace(/[。.!！]/g, '').slice(0, 20) || '内分泌糖尿病随访管理助手';
+      const name = normalized.replace(/[。.!！]/g, '');
+      if (/糖尿病随访助手$/.test(name) || name === '糖尿病随访助手') {
+        return {
+          flow,
+          replies: [ACCESS_SCENE.duplicateName],
+          quickActions: ['内分泌糖尿病随访管理助手'],
+        };
+      }
+      slots.agentName = name.slice(0, 20) || '内分泌糖尿病随访管理助手';
       return {
         flow: { ...flow, step: 'department', slots },
         replies: [`“${slots.agentName}”（${slots.agentName.length}/20）可用，已记录。\n\n所属科室请选择或报出：【0503 内分泌科】【0504 内分泌代谢科】。`],
@@ -1404,37 +5725,54 @@ ${slots.functionDescription}
       if (!yes) {
         slots.functionDescription = normalized.slice(0, 500);
       }
-      slots.connectivity = '失败：认证不通过（401）';
+      const test = ACCESS_SCENE.mock.testConnectivity(slots, false);
+      slots.connectivity = test.message;
       return {
         flow: { ...flow, step: 'connectivityFix', slots },
         replies: [
           `正在对接口地址 ${slots.endpoint} 发起联通测试……
 
-测试失败：认证不通过（401）。请核对 API key。`,
+测试${test.message}。请核对 API key。`,
         ],
-        quickActions: ['key 尾号改成 a9f2，重测'],
+        quickActions: ['API key 已修正，重测', '不修正，保存草稿'],
       };
     }
     case 'connectivityFix': {
-      slots.apiKeyMasked = '********a9f2';
-      slots.connectivity = '通过（320ms）';
+      if (/不修正|保存草稿|稍后/.test(normalized)) {
+        return {
+          flow: { ...flow, step: 'done', slots: { ...slots, draftSaved: true } },
+          replies: ['已保存接入注册申请草稿，草稿（含已上传材料与已填字段）保留 7 天。'],
+          link: { to: '/app/agent-center', text: '查看接入申请草稿' },
+        };
+      }
+      slots.apiKeyMasked = '********';
+      const test = ACCESS_SCENE.mock.testConnectivity(slots, true);
+      slots.connectivity = test.message;
       return {
         flow: { ...flow, step: 'materialConfirm', slots },
         replies: [
-          `已更新 API key（仍密文保存），重新测试通过，响应正常（耗时 320ms）。
+          `已更新 API key（仍密文保存），重新测试${test.message}。
 
 字段已齐。核验备案材料：
 
 - 技术规格书：已上传，内容达标，将转为 PDF 留存
 - 产品说明书：尚未提供
 
-我已依据已填字段自动生成《产品说明书（自动生成）.pdf》，含产品名称、简介、主要功能、开发单位及技术联系人、产品版本。请预览确认，可以回复“就用它”；要改就说改哪儿。`,
+【材料生成卡】
+已依据已填字段自动生成《产品说明书（自动生成）.pdf》，含产品名称、简介、主要功能、开发单位及技术联系人、产品版本。请预览确认，可以回复“就用它”；要改就说改哪儿。`,
         ],
         quickActions: ['就用它', '修改产品简介'],
       };
     }
     case 'materialConfirm': {
-      slots.materials = ['技术规格书.pdf（由上传材料转换）', '产品说明书（自动生成）.pdf'];
+      if (/修改|调整/.test(normalized) && !/就用|确认|可以/.test(normalized)) {
+        return {
+          flow,
+          replies: ['已收到材料调整要求。Demo 已按当前字段重新生成 PDF 版备案材料，请确认是否采用。'],
+          quickActions: ['就用它', '继续修改产品简介'],
+        };
+      }
+      slots.materials = ACCESS_SCENE.mock.generateMaterials(slots);
       return {
         flow: { ...flow, step: 'summary', slots },
         replies: [buildAccessSummary(slots)],
@@ -1443,10 +5781,30 @@ ${slots.functionDescription}
     }
     case 'summary': {
       if (/修改/.test(normalized)) {
+        if (/接口|地址|API|key|密钥/.test(normalized)) {
+          return {
+            flow: { ...flow, step: 'editEndpoint', slots },
+            replies: ['请提供新的接口地址或说明 API key 已更新。技术信息变更后我会自动重跑联通测试，并刷新自动生成的备案材料。'],
+            quickActions: ['接口地址不变，API key 已更新，重测'],
+          };
+        }
+        if (/联系人|联系方式|手机号|电话/.test(normalized)) {
+          return {
+            flow: { ...flow, step: 'editContact', slots },
+            replies: ['请提供新的技术联系人和 11 位手机号。'],
+          };
+        }
         return {
           flow: { ...flow, step: 'summary', slots },
-          replies: ['演示版已收到修改诉求。为快速走通接入申请，请直接回复“确认提交”；如需完整字段编辑，我可以继续扩展该分支。'],
+          replies: ['已收到修改诉求。请说明要修改的字段，例如“修改接口地址”“修改联系人”。'],
           quickActions: ['确认提交'],
+        };
+      }
+      if (!/(确认提交|提交|确认|没问题|无误)/.test(normalized)) {
+        return {
+          flow,
+          replies: ['当前已到汇总确认节点。哪项要改直接说“修改××”；没问题请说“确认提交”。'],
+          quickActions: ['确认提交', '修改接口地址', '修改联系人'],
         };
       }
       return {
@@ -1458,9 +5816,39 @@ ${slots.functionDescription}
 - 名称：${slots.agentName ?? '内分泌糖尿病随访管理助手'}
 - 版本：${slots.version ?? '2.1'}
 
-本次接入注册申请到此完成，感谢您的办理！`,
+${ACCESS_SCENE.closing}`,
         ],
         link: { to: '/app/agent-center', text: '查看接入申请' },
+      };
+    }
+    case 'editContact': {
+      const phone = normalized.match(/\b1\d{10}\b/)?.[0];
+      const name = normalized.replace(/\b1\d{10}\b/g, '').replace(/[，,。.!！\s]/g, '').slice(0, 10);
+      if (!phone) {
+        return {
+          flow,
+          replies: [ACCESS_SCENE.invalidPhone],
+        };
+      }
+      slots.contact = name.length >= 2 ? name : slots.contact ?? '陈明';
+      slots.phone = phone;
+      return {
+        flow: { ...flow, step: 'summary', slots },
+        replies: [buildAccessSummary(slots)],
+        quickActions: ['确认提交', '修改接口地址', '修改联系人'],
+      };
+    }
+    case 'editEndpoint': {
+      const url = normalized.match(/https?:\/\/[^\s，,]+/i)?.[0];
+      if (url) slots.endpoint = url;
+      slots.apiKeyMasked = '********';
+      const test = ACCESS_SCENE.mock.testConnectivity(slots, true);
+      slots.connectivity = test.message;
+      slots.materials = ACCESS_SCENE.mock.generateMaterials(slots);
+      return {
+        flow: { ...flow, step: 'summary', slots },
+        replies: [`技术信息已更新，已自动重跑联通测试：${test.message}。\n\n备案材料已按最新技术字段刷新。\n\n${buildAccessSummary(slots)}`],
+        quickActions: ['确认提交', '修改接口地址', '修改联系人'],
       };
     }
     default:
@@ -1492,173 +5880,307 @@ function buildAccessSummary(slots: AccessSlots): string {
 哪项要改直接说/点，没问题就说“提交”或点【确认提交】。`;
 }
 
+function currentAccessQuestion(flow: AccessFlow) {
+  switch (flow.step) {
+    case 'collectMaterial':
+      return '请继续提供产品说明书 / 技术规格书，或用文字描述要接入的智能体。';
+    case 'agentName':
+    case 'agentNameRetry':
+      return '先确认智能体名称——请问它叫什么？（2–20 个字符）';
+    case 'department':
+      return '所属科室请选择或报出：【0503 内分泌科】【0504 内分泌代谢科】。';
+    case 'clinicStage':
+      return '诊疗环节请选：导诊分诊 / 预问诊 / 预约挂号 / 辅助检查 / 辅助诊断 / 辅助治疗 / 住院 / 手术 / 其他。';
+    case 'confirmFunction':
+      return '请确认功能描述，或直接说明需要修改的内容。';
+    case 'connectivityFix':
+      return '联通测试失败，请修正技术字段后重测，或选择保存草稿。';
+    case 'materialConfirm':
+      return '请确认自动生成的备案材料，可以说“就用它”，要改就说改哪儿。';
+    case 'summary':
+      return '请核对汇总信息，确认提交或说明要修改的字段。';
+    case 'editContact':
+      return '请提供新的技术联系人和 11 位手机号。';
+    case 'editEndpoint':
+      return '请提供新的接口地址或说明 API key 已更新。';
+    default:
+      return '当前接入注册申请已结束。';
+  }
+}
+
 function getLedgerReply(
+  flow: LedgerFlow,
   text: string,
   role: '信息科管理员' | '科室管理员',
 ): {
+  flow: LedgerFlow;
   module: string;
   reply: string;
   link?: { to: string; text: string };
   quickActions?: string[];
+  candidates?: LedgerCandidate[];
+  reportCard?: LedgerReportCard;
 } {
   const normalized = text.trim();
-  const scope = role === '信息科管理员' ? '全院' : '本科室';
+  const scope = inferLedgerScope(normalized, role);
+  const period = inferLedgerPeriod(normalized, flow.reportPeriod);
+  const visibleAgents = getLedgerVisibleAgents(role);
+  const intent = classifyLedgerIntent(normalized, flow);
+  console.info('[home-ledger-intent]', { text: normalized, intent, scope, period });
 
-  if (/排班|挂号|天气|新闻|请假|报销|采购|工资|医保结算/.test(normalized)) {
+  if (intent === 'offtopic') {
     return {
+      flow,
       module: '台账查询 / 跑偏拉回',
-      reply: `我们先看台账，稍后再为您解决此问题。\n\n台账这边还需要看什么？例如智能体数量、告警情况、运行趋势、360 画像或管理情况报告。`,
+      reply: '我们先看台账,稍后再为您解决此问题\n\n台账这边还需要看什么？',
       quickActions: ledgerRecommendedQuestions,
     };
   }
 
-  if (/明年|未来|预测|能到多少|还没接入|外部平台|患者隐私明文|API ?key|密钥/.test(normalized)) {
+  if (intent === 'out_of_scope') {
     return {
+      flow,
       module: '台账查询 / 超范围',
       reply:
-        '问题超出平台现有信息，我们将持续优化完善哟~\n\n目前我能提供的是已纳管智能体的**近 30 天运行趋势**、**历史调用量**、**告警清单**和**360 画像**。需要我切到哪个方向？',
-      quickActions: ['查看近 30 天运行趋势', '查看当前告警情况', '查看某智能体 360 画像'],
+        '问题超出平台现有信息,我们将持续优化完善哟~\n\n目前我能提供的是已纳管智能体的**近 30 天调用趋势**、**告警清单**和**360 画像**。',
+      quickActions: ['查看近 30 天调用趋势', '目前智能体的告警情况', '我想要查看【某智能体】的 360 画像'],
     };
   }
 
-  if (/报告|汇报|导出|管理情况|速读|订阅/.test(normalized)) {
-    return {
-      module: '台账查询 / 管理情况报告',
-      reply: `已生成《智能体管理情况报告》草稿（${scope} · 今日）。
-
-报告包含五个模块：
-
-1. 规模与分布：已纳管智能体 **48 个**，覆盖科室 **18/24**，覆盖率 **75%**
-2. 运行与调用：今日调用 **12,348 次**，正常运行率 **98.6%**
-3. 异常告警与故障：今日告警 **8 次**，其中 P0 **1 次**、P1 **2 次**
-4. 风险分级：高度关注 **3 个**，中度关注 **9 个**，一般关注 **36 个**
-5. 准入评测进度：本月评测 **15 个**，通过率 **73.3%**
-
-草稿已进入编辑页，可在线编辑、批注、导出 Word/PDF。也可以订阅「每日/每周台账速读」。`,
-      link: { to: '/app/ledger-demo/report', text: '打开报告草稿' },
-      quickActions: ['订阅每周台账速读', '导出 PDF', '查看告警清单'],
-    };
+  if (intent === 'report') {
+    return buildLedgerReportReply(flow, visibleAgents, scope, period);
   }
 
-  if (/风险分级|高度关注|中度关注|一般关注/.test(normalized)) {
-    return {
-      module: '台账查询 / 风险分级',
-      reply:
-        '当前风险分级如下：\n\n- 高度关注：**3 个**，占比 6.25%，主要集中在连续告警与评测低分场景\n- 中度关注：**9 个**，占比 18.75%，主要为接口抖动、时延偏高\n- 一般关注：**36 个**，占比 75%，运行平稳\n\n口径：已纳管智能体的初步/复核风险分级，只呈现不改判。可继续下钻高度关注清单或查看单个智能体风险依据。',
-      link: { to: '/app/ledger/list', text: '查看风险分级清单' },
-      quickActions: ['查看高度关注清单', '查看风险依据', '生成今日全院报告'],
-    };
+  if (intent === 'single_agent') {
+    const located = locateLedgerAgents(normalized, visibleAgents, flow);
+    if (located.status === 'need_name') {
+      return {
+        flow: { ...flow, awaitingAgent: true },
+        module: '台账查询 / 360 画像',
+        reply: '请问看哪个智能体？可报名称或编号',
+        quickActions: ['糖尿病随访管理助手', '处方审核系统', '智能导诊系统'],
+      };
+    }
+    if (located.status === 'multiple') {
+      return {
+        flow: { ...flow, awaitingAgent: true },
+        module: '台账查询 / 候选确认',
+        reply: '找到多个可能的智能体，请选择一个继续查看 360 画像。',
+        candidates: located.candidates,
+      };
+    }
+    return buildLedgerAgentReply(flow, located.agent);
   }
 
-  if (/对比同类|同类智能体|同类对比/.test(normalized)) {
-    return {
-      module: '台账查询 / 同类对比',
-      reply:
-        '已按「慢病随访类智能体」进行同类对比：\n\n- 糖尿病随访管理助手：成功率 **99.1%**，平均时延 **320ms**，准入评测 **88 分**\n- 高血压随访助手：成功率 **98.7%**，平均时延 **360ms**，准入评测 **86 分**\n- 肿瘤随访助手：成功率 **98.2%**，平均时延 **410ms**，准入评测 **84 分**\n\n结论：糖尿病随访管理助手运行表现优于同类均值，主要短板是 LIS 连接偶发抖动。',
-      link: { to: '/app/ledger/profile/0503-0001', text: '查看同类对比详情' },
-    };
+  if (intent === 'drilldown') {
+    return buildLedgerDrilldownReply(flow, normalized);
   }
 
-  if (/画像|360|糖尿病|随访|0503|某智能体|智能导诊|处方审核|影像分析/.test(normalized)) {
-    const agentName = /导诊/.test(normalized)
-      ? '智能导诊系统'
-      : /处方/.test(normalized)
-        ? '处方审核系统'
-        : /影像/.test(normalized)
-          ? '影像分析平台'
-          : '糖尿病随访管理助手';
-    return {
-      module: '台账查询 / 360 画像',
-      reply: `为您找到【0503-0001 ${agentName} · v2.1】，这是它的 360 画像：
-
-- 实体信息：所属科室「内分泌科」，诊疗环节「出院后随访」，来源「合作研发」，供应商「智医科技」
-- 接入方式：技术 API；API key：**密文展示，不外泄**
-- 关联资源拓扑：对接 HIS、LIS、随访管理库；其中 LIS 近 24h 有 1 次连接抖动
-- 准入评测：总分 **88 分**；数据安全 91、模型安全 86、权限合规 89；近 3 次评测趋势稳定
-- 运行监测：近 30 天调用 **8.2k**，成功率 **99.1%**，平均时延 **320ms**，在线状态「正常」
-
-需要继续看**风险依据**、**资源明细**、**运行趋势**，还是**对比同类智能体**？`,
-      link: { to: '/app/ledger/profile/0503-0001', text: '查看完整 360 画像' },
-      quickActions: ['风险依据', '资源明细', '运行趋势', '对比同类智能体'],
-    };
-  }
-
-  if (/风险依据|为什么.*风险|处置/.test(normalized)) {
-    return {
-      module: '台账查询 / 画像下钻',
-      reply:
-        '风险依据如下：\n\n- 近 30 天出现 **2 次**资源连接抖动，影响范围较小\n- 最近一次准入评测「模型安全」维度为 **86 分**，低于同类均值 2 分\n- 未发现越权调用；敏感配置均为密文托管\n\n建议：优先复核 LIS 连接稳定性，并在下次评测前补充异常回退策略。',
-      link: { to: '/app/ledger/profile/0503-0001', text: '进入画像风险页' },
-    };
-  }
-
-  if (/资源明细|对接.*系统|拓扑|HIS|LIS/.test(normalized)) {
-    return {
-      module: '台账查询 / 资源拓扑',
-      reply:
-        '资源明细如下：\n\n- HIS：读取患者基础信息、就诊记录，状态正常\n- LIS：读取检验指标，近 24h 有 1 次连接抖动\n- 随访管理库：写入随访计划和执行结果，状态正常\n- 消息网关：推送随访提醒，状态正常\n\nAPI key 与连接密钥均按平台安全规则密文展示。',
-      link: { to: '/app/resource-center/resources', text: '查看资源明细' },
-    };
-  }
-
-  if (/趋势|用得怎样|调用趋势|近 ?30 ?天/.test(normalized)) {
-    return {
-      module: '台账查询 / 运行趋势',
-      reply:
-        '近 30 天运行趋势：\n\n- 调用量：**8.2k**，较上个 30 天增长 **12.4%**\n- 成功率：**99.1%**，整体稳定\n- 平均时延：**320ms**，P95 为 **710ms**\n- 高峰时段：工作日 09:00–11:00、14:00–16:00\n\n可继续下钻到失败明细、慢调用样本或按科室使用排行。',
-      link: { to: '/app/monitoring/business', text: '查看运行监控' },
-    };
-  }
-
-  if (/告警|异常|故障|P0|P1/.test(normalized)) {
-    return {
-      module: '台账查询 / 总体指标',
-      reply: `今日异常告警 **8 次**。
-
-统计口径：${scope}已纳管智能体，接入运行后产生的告警；时间范围为今日 00:00 至当前。本周 **39 次**，本月 **152 次**。
-
-下钻方向：
-
-- 点击 **告警 8 次** 可查看告警清单
-- 点击 **P0 1 次** 可查看紧急故障
-- 点击 **处方审核系统超时** 可查看关联智能体画像
-
-需要我据此生成《智能体管理情况报告》吗？图文并茂，可编辑导出。`,
-      link: { to: '/app/monitoring/alert-events', text: '查看告警清单' },
-      quickActions: ['生成今日全院报告', '查看 P0 告警', '查看处方审核系统 360 画像'],
-    };
-  }
-
-  if (/数量|家底|总览|概况|科室|覆盖率|调用量|分类|分布|已上线|正常运行率|新增/.test(normalized)) {
-    return {
-      module: '台账查询 / 总体指标',
-      reply: `${scope}智能体台账概况如下：
-
-1. 直答结论：已纳管智能体 **48 个**，覆盖科室 **18/24**，科室覆盖率 **75%**；今日总调用量 **12,348 次**，正常运行率 **98.6%**
-2. 统计口径：已审核纳管智能体；时间范围为截至今日，调用与运行指标为今日 00:00 至当前
-3. 下钻入口：可点 **智能体 48 个** 看清单，点 **科室覆盖率 75%** 看科室分布，点 **今日调用 12,348 次** 看运行排行
-4. 报告引导：需要我据此生成《智能体管理情况报告》吗？图文并茂，可在线编辑并导出 Word/PDF
-
-科室分布 TOP3：影像科 12 个、检验科 8 个、心内科 6 个。诊疗环节以辅助诊断、辅助检查、用药审核为主。`,
-      link: { to: '/app/ledger/list', text: '查看台账清单' },
-      quickActions: ['生成今日全院报告', '查看科室分布', '查看风险分级'],
-    };
-  }
-
-  if (/看哪个|哪个智能体|不确定|随便/.test(normalized)) {
-    return {
-      module: '台账查询 / 澄清',
-      reply:
-        '请问看哪个智能体？可报名称或编号，例如「糖尿病随访管理助手」「0503-0001」「处方审核系统」。',
-      quickActions: ['糖尿病随访管理助手 360 画像', '处方审核系统 360 画像', '智能导诊系统 360 画像'],
-    };
+  if (intent === 'metric') {
+    return buildLedgerMetricReply(flow, visibleAgents, normalized, scope);
   }
 
   return {
+    flow,
     module: '台账查询 / 澄清',
-    reply:
-      '我可以查台账总体指标、生成管理情况报告、查看当前告警，或打开某个智能体的 360 画像。您想看哪一类？',
+    reply: '您想看总体指标，还是某个智能体的 360 画像？也可以直接说“生成管理情况报告”。',
     quickActions: ledgerRecommendedQuestions,
+  };
+}
+
+function getLedgerVisibleAgents(role: '信息科管理员' | '科室管理员') {
+  const user: LedgerUser = role === '信息科管理员'
+    ? { ...ledgerCurrentUser, role: 'platform_admin', department: '信息中心' }
+    : { ...ledgerCurrentUser, role: 'dept_admin', department: '内分泌科' };
+  return getVisibleAgents(user);
+}
+
+function inferLedgerScope(text: string, role: '信息科管理员' | '科室管理员') {
+  if (role !== '信息科管理员') return '本科室';
+  if (/全院\/本科室/.test(text)) return '全院';
+  if (/本科室|我们科室|本部门/.test(text)) return '本科室';
+  return '全院';
+}
+
+function inferLedgerPeriod(text: string, fallback?: '今日' | '本周' | '本月') {
+  if (/本周|这周|周报/.test(text)) return '本周' as const;
+  if (/本月|这个月|月报/.test(text)) return '本月' as const;
+  if (/今日|今天|日报/.test(text)) return '今日' as const;
+  return fallback ?? '今日';
+}
+
+function classifyLedgerIntent(text: string, flow: LedgerFlow) {
+  if (/排班|挂号|天气|新闻|请假|报销|采购|工资|医保结算|门诊排班/.test(text)) return 'offtopic';
+  if (/明年|未来|预测|能到多少|外部平台|患者隐私明文|明文|API ?key|密钥|密码|未采集|无数据源/.test(text)) return 'out_of_scope';
+  if (flow.reportScope && /^(要|需要|生成|可以|好|好的|确认|是|行|可以的)[。！!.\s]*$/.test(text)) return 'report';
+  if (/^(要|需要|生成|可以|好|确认|是|改成|改为|本周|本月|今日|今天)/.test(text) && /报告|汇报|管理情况|周|月|日/.test(text)) return 'report';
+  if (/报告|汇报|管理情况|速读|订阅/.test(text)) return 'report';
+  if (/风险依据|为什么.*风险|处置|资源明细|对接.*系统|拓扑|HIS|LIS|用得怎样|运行趋势|调用趋势|近 ?30 ?天|对比同类/.test(text)) return 'drilldown';
+  if (/画像|360|某智能体|0503-0001|AGT-|糖尿病|随访|导诊|处方审核|影像|助手|系统/.test(text) || flow.awaitingAgent) return 'single_agent';
+  if (/总体|家底|整体|总览|概况|智能体数量|多少个|纳管|科室覆盖率|总调用量|调用量|异常告警|告警|正常运行率|在线率|每月新增|新增|科室分布|诊疗环节|来源分布|风险分级|高度关注|中度关注|一般关注|分类|分布|已上线/.test(text)) return 'metric';
+  return 'clarify';
+}
+
+function buildLedgerMetricReply(
+  flow: LedgerFlow,
+  agents: LedgerAgent[],
+  text: string,
+  scope: '全院' | '本科室',
+) {
+  const stats = {
+    total: agents.length,
+    coverage: getCoverageStat(agents),
+    calls: getCallVolumeStat(agents),
+    alarms: getAlarmStat(agents),
+    onlineRate: getInstanceOnlineRateStat(agents),
+    deptTop: getDepartmentDistribution(agents).slice(0, 3),
+    phaseTop: getDiagnosisPhaseDistribution(agents).slice(0, 3),
+    sourceTop: getSourceDistribution(agents).slice(0, 3),
+    risk: getRiskDistribution(agents).summary,
+  };
+  const rate = Math.round(stats.coverage.rate * 100);
+  const onlineRate = (stats.onlineRate.rate * 100).toFixed(1);
+  const highRisk = stats.risk.find((item) => item.level === '高度关注')?.review ?? 0;
+  const midRisk = stats.risk.find((item) => item.level === '中度关注')?.review ?? 0;
+  const normalRisk = stats.risk.find((item) => item.level === '一般关注')?.review ?? 0;
+  const flowNext = { ...flow, reportScope: scope, reportPeriod: '今日' as const };
+
+  if (/告警|异常|故障|P0|P1/.test(text)) {
+    return {
+      flow: flowNext,
+      module: '台账查询 / 总体指标',
+      reply: `今日异常告警 **${stats.alarms.daily} 次**（本周 ${stats.alarms.weekly}，本月 ${stats.alarms.monthly}；口径：${scope}已纳管智能体接入运行后产生的告警；时间范围：今日 00:00 至当前）。\n\n点击 **告警 ${stats.alarms.daily} 次** 可查看清单，点击 **P0 告警** 可看紧急故障。\n\n需要我据此生成《智能体管理情况报告》吗？`,
+      link: { to: '/app/monitoring/alert-events', text: '查看告警清单' },
+      quickActions: ['生成今日智能体管理情况报告', '查看 P0 告警', '查看风险分级'],
+    };
+  }
+
+  const deptText = stats.deptTop.map((item) => `${item.name} ${item.value} 个`).join('、') || '暂无科室分布数据';
+  const phaseText = stats.phaseTop.map((item) => `${item.name} ${item.value} 个`).join('、') || '暂无诊疗环节数据';
+  const sourceText = stats.sourceTop.map((item) => `${item.name} ${item.value} 个`).join('、') || '暂无来源数据';
+  return {
+    flow: flowNext,
+    module: '台账查询 / 总体指标',
+    reply: `${scope}智能体台账概况：已纳管 **智能体 ${stats.total} 个**，覆盖 **科室 ${stats.coverage.covered}/${stats.coverage.total}**，科室覆盖率 **${rate}%**；今日总调用量 **${stats.calls.daily.toLocaleString()} 次**，正常运行率 **${onlineRate}%**。\n\n统计口径：已审核纳管智能体；时间范围：截至今日，调用与运行指标为今日 00:00 至当前。\n\n分布结论：科室分布 TOP3 为 ${deptText}；诊疗环节 TOP3 为 ${phaseText}；来源分布为 ${sourceText}；风险分级为高度关注 ${highRisk} 个、中度关注 ${midRisk} 个、一般关注 ${normalRisk} 个。\n\n点击 **智能体 ${stats.total} 个**、**科室覆盖率 ${rate}%**、**今日总调用量 ${stats.calls.daily.toLocaleString()} 次** 或 **风险分级** 可直接查看对应清单。需要我据此生成《智能体管理情况报告》吗？`,
+    link: { to: '/app/ledger/list', text: '查看台账清单' },
+    quickActions: ['生成今日智能体管理情况报告', '查看科室分布', '查看风险分级'],
+  };
+}
+
+function buildLedgerReportReply(
+  flow: LedgerFlow,
+  agents: LedgerAgent[],
+  scope: '全院' | '本科室',
+  period: '今日' | '本周' | '本月',
+) {
+  const calls = getCallVolumeStat(agents);
+  const alarms = getAlarmStat(agents);
+  const onlineRate = (getInstanceOnlineRateStat(agents).rate * 100).toFixed(1);
+  const reply = `已生成《智能体管理情况报告》草稿（${scope} · ${period}），含规模与分布、运行与调用、异常告警与故障、风险分级、准入评测进度五模块，每模块配图 + 综述。已进入编辑页可编辑/导出，要顺便订阅每周速读吗？\n\n报告摘要：已纳管 **智能体 ${agents.length} 个**，${period}调用 **${calls.daily.toLocaleString()} 次**，正常运行率 **${onlineRate}%**，异常告警 **${alarms.daily} 次**。`;
+  return {
+    flow: { ...flow, reportScope: scope, reportPeriod: period },
+    module: '台账查询 / 管理情况报告',
+    reply,
+    link: { to: '/app/ledger-demo/report', text: '打开报告详情页' },
+    quickActions: ['改成本周', '改成本月', '订阅每周速读'],
+    reportCard: {
+      title: '智能体管理情况报告',
+      scope,
+      period,
+      modules: ['规模与分布', '运行与调用', '异常告警与故障', '风险分级', '准入评测进度'],
+      to: '/app/ledger-demo/report',
+    },
+  };
+}
+
+function locateLedgerAgents(text: string, agents: LedgerAgent[], flow: LedgerFlow):
+  | { status: 'need_name' }
+  | { status: 'multiple'; candidates: LedgerCandidate[] }
+  | { status: 'one'; agent: LedgerAgent } {
+  if (/某智能体|哪个智能体|【某智能体】/.test(text) && !/糖尿病|导诊|处方|影像|AGT-|0503/.test(text)) {
+    return { status: 'need_name' };
+  }
+  if (/^(它|该智能体|这个智能体)/.test(text) && flow.lastAgentId) {
+    const agent = ledgerAgents.find((item) => item.id === flow.lastAgentId);
+    if (agent) return { status: 'one', agent };
+  }
+  if (/0503-0001|糖尿病|随访/.test(text)) {
+    const diabetes = agents.filter((item) => /糖尿病|内分泌|用药/.test(`${item.name}${item.department}${item.description}`)).slice(0, 3);
+    if (diabetes.length > 1 && !/患者智能问诊|合理用药|AGT-2025-014/.test(text)) {
+      return { status: 'multiple', candidates: diabetes.map(toLedgerCandidate) };
+    }
+    return { status: 'one', agent: diabetes[0] ?? ledgerAgents.find((item) => item.id === 'AGT-2025-014') ?? agents[0] };
+  }
+  const normalized = text.toLowerCase();
+  const matched = agents.filter((agent) => {
+    const target = `${agent.id} ${agent.idCode} ${agent.name} ${agent.nameEn ?? ''} ${agent.department}`.toLowerCase();
+    return target.includes(normalized) || normalized.includes(agent.id.toLowerCase()) || normalized.includes(agent.name.toLowerCase().slice(0, 4));
+  });
+  if (matched.length > 1) return { status: 'multiple', candidates: matched.slice(0, 4).map(toLedgerCandidate) };
+  if (matched.length === 1) return { status: 'one', agent: matched[0] };
+  if (/导诊/.test(text)) return { status: 'one', agent: agents.find((item) => item.type === '导诊分诊') ?? agents[0] };
+  if (/处方|用药/.test(text)) return { status: 'one', agent: agents.find((item) => item.type === '用药审核') ?? agents[0] };
+  if (/影像/.test(text)) return { status: 'one', agent: agents.find((item) => item.type === '影像分析') ?? agents[0] };
+  return { status: 'need_name' };
+}
+
+function toLedgerCandidate(agent: LedgerAgent): LedgerCandidate {
+  return {
+    code: agent.id === 'AGT-2025-014' ? '0503-0001' : agent.id,
+    name: agent.name,
+    version: `v${agent.version}`,
+    to: `/app/ledger/detail/${agent.id}?view=360`,
+    prompt: `查看 ${agent.name} 360 画像`,
+  };
+}
+
+function buildLedgerAgentReply(flow: LedgerFlow, agent: LedgerAgent) {
+  const displayCode = agent.id === 'AGT-2025-014' ? '0503-0001' : agent.id;
+  const resources = (agent.linkedResources ?? []).slice(0, 3).map((item) => item.name).join('、') || '暂无已对接资源';
+  const score = agent.evaluationReport?.totalScore ?? 88;
+  const calls = agent.callVolume?.monthly ?? agent.callVolume?.total ?? 0;
+  const successRate = agent.instanceOnlineRate ? (agent.instanceOnlineRate * 100).toFixed(1) : '99.1';
+  return {
+    flow: { ...flow, awaitingAgent: false, lastAgentId: agent.id },
+    module: '台账查询 / 360 画像',
+    reply: `为您找到【${displayCode} ${agent.name} · v${agent.version}】，这是它的 360 画像：所属${agent.department} / ${agent.type}；技术 ${agent.accessType}（API key ****）；对接 ${resources}；评测 ${score} 分；近 30 天调用 ${calls.toLocaleString()}、成功率 ${successRate}%。\n\n是否查看完整详情、风险依据，或对比同类智能体？`,
+    link: { to: `/app/ledger/detail/${agent.id}?view=360`, text: '打开 360 画像页面' },
+    quickActions: ['风险依据', '对接哪些系统', '用得怎样', '对比同类智能体'],
+  };
+}
+
+function buildLedgerDrilldownReply(flow: LedgerFlow, text: string) {
+  const agent = ledgerAgents.find((item) => item.id === flow.lastAgentId) ?? ledgerAgents.find((item) => item.id === 'AGT-2025-014') ?? ledgerAgents[0];
+  if (/对比同类/.test(text)) {
+    return {
+      flow,
+      module: '台账查询 / 同类对比',
+      reply: `已按「${agent.type}」同类智能体对比：${agent.name} 近 30 天调用 **${(agent.callVolume?.monthly ?? 0).toLocaleString()} 次**，评测 **${agent.evaluationReport?.totalScore ?? 88} 分**，风险分级 **${agent.riskLevel}**。是否查看完整详情、风险依据，或对比同类智能体？`,
+      link: { to: `/app/ledger/detail/${agent.id}?view=360&module=compare`, text: '打开同类对比' },
+    };
+  }
+  if (/资源明细|对接.*系统|拓扑|HIS|LIS/.test(text)) {
+    const resources = (agent.linkedResources ?? []).map((item) => `- ${item.name}：${item.linkType}，状态${item.linkStatus === 'abnormal' ? '异常' : '正常'}`).join('\n') || '暂无已对接资源。';
+    return {
+      flow,
+      module: '台账查询 / 资源拓扑',
+      reply: `${agent.name} 的资源拓扑如下：\n\n${resources}\n\nAPI key 与连接密钥均渲染为 ****。是否查看完整详情、风险依据，或对比同类智能体？`,
+      link: { to: `/app/ledger/detail/${agent.id}?view=360&module=topology`, text: '打开资源拓扑' },
+    };
+  }
+  if (/趋势|用得怎样|调用趋势|近 ?30 ?天/.test(text)) {
+    return {
+      flow,
+      module: '台账查询 / 运行监测',
+      reply: `${agent.name} 近 30 天调用 **${(agent.callVolume?.monthly ?? 0).toLocaleString()} 次**，今日 **${(agent.callVolume?.daily ?? 0).toLocaleString()} 次**，运行状态为 **${agent.runtimeStatus ?? agent.lifecycleStatus}**。是否查看完整详情、风险依据，或对比同类智能体？`,
+      link: { to: `/app/ledger/detail/${agent.id}?view=360&module=monitor`, text: '打开运行监测' },
+    };
+  }
+  return {
+    flow,
+    module: '台账查询 / 风险依据',
+    reply: `${agent.name} 当前风险分级为 **${agent.riskLevel}**。\n\n风险依据：${agent.riskBasis ?? '暂无风险依据数据'}\n\n处置建议：按台账复核结果持续观察；涉及异常连接时优先核查资源拓扑。是否查看完整详情、风险依据，或对比同类智能体？`,
+    link: { to: `/app/ledger/risk/${agent.id}`, text: '打开风险依据与处置' },
   };
 }
 
@@ -1726,7 +6248,7 @@ function buildRequirementSummary(slots: RequirementSlots): string {
 - 提出原因：${slots.reason ?? '待补充'}【修改】
 - 所需资源：${slots.resources ?? '待补充'}【修改】
 - 需求紧急程度：${slots.urgency ?? '中'}【修改】
-- 提出人：${slots.proposer ?? '待补充'}
+- 提出人：${slots.proposer ?? '待补充'}【修改】
 - 联系方式：${slots.phone ?? '待补充'}【修改】
 
 无误请回复「提交」或点击/语音确认；需要调整可回复「修改 + 字段名」。`;
@@ -1757,10 +6279,85 @@ function buildRequirementSuccess(slots: RequirementSlots): string {
 「匹配情况」已回填 **82%**。您可以继续说「查看文档」或点击下方入口查看详情。`;
 }
 
-function getRequirementNext(flow: RequirementFlow, text: string): { flow: RequirementFlow; replies: string[]; link?: { to: string; text: string } } {
+function getRequirementCurrentQuestion(step: RequirementStep, slots: RequirementSlots): string {
+  switch (step) {
+    case 'n0':
+      return '请用一两句话描述：您想建设一个什么样的智能体、主要解决什么问题？';
+    case 'confirmDept':
+      return `先确认科室：这条需求以【${slots.department ?? '超声医学科'}】名义提出，对吗？`;
+    case 'functionDetails':
+    case 'confirmFunction':
+      return '这个助手主要服务谁？需要读取哪些信息、最终输出什么结果？';
+    case 'reason':
+    case 'confirmReason':
+      return '为什么要建它？目前流程怎么做、主要痛点是什么？';
+    case 'clinicStage':
+      return `诊疗环节我判断为【${slots.clinicStage ?? '辅助检查'}】，对吗？`;
+    case 'resources':
+      return '需要对接哪些业务系统？模型方面有想法也可以说，没有就由平台建议。';
+    case 'urgency':
+      return '请选择需求紧急程度：【高】【中】【低】';
+    case 'contact':
+    case 'contactFix':
+      return '请留下您的姓名（2–10 个字）与 11 位手机号。';
+    case 'summary':
+      return '请确认汇总信息，无误请回复「确认提交」；需要调整可回复「修改 + 字段名」。';
+    default:
+      return '需求登记已完成。';
+  }
+}
+
+function getRequirementQuickActions(step: RequirementStep): string[] | undefined {
+  if (step === 'confirmDept') return ['对', '修改科室'];
+  if (step === 'confirmFunction') return ['确认', '修改功能描述'];
+  if (step === 'confirmReason') return ['确认', '修改提出原因'];
+  if (step === 'clinicStage') return ['导诊分诊', '预问诊', '预约挂号', '辅助检查', '辅助诊断', '辅助治疗', '住院', '手术', '其他'];
+  if (step === 'urgency') return ['高', '中', '低'];
+  if (step === 'summary') return ['确认提交', '修改联系方式', '修改功能描述', '修改提出原因'];
+  if (step === 'done') return ['需求文档查看/下载', '查看详情'];
+  return undefined;
+}
+
+function isRequirementOfftopic(text: string): boolean {
+  return /查.*去年|需求状态|评审能过|评审.*通过|天气|新闻|医保|工资|采购|门诊排班|台账|监控|资源注册|接入审核|审批/.test(text);
+}
+
+function getRequirementNext(
+  flow: RequirementFlow,
+  text: string,
+): { flow: RequirementFlow; replies: string[]; link?: { to: string; text: string }; quickActions?: string[] } {
   const slots = { ...flow.slots };
   const normalized = text.trim();
-  const yes = /^(对|是|确认|可以|没问题|准确|正确|好|嗯|提交)[。！!.\s]*$/.test(normalized);
+  const yes = /^(对|是|确认|确认提交|可以|没问题|准确|正确|好|嗯|提交)[。！!.\s]*$/.test(normalized);
+  const summaryFlow = () => ({
+    flow: { ...flow, step: 'summary' as RequirementStep, slots: { ...slots, returnToSummary: false } },
+    replies: [buildRequirementSummary(slots)],
+    quickActions: getRequirementQuickActions('summary'),
+  });
+  const returnOrNext = (step: RequirementStep, replies: string[], quickActions?: string[]) => {
+    if (slots.returnToSummary) return summaryFlow();
+    return {
+      flow: { ...flow, step, slots },
+      replies,
+      quickActions,
+    };
+  };
+
+  const intent = flow.step === 'summary' && /修改|确认|提交/.test(normalized)
+    ? 'confirm_or_modify'
+    : isRequirementOfftopic(normalized)
+      ? 'offtopic'
+      : 'provide_or_complete';
+  console.info('[home-requirement-intent]', { intent, step: flow.step });
+
+  if (intent === 'offtopic') {
+    slots.sidetrack = [...(slots.sidetrack ?? []), normalized];
+    return {
+      flow: { ...flow, slots },
+      replies: [`我们先来完成智能体建设需求登记，稍后再为您解决此问题\n\n当前问题：${getRequirementCurrentQuestion(flow.step, slots)}`],
+      quickActions: getRequirementQuickActions(flow.step),
+    };
+  }
 
   switch (flow.step) {
     case 'n0': {
@@ -1768,15 +6365,13 @@ function getRequirementNext(flow: RequirementFlow, text: string): { flow: Requir
       slots.department = normalizeDepartment(normalized);
       return {
         flow: { ...flow, step: 'confirmDept', slots },
-        replies: [`先确认科室：这条需求以【${slots.department}】名义提出，对吗？\n\n可回复「对」，或直接告诉我正确科室。`],
+        replies: [`先确认科室：这条需求以【${slots.department}】名义提出，对吗？\n\n可回复「对」，或直接告诉我正确科室。（第 4 步/共 8 步）`],
+        quickActions: getRequirementQuickActions('confirmDept'),
       };
     }
     case 'confirmDept': {
       if (!yes) slots.department = normalizeDepartment(normalized);
-      return {
-        flow: { ...flow, step: 'functionDetails', slots },
-        replies: ['这个助手主要服务谁？需要读取哪些信息、最终输出什么结果？（第 2 步/共 8 步）'],
-      };
+      return returnOrNext('functionDetails', ['这个助手主要服务谁？需要读取哪些信息、最终输出什么结果？（第 1 步/共 8 步）']);
     }
     case 'functionDetails': {
       slots.functionDescription = buildFunctionDescription(slots, normalized);
@@ -1784,73 +6379,55 @@ function getRequirementNext(flow: RequirementFlow, text: string): { flow: Requir
       return {
         flow: { ...flow, step: 'confirmFunction', slots },
         replies: [`【功能描述确认卡】\n\n${slots.functionDescription}\n\n（约 ${slots.functionDescription.length}/500 字）\n\n确认吗？可回复「确认」，或直接说明要修改的内容。`],
+        quickActions: getRequirementQuickActions('confirmFunction'),
       };
     }
     case 'confirmFunction': {
       if (!yes) slots.functionDescription = buildFunctionDescription(slots, normalized);
-      return {
-        flow: { ...flow, step: 'reason', slots },
-        replies: ['为什么要建它？目前流程怎么做、主要痛点是什么？（第 3 步/共 8 步）'],
-      };
+      return returnOrNext('reason', ['为什么要建它？目前流程怎么做、主要痛点是什么？（第 2 步/共 8 步）']);
     }
     case 'reason': {
-      if (/查一下|状态|评审能过|先帮我/.test(normalized)) {
-        slots.sidetrack = [...(slots.sidetrack ?? []), normalized];
-        return {
-          flow: { ...flow, step: 'reason', slots },
-          replies: ['我们先来完成智能体建设需求登记，稍后再为您解决此问题。\n\n刚才说到：目前流程怎么做、主要痛点是什么？'],
-        };
-      }
       slots.reason = buildReason(normalized);
       return {
         flow: { ...flow, step: 'confirmReason', slots },
         replies: [`【提出原因确认卡】\n\n${slots.reason}\n\n（约 ${slots.reason.length}/300 字）\n\n确认吗？`],
+        quickActions: getRequirementQuickActions('confirmReason'),
       };
     }
     case 'confirmReason': {
       if (!yes) slots.reason = buildReason(normalized);
-      return {
-        flow: { ...flow, step: 'clinicStage', slots },
-        replies: [`诊疗环节我判断为【${slots.clinicStage ?? '辅助检查'}】，对吗？\n\n如不准确请选择：导诊分诊 / 预问诊 / 预约挂号 / 辅助检查 / 辅助诊断 / 辅助治疗 / 住院 / 手术 / 其他。（第 4 步/共 8 步）`],
-      };
+      return returnOrNext(
+        'clinicStage',
+        [`诊疗环节我判断为【${slots.clinicStage ?? '辅助检查'}】，对吗？\n\n如不准确请选择：导诊分诊 / 预问诊 / 预约挂号 / 辅助检查 / 辅助诊断 / 辅助治疗 / 住院 / 手术 / 其他。（第 3 步/共 8 步）`],
+        getRequirementQuickActions('clinicStage'),
+      );
     }
     case 'clinicStage': {
       if (!yes) slots.clinicStage = normalized.replace(/[。.!！]/g, '').slice(0, 20);
-      return {
-        flow: { ...flow, step: 'resources', slots },
-        replies: ['需要对接哪些业务系统？比如 HIS、超声预约系统（RIS）、微信服务号等；模型方面有想法也可以说，没有就由平台建议。（第 5 步/共 8 步）'],
-      };
+      return returnOrNext('resources', ['需要对接哪些业务系统？比如 HIS、超声预约系统（RIS）、微信服务号等；模型方面有想法也可以说，没有就由平台建议。（第 5 步/共 8 步）']);
     }
     case 'resources': {
       slots.resources = buildResources(normalized);
-      const sidetrack = /评审能过|靠谱吗|能不能通过/.test(normalized)
-        ? '\n\n我们先来完成智能体建设需求登记，稍后再为您评估评审通过要点。'
-        : '';
-      return {
-        flow: { ...flow, step: 'urgency', slots },
-        replies: [`所需资源记录为：${slots.resources}${sidetrack}\n\n请选择需求紧急程度：【高】【中】【低】（第 6 步/共 8 步）`],
-      };
+      return returnOrNext(
+        'urgency',
+        [`所需资源记录为：${slots.resources}\n\n请选择需求紧急程度：【高】【中】【低】（第 6 步/共 8 步）`],
+        getRequirementQuickActions('urgency'),
+      );
     }
     case 'urgency': {
       slots.urgency = /高/.test(normalized) ? '高' : /低/.test(normalized) ? '低' : '中';
-      return {
-        flow: { ...flow, step: 'contact', slots },
-        replies: ['请留下您的姓名（2–10 个字）与 11 位手机号，仅用于评审沟通。（第 7 步/共 8 步）'],
-      };
+      return returnOrNext('contact', ['请留下您的姓名（2–10 个字）与 11 位手机号，仅用于评审沟通。（第 7 步/共 8 步）']);
     }
     case 'contact': {
       const contact = extractContact(normalized);
       if (contact.proposer) slots.proposer = contact.proposer;
       if (contact.phoneValid) {
         slots.phone = contact.phone;
-        return {
-          flow: { ...flow, step: 'summary', slots },
-          replies: [buildRequirementSummary(slots)],
-        };
+        return summaryFlow();
       }
       return {
         flow: { ...flow, step: 'contactFix', slots },
-        replies: [`${slots.proposer ? '姓名已记录。' : ''}手机号有误——请输入正确的11位手机号。`],
+        replies: ['请输入正确的11位手机号'],
       };
     }
     case 'contactFix': {
@@ -1858,26 +6435,84 @@ function getRequirementNext(flow: RequirementFlow, text: string): { flow: Requir
       if (!contact.phoneValid) {
         return {
           flow: { ...flow, step: 'contactFix', slots },
-          replies: ['请输入正确的11位手机号。'],
+          replies: ['请输入正确的11位手机号'],
         };
       }
+      if (contact.proposer) slots.proposer = contact.proposer;
       slots.phone = contact.phone;
-      return {
-        flow: { ...flow, step: 'summary', slots },
-        replies: [buildRequirementSummary(slots)],
-      };
+      return summaryFlow();
     }
     case 'summary': {
+      if (/修改.*(联系方式|手机号|电话|提出人|联系人)/.test(normalized)) {
+        slots.returnToSummary = true;
+        return {
+          flow: { ...flow, step: 'contact', slots },
+          replies: ['请重新提供提出人姓名（2–10 个字）与 11 位手机号。（第 7 步/共 8 步）'],
+        };
+      }
+      if (/修改.*(功能|描述)/.test(normalized)) {
+        slots.returnToSummary = true;
+        return {
+          flow: { ...flow, step: 'functionDetails', slots },
+          replies: ['请重新描述这个助手主要服务谁、读取哪些信息、最终输出什么结果。（第 1 步/共 8 步）'],
+        };
+      }
+      if (/修改.*(原因|痛点|提出原因)/.test(normalized)) {
+        slots.returnToSummary = true;
+        return {
+          flow: { ...flow, step: 'reason', slots },
+          replies: ['请重新说明为什么要建它：目前流程怎么做、主要痛点是什么？（第 2 步/共 8 步）'],
+        };
+      }
+      if (/修改.*(环节|诊疗)/.test(normalized)) {
+        slots.returnToSummary = true;
+        return {
+          flow: { ...flow, step: 'clinicStage', slots },
+          replies: ['请重新选择诊疗环节：导诊分诊 / 预问诊 / 预约挂号 / 辅助检查 / 辅助诊断 / 辅助治疗 / 住院 / 手术 / 其他。（第 3 步/共 8 步）'],
+          quickActions: getRequirementQuickActions('clinicStage'),
+        };
+      }
+      if (/修改.*(科室|提出科室)/.test(normalized)) {
+        slots.returnToSummary = true;
+        return {
+          flow: { ...flow, step: 'confirmDept', slots },
+          replies: ['请重新提供提出科室名称。（第 4 步/共 8 步）'],
+        };
+      }
+      if (/修改.*(资源|系统|模型)/.test(normalized)) {
+        slots.returnToSummary = true;
+        return {
+          flow: { ...flow, step: 'resources', slots },
+          replies: ['请重新说明所需业务系统与模型资源。（第 5 步/共 8 步）'],
+        };
+      }
+      if (/修改.*(紧急|程度|优先级)/.test(normalized)) {
+        slots.returnToSummary = true;
+        return {
+          flow: { ...flow, step: 'urgency', slots },
+          replies: ['请重新选择需求紧急程度：【高】【中】【低】（第 6 步/共 8 步）'],
+          quickActions: getRequirementQuickActions('urgency'),
+        };
+      }
       if (/修改/.test(normalized)) {
         return {
           flow: { ...flow, step: 'summary', slots },
-          replies: ['演示版已收到修改诉求。为了快速走通流程，您可以直接回复「提交」生成需求；如需我补做字段修改，我也可以继续扩展这段交互。'],
+          replies: ['请说明要修改的字段，例如「修改联系方式」「修改功能描述」「修改提出原因」。'],
+          quickActions: getRequirementQuickActions('summary'),
+        };
+      }
+      if (!yes) {
+        return {
+          flow: { ...flow, step: 'summary', slots },
+          replies: ['请确认汇总信息，无误请回复「确认提交」；需要调整可回复「修改 + 字段名」。'],
+          quickActions: getRequirementQuickActions('summary'),
         };
       }
       return {
         flow: { ...flow, step: 'done', slots },
         replies: [buildRequirementSuccess(slots)],
         link: { to: '/app/agent-needs', text: '查看详情' },
+        quickActions: getRequirementQuickActions('done'),
       };
     }
     default:
@@ -1885,6 +6520,7 @@ function getRequirementNext(flow: RequirementFlow, text: string): { flow: Requir
         flow,
         replies: ['需求登记已完成。您可以查看需求文档或进入需求详情页。'],
         link: { to: '/app/agent-needs', text: '查看详情' },
+        quickActions: getRequirementQuickActions('done'),
       };
   }
 }
