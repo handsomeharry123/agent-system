@@ -1024,6 +1024,56 @@ export const getDatasetById = (id: string): EvaluationDataset | undefined =>
 
 export const getReportByTaskId = (taskId: string) => mockEvaluationReports[taskId];
 
+const CHAT_EVALUATION_TASKS_STORAGE_KEY = 'agent-system.chatEvaluationTasks';
+const CHAT_EVALUATION_REPORTS_STORAGE_KEY = 'agent-system.chatEvaluationReports';
+
+function readStoredChatEvaluationTasks(): EvaluationTask[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(CHAT_EVALUATION_TASKS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function readStoredChatEvaluationReports(): Record<string, EvaluationReport> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(CHAT_EVALUATION_REPORTS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function persistChatEvaluationTask(task: EvaluationTask, report?: EvaluationReport) {
+  if (typeof window === 'undefined') return;
+  const tasks = readStoredChatEvaluationTasks().filter((item) => item.id !== task.id);
+  window.localStorage.setItem(CHAT_EVALUATION_TASKS_STORAGE_KEY, JSON.stringify([task, ...tasks]));
+  if (report) {
+    const reports = readStoredChatEvaluationReports();
+    window.localStorage.setItem(
+      CHAT_EVALUATION_REPORTS_STORAGE_KEY,
+      JSON.stringify({ ...reports, [task.id]: report }),
+    );
+  }
+}
+
+function hydrateChatEvaluationTasks() {
+  const storedTasks = readStoredChatEvaluationTasks();
+  const existingIds = new Set(mockEvaluationTasks.map((task) => task.id));
+  storedTasks
+    .filter((task) => task?.id && !existingIds.has(task.id))
+    .forEach((task) => mockEvaluationTasks.unshift(task));
+
+  Object.assign(mockEvaluationReports, readStoredChatEvaluationReports());
+}
+
+hydrateChatEvaluationTasks();
+
 export const getDatasetsByDimension = (dim: EvalDimension): EvaluationDataset[] =>
   mockDatasets.filter((d) => d.dimensions.includes(dim));
 

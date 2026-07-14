@@ -14,8 +14,11 @@
  *     第二层「历史会话」点击 → 重置 messages 载入该会话 mock 历史;
  *     第二层「新建任务」点击 → 重置 messages 注入问候语 + 聚焦输入框。
  */
-import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
+import { buildPlatformReport, type ReportNode } from '../ledger/demo/reportData';
 import {
   AlertOutlined,
   ApiOutlined,
@@ -26,12 +29,15 @@ import {
   DatabaseOutlined,
   ExperimentOutlined,
   FileAddOutlined,
+  FileTextOutlined,
   LeftOutlined,
   PaperClipOutlined,
   PlusOutlined,
+  ReloadOutlined,
   RightOutlined,
   SafetyCertificateOutlined,
   StopOutlined,
+  ThunderboltOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import {
@@ -45,6 +51,7 @@ import {
   Empty,
   Input,
   message,
+  Progress,
   Row,
   Select,
   Space,
@@ -52,7 +59,9 @@ import {
   Tag,
   Tooltip,
   Typography,
+  Upload,
 } from 'antd';
+import type { UploadFile } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../../hooks/useAuth';
 import { useDemoSettings } from '../../hooks/useDemoSettings';
@@ -71,9 +80,11 @@ import {
   mockEvaluationReports,
   mockEvaluationTasks,
   getReportByTaskId,
+  persistChatEvaluationTask,
   sampleLevelPercent,
   type EvalDimension,
   type EvaluationConclusion,
+  type EvaluationReport,
   type EvaluationTask,
   type SampleLevel,
 } from '../../mock/evaluation';
@@ -82,7 +93,9 @@ import {
   businessKpiV18,
   costKpiV18,
   mockAlertEventsV18,
+  mockAlertRulesV18,
   statusKpiV18,
+  type AlertRuleV18,
   type AlertEventV18,
 } from '../../mock/monitoringV18';
 import {
@@ -231,7 +244,7 @@ const businessSceneIntents: Array<{
   {
     key: 'alert-rule-config',
     label: '告警规则配置',
-    patterns: [/告警规则|报警规则|告警阈值|报警阈值|规则.*(启用|停用|关闭|复制|导出)|通知渠道|调用超时告警|超阈值告警|日调用量突增|触发记录/],
+    patterns: [/告警规则|报警规则|告警阈值|报警阈值|规则.*(启用|停用|关闭|复制|导出)|通知渠道|调用超时告警|超阈值告警|日调用量(?:突增|达到|超过|大于)|调用量.*(?:1\s*万|10000)|触发记录/],
   },
   {
     key: 'register-requirement',
@@ -295,11 +308,101 @@ function suggestBusinessScene(text: string) {
   return ranked[0] ?? businessSceneIntents[0];
 }
 
+type AlertRuleDraftField =
+  | 'name'
+  | 'object'
+  | 'type'
+  | 'metric'
+  | 'condition'
+  | 'level'
+  | 'channels'
+  | 'status'
+  | 'effectiveTime'
+  | 'creator';
+
+type AlertRuleDraft = Record<AlertRuleDraftField, string>;
+
+const DAILY_CALL_ALERT_RULE_ID = 'rule-v18-daily-call-10000';
+
+function buildDefaultDailyCallAlertRuleDraft(): AlertRuleDraft {
+  return {
+    name: '全局日调用量达到 1 万告警',
+    object: '全局智能体',
+    type: '业务监控告警规则',
+    metric: '日调用量',
+    condition: '当日累计调用量 >= 10,000 次',
+    level: '中危',
+    channels: '企业微信',
+    status: '待确认',
+    effectiveTime: '确认后立即启用',
+    creator: 'admin',
+  };
+}
+
+function upsertDailyCallAlertRule(draft: AlertRuleDraft): AlertRuleV18 {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:00`;
+  const triggerCondition = {
+    metric: draft.metric || '日调用量',
+    operator: '>=' as const,
+    threshold: 10000,
+    thresholdUnit: '次',
+    sustainDuration: '当日累计',
+    description: draft.condition || '当日累计调用量 >= 10,000 次',
+  };
+  const rule: AlertRuleV18 = {
+    id: DAILY_CALL_ALERT_RULE_ID,
+    name: draft.name || '全局日调用量达到 1 万告警',
+    type: 'business',
+    triggerCondition,
+    triggerAction: 'notify',
+    ruleContentId: 'biz-022',
+    ruleConfig: {
+      rule_name: draft.name || '全局日调用量达到 1 万告警',
+      trigger_time: timestamp,
+      trigger_condition: triggerCondition,
+      trigger_action: 'notify',
+      output_prompt: `全局智能体当日累计调用量达到阈值，当前规则：${triggerCondition.description}；请关注高频调用智能体与资源承载情况。`,
+    },
+    enabled: true,
+    createdBy: draft.creator || 'admin',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    trigger7d: 0,
+  };
+  const idx = mockAlertRulesV18.findIndex((item) => item.id === rule.id);
+  if (idx >= 0) {
+    mockAlertRulesV18[idx] = rule;
+  } else {
+    mockAlertRulesV18.unshift(rule);
+  }
+  return rule;
+}
+
 function getAlertRuleConfigReply(text: string) {
   const normalized = text.trim();
+  if (/新增|新建|创建|配置|设置|加一条|新增一条/.test(normalized) && /日调用量|调用量/.test(normalized) && /1\s*万|10000|一万|达到/.test(normalized)) {
+    return {
+      reply:
+        '已识别业务场景标签/意图：**告警规则配置**。\n\n' +
+        '已根据您的描述整理出完整信息清单，请在下方表格中核对或修改字段。',
+      alertRuleDraft: buildDefaultDailyCallAlertRuleDraft(),
+    };
+  }
+  if (/确认保存并启用|确认|保存并启用/.test(normalized)) {
+    const savedRule = upsertDailyCallAlertRule(buildDefaultDailyCallAlertRuleDraft());
+    return {
+      reply:
+        `创建成功，告警规则 **${savedRule.name}** 已保存并启用。\n\n` +
+        '后续当全院智能体当日累计调用量达到 10,000 次时，将按企业微信渠道发送中危告警通知。',
+      link: { to: `/app/monitoring/alert-rules/${savedRule.id}`, text: '查看规则详情' },
+    };
+  }
   if (/清单|查看|当前|生效/.test(normalized)) {
     return {
       reply:
+        '已识别业务场景标签/意图：**告警规则配置**。\n\n' +
         '当前生效告警规则共 **6 条**：\n\n' +
         '1. 处方前置审核：调用超时 > 5 秒，高危，通知企业微信 + 短信\n' +
         '2. 影像 AI：CPU 使用率 > 85%，中危，通知企业微信\n' +
@@ -311,6 +414,7 @@ function getAlertRuleConfigReply(text: string) {
   if (/关闭|停用|禁用/.test(normalized)) {
     return {
       reply:
+        '已识别业务场景标签/意图：**告警规则配置**。\n\n' +
         '已为您生成停用确认：\n\n' +
         '- 规则：日调用量突增 200% 全局告警规则\n' +
         '- 操作：停用\n' +
@@ -322,6 +426,7 @@ function getAlertRuleConfigReply(text: string) {
   if (/修改|调整|阈值|通知渠道|企业微信|短信/.test(normalized)) {
     return {
       reply:
+        '已识别业务场景标签/意图：**告警规则配置**。\n\n' +
         '已整理为规则变更草稿：\n\n' +
         '- 规则对象：心内科智能体\n' +
         '- 触发条件：按您描述调整阈值或通知渠道\n' +
@@ -334,13 +439,15 @@ function getAlertRuleConfigReply(text: string) {
   if (/导出|触发记录|规则明细/.test(normalized)) {
     return {
       reply:
+        '已识别业务场景标签/意图：**告警规则配置**。\n\n' +
         '已为您准备《本月告警规则触发记录与规则明细》导出任务，包含规则名称、适用对象、触发次数、通知渠道和最近触发时间。',
       quickActions: ['导出 Excel', '导出 PDF', '查看当前规则清单'],
     };
   }
   return {
     reply:
-      '已识别为告警规则配置诉求，我先整理一条规则草稿：\n\n' +
+      '已识别业务场景标签/意图：**告警规则配置**。\n\n' +
+      '我先整理一条规则草稿：\n\n' +
       '- 规则对象：按您的描述定位到相关智能体 / 全局规则\n' +
       '- 触发条件：调用超时 / 日调用量突增 / 资源占用超阈值\n' +
       '- 级别：待确认\n' +
@@ -421,6 +528,275 @@ const moduleReplyMap: { match: RegExp; module: string; reply: string; link?: { t
 
 const fallbackReply =
   '暂未理解您的诉求，请尝试换种表述或从下方推荐问句中选择。\n\n您也可以告诉我您想触达的目标，例如：\n- **审批/申请** → 智能体接入中心\n- **查询/统计** → 统一台账中心\n- **资源管理** → 医院资源管理中心\n- **准入评测** → 统一准入评测沙盒\n- **告警/报告** → 统一运行监控中心';
+
+const TODAY_LEDGER_OVERVIEW_REPLY =
+  '目前已纳管 智能体 30 个，今日调用 73,880 次，正常运行率 84.2%，异常告警 4 次。是否需要为你生成一份智能体管理情况报告？';
+
+const TODAY_LEDGER_REPORT_SUMMARY = {
+  totalAgents: 30,
+  calls: 73880,
+  onlineRate: '84.2%',
+  alarms: 4,
+};
+
+function isTodayLedgerOverviewQuestion(text: string) {
+  return /今天|今日/.test(text) && /台账/.test(text) && /整体|总体|概况|情况|如何/.test(text);
+}
+
+async function exportLedgerReportPdf(reportCard: LedgerReportCard) {
+  const esc = (s: string | number | undefined) =>
+    String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  const palette = ['#1677FF', '#13C2C2', '#52C41A', '#FA8C16', '#722ED1', '#EB2F96', '#FAAD14', '#A0D911'];
+  const renderKpis = (kpis: NonNullable<ReportNode['kpis']>) => `
+    <div class="kpi-grid" style="grid-template-columns:repeat(${Math.min(kpis.length, 5)},1fr);">
+      ${kpis
+        .map(
+          (k) => `
+            <div class="kpi-card">
+              <div class="kpi-label">${esc(k.label)}</div>
+              <div class="kpi-value" style="color:${esc(k.color || '#1677FF')}">${esc(k.value)}${
+                k.unit ? `<span>${esc(k.unit)}</span>` : ''
+              }</div>
+            </div>`,
+        )
+        .join('')}
+    </div>`;
+  const renderChart = (chart: NonNullable<ReportNode['chart']>) => {
+    const max = Math.max(...chart.data.map((d) => d.value), 1);
+    const total = chart.data.reduce((sum, d) => sum + d.value, 0);
+    return `
+      <div class="chart-card">
+        <div class="card-title">${esc(chart.title)}</div>
+        <div class="chart-bars">
+          ${chart.data
+            .map((d, idx) => {
+              const width = Math.max(8, (d.value / max) * 100);
+              const extra = chart.chartType === 'pie' && total > 0 ? ` (${((d.value / total) * 100).toFixed(1)}%)` : '';
+              return `
+                <div class="chart-row">
+                  <div class="chart-name">${esc(d.name)}</div>
+                  <div class="chart-track"><div class="chart-bar" style="width:${width}%;background:${
+                    palette[idx % palette.length]
+                  };"></div></div>
+                  <div class="chart-value">${esc(d.value)}${extra}</div>
+                </div>`;
+            })
+            .join('')}
+        </div>
+      </div>`;
+  };
+  const renderTable = (table: NonNullable<ReportNode['table']>) => `
+    <div class="table-card">
+      <div class="card-title">${esc(table.title)}</div>
+      <table>
+        <thead><tr>${table.headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+        <tbody>${table.rows
+          .map((r) => `<tr>${r.cells.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`)
+          .join('')}</tbody>
+      </table>
+    </div>`;
+  const renderMatrix = (matrix: NonNullable<ReportNode['matrix']>) => {
+    const max = Math.max(...matrix.data.flat(), 1);
+    const cellColor = (value: number) => {
+      if (value <= 0) return '#FAFAFA';
+      const a = Math.max(0.15, Math.min(1, value / max));
+      const r = Math.round(255 - (255 - 22) * a);
+      const g = Math.round(255 - (255 - 119) * a);
+      const b = Math.round(255 - (255 - 255) * a);
+      return `rgb(${r},${g},${b})`;
+    };
+    return `
+      <div class="table-card">
+        <div class="card-title">${esc(matrix.title)}</div>
+        <table class="matrix-table">
+          <thead><tr><th>智能体 \\ 系统</th>${matrix.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+          <tbody>${matrix.rows
+            .map(
+              (row, rowIdx) => `
+                <tr>
+                  <th>${esc(row)}</th>
+                  ${matrix.cols
+                    .map((_col, colIdx) => {
+                      const value = matrix.data[rowIdx]?.[colIdx] ?? 0;
+                      return `<td style="background:${cellColor(value)};color:${value / max > 0.55 ? '#fff' : '#262626'}">${esc(value)}</td>`;
+                    })
+                    .join('')}
+                </tr>`,
+            )
+            .join('')}</tbody>
+        </table>
+        ${matrix.legend ? `<div class="note">${esc(matrix.legend)}</div>` : ''}
+      </div>`;
+  };
+  const isMonitorReport = /运行监控/.test(reportCard.title);
+  const nodes = isMonitorReport ? [] : buildPlatformReport();
+  const monitorSectionsHtml = `
+    <section class="cover">
+      <div class="hospital">医疗智能体管理平台</div>
+      <h1>${esc(reportCard.title)}</h1>
+      <p>统计范围：${esc(reportCard.scope)}</p>
+      <p>统计周期：${esc(reportCard.period)}</p>
+      <p>生成依据：${
+        /全院/.test(reportCard.scope)
+          ? '全院智能体运行监控情况报告模板.docx'
+          : '科室智能体运行监控情况报告模板.docx'
+      }</p>
+      <p>${esc(new Date().toISOString().slice(0, 10))}</p>
+    </section>
+    <h2 class="section-title">一、整体运行结论</h2>
+    <p class="para">${esc(reportCard.scope)}智能体今日整体运行平稳，当日调用 12834 次，任务执行成功率 98.2%，任务中断率 6.8%，自助解决率 78%，P95 响应时间 4.8s。</p>
+    ${renderKpis([
+      { label: '今日调用量', value: '12,834', unit: '次', color: '#1677FF' },
+      { label: '任务执行成功率', value: '98.2', unit: '%', color: '#13C2C2' },
+      { label: '在线率', value: '93.3', unit: '%', color: '#52C41A' },
+      { label: '今日 Token', value: '425,000', unit: '', color: '#FA8C16' },
+    ])}
+    <h2 class="section-title">二、四维监控摘要</h2>
+    ${renderTable({
+      title: '业务 / 状态 / 成本 / 安全监控摘要',
+      headers: ['维度', '核心指标', '结论'],
+      rows: [
+        { key: 'biz', cells: ['业务监控', '调用量、成功率、响应时间、任务中断率', '调用活跃，影像类高峰响应需关注'] },
+        { key: 'status', cells: ['状态监控', '在线率、心跳、异常实例', '整体稳定，少量实例需复核心跳波动'] },
+        { key: 'cost', cells: ['成本监控', 'Token、CPU/GPU/内存、单任务成本', '成本可控，建议关注高成本模型占比'] },
+        { key: 'safe', cells: ['安全监控', '注入攻击、越权访问、敏感信息外发', '已触发拦截，暂无扩散风险'] },
+      ],
+    })}
+    <h2 class="section-title">三、告警与建议</h2>
+    <p class="para">部分影像与导诊智能体已触发高/中级告警，建议优先处理高风险事件，复核负责人闭环状态，并将本 PDF 归档至今日运行监控记录。</p>
+  `;
+  const sectionsHtml = isMonitorReport
+    ? monitorSectionsHtml
+    : nodes.map((n) => {
+      if (n.type === 'cover' && n.cover) {
+        const c = n.cover;
+        return `
+          <section class="cover">
+            <div class="hospital">${esc(c.hospital)}</div>
+            <h1>${esc(c.reportTitle)}</h1>
+            <p>${esc(c.deptName)}</p>
+            <p>${esc(c.period)}</p>
+            <p>${esc(c.generatedBy)}</p>
+            <p>${esc(c.reportDate)}</p>
+          </section>`;
+      }
+      if (n.type === 'toc' && n.toc) {
+        return `
+          <section class="toc">
+            <h2>目 录</h2>
+            <div class="toc-grid">${n.toc.items.map((it) => `<div>${esc(it.label)}</div>`).join('')}</div>
+            <div class="note">（在 Word 中右键点击此处,选择「更新域」自动生成目录。）</div>
+          </section>`;
+      }
+      if (n.type === 'h2') return `<h2 class="section-title">${esc(n.text)}</h2>`;
+      if (n.type === 'h3') return `<h3>${esc(n.text)}</h3>`;
+      if (n.type === 'p') return `<p class="para">${esc(n.text)}</p>`;
+      if (n.type === 'kpi' && n.kpis) return renderKpis(n.kpis);
+      if (n.type === 'chart' && n.chart) return renderChart(n.chart);
+      if (n.type === 'table' && n.table) return renderTable(n.table);
+      if (n.type === 'matrix' && n.matrix) return renderMatrix(n.matrix);
+      if (n.type === 'colophon' && n.colophon) {
+        return `
+          <section class="colophon">
+            <h2>附:编制说明</h2>
+            <p>① 本报告由智能体管理平台基于台账聚合数据一键生成,统计口径统一,统计周期与筛选范围(科室/时间)见封面。</p>
+            <p>② 各模块图表由系统按实时数据自动生成,本模板内全部数据与图表均为示例;比率类指标在图表处注明分子分母口径。</p>
+            <p>③ 各模块文字综述由智能助手自动生成初稿,管理员可在平台编辑页在线调整后发布。</p>
+            <div class="signature">${esc(n.colophon.generator)}<br />${esc(n.colophon.reportDate)}</div>
+          </section>`;
+      }
+      return '';
+    }).join('');
+  const node = document.createElement('div');
+  node.style.position = 'fixed';
+  node.style.left = '-10000px';
+  node.style.top = '0';
+  node.style.width = '980px';
+  node.style.padding = '0';
+  node.style.background = '#FFFFFF';
+  node.style.color = '#262626';
+  node.style.fontFamily = 'Arial, "Microsoft YaHei", sans-serif';
+  node.style.lineHeight = '1.85';
+  node.innerHTML = `
+    <style>
+      .report-doc{padding:38px 48px 44px;background:#fff;color:#262626;}
+      .cover{text-align:center;padding:72px 32px 62px;border-bottom:3px double #1677FF;margin-bottom:28px;background:linear-gradient(180deg,#F0F5FF 0%,#fff 100%);}
+      .cover .hospital{font-size:14px;color:#8C8C8C;letter-spacing:4px;margin-bottom:24px;}
+      .cover h1{margin:0 0 32px;color:#1677FF;font-size:34px;line-height:1.2;}
+      .cover p{margin:3px 0;font-size:15px;}
+      .toc{border:1px solid #D6E4FF;border-radius:8px;padding:18px 24px;margin-bottom:28px;}
+      .toc h2{margin:0 0 12px;color:#1677FF;font-size:22px;}
+      .toc-grid{columns:2;column-gap:40px;font-size:14px;}
+      .toc-grid div{padding:5px 0;border-bottom:1px dashed #F0F0F0;break-inside:avoid;}
+      .section-title{margin:26px 0 12px;border-bottom:2px solid #1677FF;padding-bottom:6px;color:#1677FF;font-size:24px;}
+      h3{margin:16px 0 7px;color:#1677FF;font-size:16px;}
+      .para{margin:0 0 12px;font-size:14px;line-height:1.85;}
+      .kpi-grid{display:grid;gap:12px;margin:0 0 14px;}
+      .kpi-card{background:#FAFAFA;border:1px solid #F0F0F0;border-radius:8px;text-align:center;padding:14px 10px;}
+      .kpi-label{font-size:12px;color:#8C8C8C;}
+      .kpi-value{font-size:25px;font-weight:700;margin-top:4px;line-height:1.25;}
+      .kpi-value span{font-size:12px;color:#8C8C8C;font-weight:400;margin-left:4px;}
+      .chart-card,.table-card{border:1px solid #F0F0F0;border-radius:8px;padding:12px 16px;margin-bottom:14px;break-inside:avoid;}
+      .card-title{font-size:14px;font-weight:600;margin-bottom:9px;padding-bottom:8px;border-bottom:1px solid #F0F0F0;}
+      .chart-row{display:grid;grid-template-columns:128px 1fr 92px;gap:10px;align-items:center;margin:7px 0;font-size:12px;}
+      .chart-name{color:#595959;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .chart-track{height:13px;background:#F5F5F5;border-radius:999px;overflow:hidden;}
+      .chart-bar{height:100%;border-radius:999px;}
+      .chart-value{text-align:right;color:#262626;}
+      table{width:100%;border-collapse:collapse;font-size:13px;}
+      th{background:#F0F5FF;color:#1677FF;font-weight:600;text-align:left;}
+      th,td{border:1px solid #D9D9D9;padding:8px 10px;vertical-align:top;}
+      .matrix-table th,.matrix-table td{text-align:center;}
+      .matrix-table tbody th{text-align:left;}
+      .note{margin-top:8px;color:#8C8C8C;font-size:12px;}
+      .colophon{margin-top:32px;padding:20px;background:#F0F5FF;border-left:4px solid #1677FF;border-radius:6px;}
+      .colophon h2{margin:0 0 12px;color:#1677FF;font-size:20px;}
+      .colophon p{margin:0 0 8px;font-size:13px;}
+      .signature{text-align:right;color:#595959;font-size:13px;margin-top:12px;}
+      .ending{margin-top:32px;padding-top:16px;border-top:2px solid #1677FF;text-align:right;color:#8C8C8C;font-size:12px;}
+    </style>
+    <div class="report-doc">
+      ${sectionsHtml}
+      <div class="ending">— 报告结束 —<br />××××医院信息科 · ${new Date().toISOString().slice(0, 10)}</div>
+    </div>
+  `;
+  document.body.appendChild(node);
+  try {
+    const canvas = await html2canvas(node.querySelector('.report-doc') as HTMLElement, {
+      scale: 1.5,
+      backgroundColor: '#FFFFFF',
+      useCORS: true,
+      logging: false,
+    });
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const marginX = 10;
+    const marginY = 10;
+    const imgWidth = pageWidth - marginX * 2;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    let heightLeft = imgHeight;
+    let position = marginY;
+    const pageContentHeight = pageHeight - marginY * 2;
+    const image = canvas.toDataURL('image/jpeg', 0.92);
+    pdf.addImage(image, 'JPEG', marginX, position, imgWidth, imgHeight);
+    heightLeft -= pageContentHeight;
+    while (heightLeft > 0) {
+      pdf.addPage();
+      position = marginY - (imgHeight - heightLeft);
+      pdf.addImage(image, 'JPEG', marginX, position, imgWidth, imgHeight);
+      heightLeft -= pageContentHeight;
+    }
+    pdf.save(`${reportCard.title}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    message.success('已下载 PDF 格式报告');
+  } finally {
+    document.body.removeChild(node);
+  }
+}
 
 const pickReply = (text: string): { module: string; reply: string; link?: { to: string; text: string } } => {
   for (const m of moduleReplyMap) {
@@ -508,6 +884,11 @@ type AccessAuditTable = {
   emptyText?: string;
 };
 
+type EvaluationAuditTable = {
+  rows: EvaluationTask[];
+  emptyText?: string;
+};
+
 type AccessStep =
   | 'collectMaterial'
   | 'agentName'
@@ -536,12 +917,17 @@ type AccessSlots = {
   accessMethod?: string;
   endpoint?: string;
   apiKeyMasked?: string;
+  platformUrl?: string;
+  platformKey?: string;
+  instrumentationCode?: string;
   connectivity?: string;
   materials?: string[];
   techSpecUploaded?: boolean;
   productDocUploaded?: boolean;
   draftSaved?: boolean;
 };
+
+type AccessMode = 'API' | 'SDK' | 'OTel';
 
 type AccessFlow = {
   sessionId: string;
@@ -635,7 +1021,7 @@ type ResourceAuditFlow = {
   paused?: boolean;
 };
 
-type EvaluationStep = 'n1' | 'n2' | 'running' | 'done';
+type EvaluationStep = 'confirmUltrasoundAgent' | 'sampleLevel' | 'n1' | 'n2' | 'running' | 'done';
 
 type EvaluationPendingAgent = {
   id: string;
@@ -660,6 +1046,11 @@ type EvaluationSlots = {
   dimensionScores?: Record<EvalDimension, number>;
   sidetrack?: string[];
   draftSaved?: boolean;
+};
+
+type EvaluationProgressSummary = {
+  percent: number;
+  estimatedRemainingHours: number;
 };
 
 type EvaluationFlow = {
@@ -752,6 +1143,15 @@ type AccessAuditFlow = {
   pendingTodos?: string[];
 };
 
+type HomeDashboardMetric = {
+  key: 'managedAgents' | 'totalCalls' | 'alerts';
+  label: string;
+  value: string;
+  trend: Array<{ month: string; value: number }>;
+  accent: string;
+  fill: string;
+};
+
 const ledgerRecommendedQuestions = [
   '帮我生成一份今日的全院/本科室智能体管理情况报告',
   '我想要查看【某智能体】的 360 画像',
@@ -759,9 +1159,9 @@ const ledgerRecommendedQuestions = [
 ];
 
 const monitorRecommendedQuestions = [
-  '帮我生成一份今日的全院/本科室智能体运行监控情况报告？',
+  '今日整体运行情况如何？',
   '现在有哪些告警需要处理？',
-  '今日智能体运行 token 成本消耗多少？',
+  '帮我生成一份今日的全院/本科室智能体运行监控情况报告？',
 ];
 
 /* =========================================================
@@ -789,6 +1189,12 @@ const HomePage = () => {
     reportCard?: LedgerReportCard;
     monitorAlertTable?: MonitorAlertTable;
     accessAuditTable?: AccessAuditTable;
+    evaluationAuditTable?: EvaluationAuditTable;
+    alertRuleDraft?: AlertRuleDraft;
+    dashboardMetrics?: HomeDashboardMetric[];
+    requirementSummary?: RequirementSlots;
+    accessSummary?: AccessSlots;
+    evaluationProgress?: EvaluationProgressSummary;
     time: string;
   };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -907,6 +1313,7 @@ const HomePage = () => {
         id: `a-${Date.now()}`,
         role: 'assistant',
         content: buildGreeting(role, currentUser?.name),
+        dashboardMetrics: buildHomeDashboardMetrics(role),
         time: nowStr(),
       },
     ]);
@@ -976,6 +1383,9 @@ const HomePage = () => {
             module: '接入申请',
             link: index === next.replies.length - 1 ? next.link : undefined,
             actionLinks: index === next.replies.length - 1 ? next.actionLinks : undefined,
+            accessSummary: shouldRenderAccessSummary(next.flow, index, next.replies.length)
+              ? next.flow.slots
+              : undefined,
             quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
             time: nowStr(),
           })),
@@ -1103,6 +1513,7 @@ const HomePage = () => {
         id: `a-${Date.now()}`,
         role: 'assistant',
         content: buildGreeting(role, currentUser?.name),
+        dashboardMetrics: buildHomeDashboardMetrics(role),
         time: nowStr(),
       },
     ]);
@@ -1418,7 +1829,7 @@ const HomePage = () => {
       role: 'assistant',
       content: buildAccessOpening(),
       module: '接入申请',
-      quickActions: ['上传技术规格书.docx，并口述产品说明', '文字描述糖尿病随访助手', '我先口述材料内容'],
+      quickActions: ACCESS_UPLOAD_QUICK_ACTIONS,
       time: nowStr(),
     };
 
@@ -1633,6 +2044,48 @@ const HomePage = () => {
     }, 60);
   }, [isItAdmin]);
 
+  const startUltrasoundEvaluationCreate = useCallback((sourceText: string) => {
+    const sessionId = `evaluation-${Date.now()}`;
+    const newSession: SessionEntry = {
+      id: sessionId,
+      title: '新建评测',
+      updatedAt: '刚刚',
+    };
+    const opening: ChatMessage = {
+      id: `evaluation-ultrasound-a-${Date.now()}`,
+      role: 'assistant',
+      content: `已识别用户意图为「新建评测」。请确认是「超声检查预约助手」智能体吗？`,
+      module: '新建评测',
+      quickActions: ['是的，开启评测'],
+      time: nowStr(),
+    };
+
+    setMiddleView('overview');
+    setExtraSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(sessionId);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
+    setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow({
+      sessionId,
+      step: 'confirmUltrasoundAgent',
+      slots: {
+        sidetrack: sourceText ? [sourceText] : undefined,
+        agent: ultrasoundEvaluationAgent,
+        agents: [ultrasoundEvaluationAgent],
+      },
+    });
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
+    setMessages((prev) => [...prev, opening]);
+    setDraft('');
+    setIsNewTaskView(false);
+  }, []);
+
   /* 「评测审核」场景标签 → 创建历史会话并进入 N0→N4 固定审核轨道 */
   const startEvaluationAudit = useCallback(() => {
     const sessionId = `evaluation-audit-${Date.now()}`;
@@ -1647,6 +2100,7 @@ const HomePage = () => {
       role: 'assistant',
       content: buildEvaluationAuditOpening(flow),
       module: '评测审核',
+      evaluationAuditTable: { rows: availableEvaluationAuditTasks(flow) },
       quickActions: ['看第一条', '查看批次汇总', '暂停审核'],
       time: nowStr(),
     };
@@ -1779,7 +2233,6 @@ const HomePage = () => {
       content: buildAccessAuditOpening(flow),
       module: '接入审核',
       accessAuditTable: { rows: accessAuditPending(flow) },
-      quickActions: ['批量通过建议通过', '查看 0201-0004', '只看建议退回修改'],
       time: nowStr(),
     };
 
@@ -1807,7 +2260,7 @@ const HomePage = () => {
     }, 60);
   }, []);
 
-  const startBusinessSceneFromInput = useCallback((sceneKey: BusinessSceneKey, text: string) => {
+  const startBusinessSceneFromInput = useCallback((sceneKey: BusinessSceneKey, text: string, initialUserMessage?: ChatMessage) => {
     const sessionId = `${sceneKey}-${Date.now()}`;
     const sceneLabel = businessSceneIntents.find((item) => item.key === sceneKey)?.label ?? '业务场景';
     const resetFlows = () => {
@@ -1827,7 +2280,7 @@ const HomePage = () => {
       setExtraSessions((prev) => [{ id: sessionId, title: sceneLabel, updatedAt: '刚刚' }, ...prev]);
       setActiveSessionId(sessionId);
       setIsNewTaskView(false);
-      setMessages((prev) => [...prev, assistantMessage]);
+      setMessages((prev) => (initialUserMessage ? [initialUserMessage, assistantMessage] : [...prev, assistantMessage]));
     };
 
     switch (sceneKey) {
@@ -1844,7 +2297,8 @@ const HomePage = () => {
           role: 'assistant',
           content: completeSlots ? buildRequirementSummary(completeSlots) : buildRequirementOpening(),
           module: '需求登记',
-          quickActions: completeSlots ? getRequirementQuickActions('summary') : undefined,
+          requirementSummary: completeSlots ?? undefined,
+          quickActions: undefined,
           time: nowStr(),
         });
         return true;
@@ -1885,11 +2339,12 @@ const HomePage = () => {
               : buildAccessMaterialCheck(readySlots)
             : buildAccessOpening(),
           module: '接入申请',
+          accessSummary: readySlots && materialComplete ? readySlots : undefined,
           quickActions: readySlots
             ? materialComplete
               ? ACCESS_SUBMIT_QUICK_ACTIONS
-              : ['上传备案材料']
-            : ['上传技术规格书.docx，并口述产品说明', '文字描述糖尿病随访助手', '我先口述材料内容'],
+              : ACCESS_UPLOAD_QUICK_ACTIONS
+            : ACCESS_UPLOAD_QUICK_ACTIONS,
           time: nowStr(),
         });
         return true;
@@ -1904,7 +2359,6 @@ const HomePage = () => {
           content: buildAccessAuditOpening(flow),
           module: '接入审核',
           accessAuditTable: { rows: accessAuditPending(flow) },
-          quickActions: ['批量通过建议通过', '查看 0201-0004', '只看建议退回修改'],
           time: nowStr(),
         });
         return true;
@@ -1985,6 +2439,7 @@ const HomePage = () => {
           role: 'assistant',
           content: buildEvaluationAuditOpening(flow),
           module: '评测审核',
+          evaluationAuditTable: { rows: availableEvaluationAuditTasks(flow) },
           quickActions: ['看第一条', '查看批次汇总', '暂停审核'],
           time: nowStr(),
         });
@@ -1997,7 +2452,7 @@ const HomePage = () => {
         enterScene({
           id: `monitor-a-${Date.now()}`,
           role: 'assistant',
-          content: next.reply,
+          content: `已识别业务场景标签/意图：**监控信息查看**。\n\n${next.reply}`,
           module: '监控信息查看',
           link: next.link,
           quickActions: next.quickActions,
@@ -2015,6 +2470,8 @@ const HomePage = () => {
           role: 'assistant',
           content: next.reply,
           module: '告警规则配置',
+          link: next.link,
+          alertRuleDraft: next.alertRuleDraft,
           quickActions: next.quickActions,
           time: nowStr(),
         });
@@ -2044,6 +2501,69 @@ const HomePage = () => {
     },
     [],
   );
+
+  const handleRequirementSummaryConfirm = useCallback((editedSlots: RequirementSlots) => {
+    if (!requirementFlow || requirementFlow.sessionId !== activeSessionId || requirementFlow.step !== 'summary') {
+      handleSend('确认提交');
+      return;
+    }
+    const nextFlow: RequirementFlow = {
+      ...requirementFlow,
+      step: 'done',
+      slots: { ...requirementFlow.slots, ...editedSlots },
+    };
+    const timestamp = Date.now();
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `req-confirm-u-${timestamp}`,
+        role: 'user' as const,
+        content: '确认提交',
+        time: nowStr(),
+      },
+      {
+        id: `req-confirm-a-${timestamp}`,
+        role: 'assistant' as const,
+        content: buildRequirementSuccess(nextFlow.slots),
+        module: '需求登记',
+        actionLinks: getRequirementDoneActionLinks(),
+        time: nowStr(),
+      },
+    ]);
+    setRequirementFlow(nextFlow);
+  setExtraSessions((prev) =>
+      prev.map((s) => (s.id === nextFlow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+    );
+  }, [activeSessionId, requirementFlow]);
+
+  const handleAlertRuleDraftConfirm = useCallback((editedDraft: AlertRuleDraft) => {
+    const savedRule = upsertDailyCallAlertRule(editedDraft);
+    const timestamp = Date.now();
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `alert-rule-confirm-u-${timestamp}`,
+        role: 'user' as const,
+        content: '确认保存并启用',
+        time: nowStr(),
+      },
+      {
+        id: `alert-rule-confirm-a-${timestamp}`,
+        role: 'assistant' as const,
+        content:
+          `创建成功，告警规则 **${savedRule.name}** 已保存并启用。\n\n` +
+          `后续当${editedDraft.object || '全局智能体'}满足「${editedDraft.condition || savedRule.triggerCondition.description}」时，将通过${editedDraft.channels || '企业微信'}发送${editedDraft.level || '中危'}告警通知。`,
+        module: '告警规则配置',
+        link: { to: `/app/monitoring/alert-rules/${savedRule.id}`, text: '查看规则详情' },
+        time: nowStr(),
+      },
+    ]);
+    if (activeSessionId?.startsWith('alert-rule-')) {
+      setExtraSessions((prev) =>
+        prev.map((s) => (s.id === activeSessionId ? { ...s, updatedAt: '刚刚' } : s)),
+      );
+    }
+  }, [activeSessionId]);
 
   // 新消息自动滚动到底
   useEffect(() => {
@@ -2076,13 +2596,66 @@ const HomePage = () => {
       !monitorFlow &&
       !accessAuditFlow;
 
+    if (isFreshHomeQuestion && isTodayLedgerOverviewQuestion(text)) {
+      const sessionId = `ledger-${Date.now()}`;
+      setMiddleView('overview');
+      setExtraSessions((prev) => [{ id: sessionId, title: '台账查询', updatedAt: '刚刚' }, ...prev]);
+      setActiveSessionId(sessionId);
+      setRequirementFlow(null);
+      setLedgerFlow({ sessionId, reportScope: '全院', reportPeriod: '今日' });
+      setAccessFlow(null);
+      setResourceRegisterFlow(null);
+      setResourceApplyFlow(null);
+      setResourceAuditFlow(null);
+      setEvaluationFlow(null);
+      setEvaluationAuditFlow(null);
+      setMonitorFlow(null);
+      setAccessAuditFlow(null);
+      setIsNewTaskView(false);
+      setMessages([
+        userMsg,
+        {
+          id: `ledger-a-${Date.now()}`,
+          role: 'assistant',
+          content: TODAY_LEDGER_OVERVIEW_REPLY,
+          module: '台账查询',
+          quickActions: ['生成报告'],
+          time: nowStr(),
+        },
+      ]);
+      return;
+    }
+
+    if (isFreshHomeQuestion && isUltrasoundEvaluationCreateText(text)) {
+      setMiddleView('overview');
+      setMessages([userMsg]);
+      startUltrasoundEvaluationCreate(text);
+      return;
+    }
+
+    if (isFreshHomeQuestion) {
+      const routedScene = classifyBusinessScene(text);
+      if (routedScene) {
+        setMiddleView('overview');
+        if (startBusinessSceneFromInput(routedScene, text, userMsg)) {
+          return;
+        }
+      }
+    }
+
     if (isFreshHomeQuestion) {
       setMiddleView('overview');
       setMessages([userMsg]);
       setLoading(true);
       window.setTimeout(() => {
+        if (isUltrasoundEvaluationCreateText(text)) {
+          startUltrasoundEvaluationCreate(text);
+          setLoading(false);
+          return;
+        }
+
         const routedScene = classifyBusinessScene(text);
-        if (routedScene && startBusinessSceneFromInput(routedScene, text)) {
+        if (routedScene && startBusinessSceneFromInput(routedScene, text, userMsg)) {
           setLoading(false);
           return;
         }
@@ -2137,7 +2710,14 @@ const HomePage = () => {
           module: '需求登记',
           link: index === next.replies.length - 1 ? next.link : undefined,
           actionLinks: index === next.replies.length - 1 ? next.actionLinks : undefined,
-          quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
+          requirementSummary:
+            index === next.replies.length - 1 && next.flow.step === 'summary'
+              ? next.flow.slots
+              : undefined,
+          quickActions:
+            index === next.replies.length - 1 && next.flow.step !== 'summary'
+              ? next.quickActions
+              : undefined,
           time: nowStr(),
         })),
         ]);
@@ -2182,6 +2762,9 @@ const HomePage = () => {
             module: '接入申请',
             link: index === next.replies.length - 1 ? next.link : undefined,
             actionLinks: index === next.replies.length - 1 ? next.actionLinks : undefined,
+            accessSummary: shouldRenderAccessSummary(next.flow, index, next.replies.length)
+              ? next.flow.slots
+              : undefined,
             quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
             time: nowStr(),
           })),
@@ -2348,6 +2931,8 @@ const HomePage = () => {
             content,
             module: '新建评测',
             link: index === next.replies.length - 1 ? next.link : undefined,
+            actionLinks: index === next.replies.length - 1 ? next.actionLinks : undefined,
+            evaluationProgress: index === next.replies.length - 1 ? next.evaluationProgress : undefined,
             quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
             time: nowStr(),
           })),
@@ -2395,6 +2980,7 @@ const HomePage = () => {
             content,
             module: '评测审核',
             link: index === next.replies.length - 1 ? next.link : undefined,
+            evaluationAuditTable: index === next.replies.length - 1 ? next.evaluationAuditTable : undefined,
             quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
             time: nowStr(),
           })),
@@ -2508,6 +3094,8 @@ const HomePage = () => {
             role: 'assistant' as const,
             content: next.reply,
             module: '告警规则配置',
+            link: next.link,
+            alertRuleDraft: next.alertRuleDraft,
             quickActions: next.quickActions,
             time: nowStr(),
           },
@@ -2519,6 +3107,11 @@ const HomePage = () => {
         return;
       }
       const routedScene = classifyBusinessScene(text);
+      if (isUltrasoundEvaluationCreateText(text)) {
+        startUltrasoundEvaluationCreate(text);
+        setLoading(false);
+        return;
+      }
       if (routedScene && startBusinessSceneFromInput(routedScene, text)) {
         setLoading(false);
         return;
@@ -2727,11 +3320,12 @@ const HomePage = () => {
                 : buildAccessMaterialCheck(readySlots)
               : buildAccessOpening(),
             module: '接入申请',
+            accessSummary: readySlots && materialComplete ? readySlots : undefined,
             quickActions: readySlots
               ? materialComplete
                 ? ACCESS_SUBMIT_QUICK_ACTIONS
-                : ['上传备案材料']
-              : ['上传技术规格书.docx，并口述产品说明', '文字描述糖尿病随访助手', '我先口述材料内容'],
+                : ACCESS_UPLOAD_QUICK_ACTIONS
+              : ACCESS_UPLOAD_QUICK_ACTIONS,
             time: nowStr(),
           },
         ]);
@@ -2981,6 +3575,8 @@ const HomePage = () => {
                   handleSend(action);
                 }}
                 onMetricClick={(label) => navigate(resolveLedgerMetricRoute(label))}
+                onRequirementSummaryConfirm={handleRequirementSummaryConfirm}
+                onAlertRuleDraftConfirm={handleAlertRuleDraftConfirm}
               />
             ))
           )}
@@ -3350,14 +3946,20 @@ const MessageBubble = ({
   navigate,
   onQuickAction,
   onMetricClick,
+  onRequirementSummaryConfirm,
+  onAlertRuleDraftConfirm,
 }: {
   msg: any;
   navigate: (to: string) => void;
   onQuickAction?: (text: string) => void;
   onMetricClick?: (text: string) => void;
+  onRequirementSummaryConfirm?: (slots: RequirementSlots) => void;
+  onAlertRuleDraftConfirm?: (draft: AlertRuleDraft) => void;
 }) => {
   const isUser = msg.role === 'user';
-  const isWideAssistantContent = !isUser && Boolean(msg.accessAuditTable);
+  const hasDashboardMetrics = !isUser && Array.isArray(msg.dashboardMetrics) && msg.dashboardMetrics.length > 0;
+  const isWideAssistantContent = !isUser && Boolean(msg.accessAuditTable || msg.evaluationAuditTable || msg.accessSummary || msg.alertRuleDraft);
+  const shouldShowStandaloneMetrics = hasDashboardMetrics;
   return (
     <div
       style={{
@@ -3375,8 +3977,8 @@ const MessageBubble = ({
       )}
       <div
         style={{
-          maxWidth: isWideAssistantContent ? 'calc(100% - 44px)' : '78%',
-          width: isWideAssistantContent ? 'calc(100% - 44px)' : undefined,
+          maxWidth: isWideAssistantContent || shouldShowStandaloneMetrics ? 'calc(100% - 44px)' : '78%',
+          width: isWideAssistantContent || shouldShowStandaloneMetrics ? 'calc(100% - 44px)' : undefined,
         }}
       >
         {!isUser && msg.module && (
@@ -3396,56 +3998,85 @@ const MessageBubble = ({
             fontSize: 12,
             lineHeight: 1.6,
             wordBreak: 'break-word',
+            width: isWideAssistantContent ? '100%' : 'fit-content',
+            maxWidth: shouldShowStandaloneMetrics ? '78%' : '100%',
           }}
         >
-          <ReactMarkdown
-            components={{
-              p: ({ children }) => <span style={{ display: 'block', marginBottom: 4 }}>{children}</span>,
-              ul: ({ children }) => <ul style={{ paddingLeft: 18, margin: '4px 0' }}>{children}</ul>,
-              ol: ({ children }) => <ol style={{ paddingLeft: 18, margin: '4px 0' }}>{children}</ol>,
-              li: ({ children }) => <li style={{ marginBottom: 2 }}>{children}</li>,
-              code: ({ children }) => (
-                <code
-                  style={{
-                    background: isUser ? 'rgba(255,255,255,0.2)' : '#F5F5F5',
-                    padding: '0 4px',
-                    borderRadius: 3,
-                    fontSize: 12,
-                  }}
-                >
-                  {children}
-                </code>
-              ),
-              strong: ({ children }) => {
-                const label = flattenMarkdownText(children);
-                if (!isUser && onMetricClick && label) {
-                  return (
-                    <button
-                      type="button"
-                      onClick={() => onMetricClick(label)}
-                      style={{
-                        border: 0,
-                        padding: 0,
-                        margin: 0,
-                        background: 'transparent',
-                        color: '#1677FF',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        textDecoration: 'underline',
-                        textUnderlineOffset: 2,
-                      }}
-                      data-testid="home-v1-ledger-metric-hotspot"
-                    >
-                      {children}
-                    </button>
-                  );
-                }
-                return <strong style={{ fontWeight: 600 }}>{children}</strong>;
-              },
-            }}
-          >
-            {msg.content}
-          </ReactMarkdown>
+          {msg.accessSummary ? (
+            <AccessSummaryCard
+              slots={msg.accessSummary}
+              intro={msg.content}
+            />
+          ) : msg.requirementSummary ? (
+            <RequirementSummaryCard
+              slots={msg.requirementSummary}
+              onConfirm={(slots) => onRequirementSummaryConfirm?.(slots)}
+            />
+          ) : msg.alertRuleDraft ? (
+            <>
+              <ReactMarkdown
+                components={{
+                  p: ({ children }) => <span style={{ display: 'block', marginBottom: 4 }}>{children}</span>,
+                  strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+                }}
+              >
+                {msg.content}
+              </ReactMarkdown>
+              <AlertRuleDraftCard
+                draft={msg.alertRuleDraft}
+                onConfirm={(draft) => onAlertRuleDraftConfirm?.(draft)}
+              />
+            </>
+          ) : (
+            <ReactMarkdown
+              components={{
+                p: ({ children }) => <span style={{ display: 'block', marginBottom: 4 }}>{children}</span>,
+                ul: ({ children }) => <ul style={{ paddingLeft: 18, margin: '4px 0' }}>{children}</ul>,
+                ol: ({ children }) => <ol style={{ paddingLeft: 18, margin: '4px 0' }}>{children}</ol>,
+                li: ({ children }) => <li style={{ marginBottom: 2 }}>{children}</li>,
+                code: ({ children }) => (
+                  <code
+                    style={{
+                      background: isUser ? 'rgba(255,255,255,0.2)' : '#F5F5F5',
+                      padding: '0 4px',
+                      borderRadius: 3,
+                      fontSize: 12,
+                    }}
+                  >
+                    {children}
+                  </code>
+                ),
+                strong: ({ children }) => {
+                  const label = flattenMarkdownText(children);
+                  if (!isUser && onMetricClick && label) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => onMetricClick(label)}
+                        style={{
+                          border: 0,
+                          padding: 0,
+                          margin: 0,
+                          background: 'transparent',
+                          color: '#1677FF',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          textUnderlineOffset: 2,
+                        }}
+                        data-testid="home-v1-ledger-metric-hotspot"
+                      >
+                        {children}
+                      </button>
+                    );
+                  }
+                  return <strong style={{ fontWeight: 600 }}>{children}</strong>;
+                },
+              }}
+            >
+              {msg.content}
+            </ReactMarkdown>
+          )}
           {!isUser && Array.isArray(msg.candidates) && msg.candidates.length > 0 && (
             <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
               {msg.candidates.map((candidate: LedgerCandidate) => (
@@ -3484,25 +4115,23 @@ const MessageBubble = ({
               <div style={{ fontWeight: 600, color: '#1677FF', marginBottom: 4 }}>
                 {msg.reportCard.title}
               </div>
-              <div style={{ fontSize: 11, color: '#595959', marginBottom: 8 }}>
-                {msg.reportCard.scope} · {msg.reportCard.period}
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
-                {msg.reportCard.modules.map((moduleName: string) => (
-                  <Tag key={moduleName} color="processing" style={{ marginInlineEnd: 0, fontSize: 11 }}>
-                    {moduleName}
-                  </Tag>
-                ))}
-              </div>
               <Space size={6} wrap>
-                <Button size="small" type="primary" onClick={() => navigate(msg.reportCard.to)}>
-                  编辑
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={() => window.open(msg.reportCard.to, '_blank', 'noopener,noreferrer')}
+                >
+                  查看报告详情
                 </Button>
-                <Button size="small" onClick={() => message.success('已导出报告 Demo 文件')}>
-                  导出
-                </Button>
-                <Button size="small" onClick={() => message.success('已订阅每周台账速读')}>
-                  订阅速读
+                <Button
+                  size="small"
+                  onClick={() => {
+                    exportLedgerReportPdf(msg.reportCard!).catch(() => {
+                      message.error('PDF 报告导出失败，请稍后重试');
+                    });
+                  }}
+                >
+                  下载 PDF
                 </Button>
               </Space>
             </div>
@@ -3520,6 +4149,16 @@ const MessageBubble = ({
               navigate={navigate}
               onQuickAction={onQuickAction}
             />
+          )}
+          {!isUser && msg.evaluationAuditTable && (
+            <EvaluationAuditTableView
+              table={msg.evaluationAuditTable}
+              navigate={navigate}
+              onQuickAction={onQuickAction}
+            />
+          )}
+          {!isUser && msg.evaluationProgress && (
+            <EvaluationProgressCard progress={msg.evaluationProgress} />
           )}
           {msg.link && (
             <div style={{ marginTop: 8 }}>
@@ -3576,6 +4215,9 @@ const MessageBubble = ({
             </div>
           )}
         </div>
+        {shouldShowStandaloneMetrics && (
+          <HomeDashboardMetricsView metrics={msg.dashboardMetrics} />
+        )}
         <div
           style={{
             fontSize: 11,
@@ -3591,10 +4233,745 @@ const MessageBubble = ({
   );
 };
 
+const EvaluationProgressCard = ({ progress }: { progress: EvaluationProgressSummary }) => {
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        paddingTop: 10,
+        borderTop: '1px solid #F0F0F0',
+        minWidth: 320,
+        maxWidth: '100%',
+      }}
+      data-testid="home-v1-evaluation-progress"
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 4,
+        }}
+      >
+        <Text strong style={{ fontSize: 12 }}>
+          评测进度
+        </Text>
+        <Text type="secondary" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+          预计完成时间：还剩 {progress.estimatedRemainingHours} 小时
+        </Text>
+      </div>
+      <Progress
+        percent={progress.percent}
+        size="small"
+        strokeColor="#1677FF"
+        trailColor="#E6F4FF"
+        status="active"
+        style={{ marginBottom: 0 }}
+      />
+    </div>
+  );
+};
+
+const AccessSummaryCard = ({
+  slots,
+  intro,
+}: {
+  slots: AccessSlots;
+  intro?: string;
+}) => {
+  const normalizeAccessMode = (value?: string): AccessMode => {
+    if (value === 'SDK' || value === 'OTel') return value;
+    return 'API';
+  };
+  const buildPlatformUrl = (mode: AccessMode, values: AccessSlots) => {
+    const slug = (values.agentName || 'agent-access').replace(/\s+/g, '-').toLowerCase();
+    return `https://otel.platform-hospital.cn/agent/${mode.toLowerCase()}/${slug}`;
+  };
+  const buildInstrumentationCode = (mode: AccessMode, values: AccessSlots) => {
+    const url = values.platformUrl || buildPlatformUrl(mode, values);
+    const key = values.platformKey || `sk-${mode.toLowerCase()}-********`;
+    return `import { init } from '@platform/agent-${mode.toLowerCase()}';\ninit({\n  endpoint: '${url}',\n  apiKey: '${key}',\n});`;
+  };
+  const buildDefaultMaterials = (values: AccessSlots) =>
+    values.materials && values.materials.length > 0
+      ? values.materials
+      : ['超声检查预约助手-技术规格书.doc（已上传，内容达标，将转 PDF 留存）', '超声检查预约助手-产品说明书.doc（已上传，内容达标，将转 PDF 留存）'];
+  const toUploadFiles = (materials: string[]): UploadFile[] =>
+    materials
+      .flatMap((name) => {
+        const cleanName = name.replace(/（.*?）/g, '').trim();
+        const fileNames = cleanName.match(/[^、，,\s]+?\.(?:pdf|docx?|xlsx?|csv|jpe?g|png)/gi);
+        return fileNames && fileNames.length > 0
+          ? fileNames.map((item) => item.replace(/^[和及]/, ''))
+          : [cleanName];
+      })
+      .filter((name, index, arr) => name && arr.indexOf(name) === index)
+      .map((name, index) => ({
+        uid: `access-material-${index}`,
+        name,
+        status: 'done' as const,
+        percent: 100,
+      }));
+  const [draftSlots, setDraftSlots] = useState<AccessSlots>(() => {
+    const mode = normalizeAccessMode(slots.accessMethod);
+    const initial = { ...slots, accessMethod: mode };
+    if (mode !== 'API') {
+      initial.platformUrl = initial.platformUrl || buildPlatformUrl(mode, initial);
+      initial.platformKey = initial.platformKey || `sk-${mode.toLowerCase()}-********`;
+      initial.instrumentationCode = initial.instrumentationCode || buildInstrumentationCode(mode, initial);
+    }
+    return initial;
+  });
+  const [materialFiles, setMaterialFiles] = useState<UploadFile[]>(() => toUploadFiles(buildDefaultMaterials(slots)));
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(slots.connectivity ?? '通过（320ms，接口响应正常）');
+
+  const updateSlot = (key: keyof AccessSlots, value: string) => {
+    setDraftSlots((prev) => ({
+      ...prev,
+      [key]: key === 'materials'
+        ? value.split(/[、\n]+/).map((item) => item.trim()).filter(Boolean)
+        : value,
+    }));
+  };
+  const updateAccessMethod = (value: AccessMode) => {
+    setDraftSlots((prev) => {
+      const next: AccessSlots = { ...prev, accessMethod: value };
+      if (value === 'API') {
+        next.endpoint = next.endpoint || 'https://api.hospital.local/agent/access/v1';
+        next.apiKeyMasked = next.apiKeyMasked || '********';
+      } else {
+        next.platformUrl = next.platformUrl || buildPlatformUrl(value, next);
+        next.platformKey = next.platformKey || `sk-${value.toLowerCase()}-********`;
+        next.instrumentationCode = buildInstrumentationCode(value, next);
+      }
+      return next;
+    });
+    setTestResult(value === 'API' ? '通过（320ms，接口响应正常）' : `通过（320ms，${value} 配置校验通过）`);
+  };
+  const rerunConnectivityTest = () => {
+    const mode = normalizeAccessMode(draftSlots.accessMethod);
+    setTesting(true);
+    window.setTimeout(() => {
+      setTesting(false);
+      setTestResult(mode === 'API' ? '通过（320ms，接口响应正常）' : `通过（320ms，${mode} 平台 URL、密钥与埋点代码校验通过）`);
+      message.success('联通测试通过');
+    }, 520);
+  };
+  const rows: Array<{ key: keyof AccessSlots; label: string; multiline?: boolean; fallback: string }> = [
+    { key: 'agentName', label: '名称', fallback: '内分泌糖尿病随访管理助手' },
+    { key: 'version', label: '版本', fallback: '2.1' },
+    { key: 'department', label: '所属科室', fallback: '内分泌科' },
+    { key: 'clinicStage', label: '诊疗环节', fallback: '其他（出院后随访管理）' },
+    { key: 'functionDescription', label: '功能描述', multiline: true, fallback: buildAccessFunctionDescription() },
+    { key: 'source', label: '来源', fallback: '合作研发' },
+    { key: 'vendor', label: '供应商', fallback: '智医健康科技有限公司' },
+    { key: 'contact', label: '技术联系人', fallback: '陈明' },
+    { key: 'phone', label: '联系方式', fallback: '13812345678' },
+  ];
+  const introText = intro?.split(/\n\s*\n/)[0] ?? '描述信息完整 + 材料齐全 + 连通测试通过，可以提交。';
+  const accessMode = normalizeAccessMode(draftSlots.accessMethod);
+  const renderHeaderCell = (label: string) => (
+    <th
+      style={{
+        width: 118,
+        verticalAlign: 'top',
+        textAlign: 'left',
+        padding: '8px 10px',
+        color: '#595959',
+        background: '#F7FBFF',
+        border: '1px solid #D9E8FF',
+        fontWeight: 600,
+      }}
+    >
+      {label}
+    </th>
+  );
+  const renderBodyCell = (children: ReactNode) => (
+    <td style={{ padding: 6, border: '1px solid #D9E8FF', background: '#FFFFFF' }}>{children}</td>
+  );
+
+  return (
+    <div data-testid="home-v1-access-summary-card">
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>【接入申请汇总确认卡】</div>
+      <Text style={{ display: 'block', fontSize: 12, color: '#595959', marginBottom: 8 }}>
+        {introText}
+      </Text>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760, fontSize: 12 }}>
+          <tbody>
+            {rows.map((row) => {
+              const rawValue = draftSlots[row.key];
+              const value = Array.isArray(rawValue)
+                ? rawValue.join('\n')
+                : String(rawValue ?? row.fallback);
+              const fieldControl = row.multiline ? (
+                <TextArea
+                  value={value}
+                  autoSize={{ minRows: row.key === 'functionDescription' ? 4 : 2, maxRows: 8 }}
+                  onChange={(event) => updateSlot(row.key, event.target.value)}
+                  style={{ fontSize: 12, lineHeight: 1.6, resize: 'none' }}
+                />
+              ) : (
+                <Input
+                  value={value}
+                  onChange={(event) => updateSlot(row.key, event.target.value)}
+                  style={{ fontSize: 12 }}
+                />
+              );
+              return (
+                <tr key={row.key}>
+                  {renderHeaderCell(row.label)}
+                  {renderBodyCell(fieldControl)}
+                </tr>
+              );
+            })}
+            <tr>
+              {renderHeaderCell('接入方式')}
+              {renderBodyCell(
+                <Select
+                  value={accessMode}
+                  options={[
+                    { label: 'API 接入', value: 'API' },
+                    { label: 'SDK 接入', value: 'SDK' },
+                    { label: 'OTel 接入', value: 'OTel' },
+                  ]}
+                  onChange={(value) => updateAccessMethod(value as AccessMode)}
+                  style={{ width: 180 }}
+                />,
+              )}
+            </tr>
+            {accessMode === 'API' ? (
+              <>
+                <tr>
+                  {renderHeaderCell('接口地址')}
+                  {renderBodyCell(
+                    <Input
+                      value={draftSlots.endpoint ?? 'https://api.hospital.local/agent/access/v1'}
+                      onChange={(event) => updateSlot('endpoint', event.target.value)}
+                      style={{ fontSize: 12 }}
+                    />,
+                  )}
+                </tr>
+                <tr>
+                  {renderHeaderCell('API key')}
+                  {renderBodyCell(
+                    <Input.Password
+                      value={draftSlots.apiKeyMasked ?? '********'}
+                      onChange={(event) => updateSlot('apiKeyMasked', event.target.value)}
+                      style={{ fontSize: 12 }}
+                    />,
+                  )}
+                </tr>
+              </>
+            ) : (
+              <>
+                <tr>
+                  {renderHeaderCell('平台 URL 地址')}
+                  {renderBodyCell(
+                    <Input
+                      value={draftSlots.platformUrl ?? buildPlatformUrl(accessMode, draftSlots)}
+                      onChange={(event) => updateSlot('platformUrl', event.target.value)}
+                      style={{ fontSize: 12 }}
+                    />,
+                  )}
+                </tr>
+                <tr>
+                  {renderHeaderCell('平台密钥 key')}
+                  {renderBodyCell(
+                    <Input.Password
+                      value={draftSlots.platformKey ?? `sk-${accessMode.toLowerCase()}-********`}
+                      onChange={(event) => updateSlot('platformKey', event.target.value)}
+                      style={{ fontSize: 12 }}
+                    />,
+                  )}
+                </tr>
+                <tr>
+                  {renderHeaderCell('埋点代码生成')}
+                  {renderBodyCell(
+                    <TextArea
+                      value={draftSlots.instrumentationCode ?? buildInstrumentationCode(accessMode, draftSlots)}
+                      onChange={(event) => updateSlot('instrumentationCode', event.target.value)}
+                      autoSize={{ minRows: 4, maxRows: 6 }}
+                      style={{ fontSize: 12, lineHeight: 1.6, resize: 'none', fontFamily: 'monospace' }}
+                    />,
+                  )}
+                </tr>
+              </>
+            )}
+            <tr>
+              {renderHeaderCell('备案材料')}
+              {renderBodyCell(
+                <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                  <Upload
+                    multiple
+                    fileList={materialFiles}
+                    beforeUpload={() => false}
+                    onChange={(info) => {
+                      setMaterialFiles(info.fileList.map((file) => ({ ...file, status: 'done' as const, percent: 100 })));
+                    }}
+                  >
+                    <Button size="small" icon={<ReloadOutlined />}>
+                      重新上传
+                    </Button>
+                  </Upload>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    已上传 {materialFiles.length} 个文件，支持替换或继续补充备案材料。
+                  </Text>
+                </Space>,
+              )}
+            </tr>
+            <tr>
+              {renderHeaderCell('联通测试')}
+              {renderBodyCell(
+                <Space size={8} wrap>
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<ThunderboltOutlined />}
+                    loading={testing}
+                    onClick={rerunConnectivityTest}
+                  >
+                    联通测试
+                  </Button>
+                  <Tag color="success" icon={<FileTextOutlined />}>
+                    {testResult}
+                  </Tag>
+                </Space>,
+              )}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          哪项有误可直接在表格内修改。
+        </Text>
+      </div>
+    </div>
+  );
+};
+
+const RequirementSummaryCard = ({
+  slots,
+  onConfirm,
+}: {
+  slots: RequirementSlots;
+  onConfirm: (slots: RequirementSlots) => void;
+}) => {
+  const [draftSlots, setDraftSlots] = useState<RequirementSlots>(() => ({ ...slots }));
+  const urgencyOptions = ['低', '中', '高'].map((value) => ({ label: value, value }));
+  const normalizeUrgencyValue = (value?: string) => (
+    value && ['低', '中', '高'].includes(value) ? value : '中'
+  );
+  const updateSlot = (key: keyof RequirementSlots, value: string) => {
+    setDraftSlots((prev) => ({ ...prev, [key]: value }));
+  };
+  const rows: Array<{ key: keyof RequirementSlots; label: string; multiline?: boolean; fallback: string }> = [
+    { key: 'department', label: '提出科室', fallback: '超声医学科' },
+    { key: 'clinicStage', label: '诊疗环节', fallback: '辅助检查' },
+    { key: 'functionDescription', label: '功能描述', multiline: true, fallback: '待补充' },
+    { key: 'reason', label: '提出原因', multiline: true, fallback: '待补充' },
+    { key: 'resources', label: '所需资源', multiline: true, fallback: '待补充' },
+    { key: 'urgency', label: '需求紧急程度', fallback: '中' },
+    { key: 'proposer', label: '提出人', fallback: '待补充' },
+    { key: 'phone', label: '联系方式', fallback: '待补充' },
+  ];
+
+  return (
+    <div data-testid="home-v1-requirement-summary-card">
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>【汇总确认卡】</div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640, fontSize: 12 }}>
+          <tbody>
+            {rows.map((row) => {
+              const value = String(draftSlots[row.key] ?? row.fallback);
+              return (
+                <tr key={row.key}>
+                  <th
+                    style={{
+                      width: 118,
+                      verticalAlign: 'top',
+                      textAlign: 'left',
+                      padding: '8px 10px',
+                      color: '#595959',
+                      background: '#F7FBFF',
+                      border: '1px solid #D9E8FF',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {row.label}
+                  </th>
+                  <td style={{ padding: 6, border: '1px solid #D9E8FF', background: '#FFFFFF' }}>
+                    {row.key === 'urgency' ? (
+                      <Select
+                        value={normalizeUrgencyValue(value)}
+                        options={urgencyOptions}
+                        onChange={(nextValue) => updateSlot(row.key, nextValue)}
+                        style={{ width: '100%', fontSize: 12 }}
+                      />
+                    ) : row.multiline ? (
+                      <TextArea
+                        value={value}
+                        autoSize={{ minRows: 2, maxRows: 5 }}
+                        onChange={(event) => updateSlot(row.key, event.target.value)}
+                        style={{ fontSize: 12, lineHeight: 1.6, resize: 'none' }}
+                      />
+                    ) : (
+                      <Input
+                        value={value}
+                        onChange={(event) => updateSlot(row.key, event.target.value)}
+                        style={{ fontSize: 12 }}
+                      />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <Button type="primary" size="small" onClick={() => onConfirm(draftSlots)} data-testid="home-v1-requirement-summary-submit">
+          确认提交
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const AlertRuleDraftCard = ({
+  draft,
+  onConfirm,
+}: {
+  draft: AlertRuleDraft;
+  onConfirm: (draft: AlertRuleDraft) => void;
+}) => {
+  const [editedDraft, setEditedDraft] = useState<AlertRuleDraft>(() => ({ ...draft }));
+  const updateDraft = (key: AlertRuleDraftField, value: string) => {
+    setEditedDraft((prev) => ({ ...prev, [key]: value }));
+  };
+  const rows: Array<{ key: AlertRuleDraftField; label: string; multiline?: boolean; options?: string[] }> = [
+    { key: 'name', label: '规则名称' },
+    { key: 'object', label: '规则对象' },
+    { key: 'type', label: '规则类型', options: ['业务监控告警规则', '状态监控告警规则', '成本监控告警规则', '安全监控告警规则'] },
+    { key: 'metric', label: '触发指标' },
+    { key: 'condition', label: '触发条件', multiline: true },
+    { key: 'level', label: '告警级别', options: ['低危', '中危', '高危'] },
+    { key: 'channels', label: '通知渠道', options: ['企业微信', '企业微信 + 短信', '短信'] },
+    { key: 'status', label: '状态', options: ['待确认', '启用', '停用'] },
+    { key: 'effectiveTime', label: '生效时间' },
+    { key: 'creator', label: '创建人' },
+  ];
+
+  return (
+    <div data-testid="home-v1-alert-rule-draft-card" style={{ marginTop: 8 }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680, fontSize: 12 }}>
+          <tbody>
+            {rows.map((row) => {
+              const value = editedDraft[row.key] ?? '';
+              return (
+                <tr key={row.key}>
+                  <th
+                    style={{
+                      width: 118,
+                      verticalAlign: 'top',
+                      textAlign: 'left',
+                      padding: '8px 10px',
+                      color: '#595959',
+                      background: '#F7FBFF',
+                      border: '1px solid #D9E8FF',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {row.label}
+                  </th>
+                  <td style={{ padding: 6, border: '1px solid #D9E8FF', background: '#FFFFFF' }}>
+                    {row.options ? (
+                      <Select
+                        value={value}
+                        options={row.options.map((option) => ({ label: option, value: option }))}
+                        onChange={(nextValue) => updateDraft(row.key, nextValue)}
+                        style={{ width: '100%' }}
+                      />
+                    ) : row.multiline ? (
+                      <TextArea
+                        value={value}
+                        autoSize={{ minRows: 2, maxRows: 4 }}
+                        onChange={(event) => updateDraft(row.key, event.target.value)}
+                        style={{ fontSize: 12, lineHeight: 1.6, resize: 'none' }}
+                      />
+                    ) : (
+                      <Input
+                        value={value}
+                        onChange={(event) => updateDraft(row.key, event.target.value)}
+                        style={{ fontSize: 12 }}
+                      />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <Button
+          type="primary"
+          size="small"
+          onClick={() => onConfirm(editedDraft)}
+          data-testid="home-v1-alert-rule-save-enable"
+        >
+          确认保存并启用
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const HomeDashboardMetricsView = ({ metrics }: { metrics: HomeDashboardMetric[] }) => (
+  <div
+    style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+      gap: 8,
+      marginTop: 10,
+      minWidth: 0,
+      width: '100%',
+    }}
+    data-testid="home-v1-greeting-metrics"
+  >
+    {metrics.map((metric) => (
+      <div
+        key={metric.key}
+        style={{
+          border: '1px solid #D9E8FF',
+          background: '#F7FBFF',
+          borderRadius: 8,
+          padding: '10px 12px 12px',
+          minWidth: 0,
+          minHeight: 132,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+        data-testid={`home-v1-greeting-metric-${metric.key}`}
+      >
+        <div style={{ color: '#595959', fontSize: 11, lineHeight: '16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {metric.label}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 2 }}>
+          <strong style={{ color: '#262626', fontSize: 18, lineHeight: '24px', fontWeight: 700 }}>
+            {metric.value}
+          </strong>
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', marginTop: 10, minHeight: 62 }}>
+          <MiniTrendChart values={metric.trend.map((item) => item.value)} color={metric.accent} fill={metric.fill} />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+const MiniTrendChart = ({ values, color, fill }: { values: number[]; color: string; fill: string }) => {
+  const width = 260;
+  const height = 62;
+  const paddingX = 3;
+  const paddingY = 4;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = Math.max(1, max - min);
+  const points = values.map((value, index) => {
+    const x = paddingX + (index * (width - paddingX * 2)) / Math.max(1, values.length - 1);
+    const y = height - paddingY - ((value - min) / span) * (height - paddingY * 2);
+    return { x, y };
+  });
+  const line = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+  const area = `${paddingX},${height - paddingY} ${line} ${width - paddingX},${height - paddingY}`;
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      width="100%"
+      height="62"
+      role="img"
+      aria-label="月趋势图"
+      style={{ display: 'block', width: '100%', marginTop: 4 }}
+    >
+      <polyline points={`${paddingX},${height - paddingY} ${width - paddingX},${height - paddingY}`} fill="none" stroke="#E8EEF7" strokeWidth="1" />
+      <polygon points={area} fill={fill} />
+      <polyline points={line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      {points.map((point, index) => (
+        <circle key={`${point.x}-${index}`} cx={point.x} cy={point.y} r="1.8" fill="#FFFFFF" stroke={color} strokeWidth="1.4" />
+      ))}
+    </svg>
+  );
+};
+
 const accessAuditRouteByCode: Record<string, string> = {
   '0503-0001': '/app/agent-center/audit/acc-xg-001',
   '0201-0006': '/app/agent-center/audit/acc-004',
   '0201-0004': '/app/agent-center/audit/acc-009',
+};
+
+const EvaluationAuditTableView = ({
+  table,
+  navigate,
+  onQuickAction,
+}: {
+  table: EvaluationAuditTable;
+  navigate: (to: string) => void;
+  onQuickAction?: (text: string) => void;
+}) => {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const rows = table.rows;
+  const allSelected = rows.length > 0 && selectedIds.length === rows.length;
+  const partiallySelected = selectedIds.length > 0 && selectedIds.length < rows.length;
+  const selectedText = selectedIds
+    .map((id) => rows.find((row) => row.id === id)?.agentCode)
+    .filter(Boolean)
+    .join(' ');
+
+  const openReviewPage = (task: EvaluationTask) => {
+    const to = `/app/evaluation/tasks/${task.id}/review?fromTab=${encodeURIComponent('待审核')}`;
+    const url = new URL(to, window.location.origin);
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
+  };
+
+  if (!rows.length) {
+    return (
+      <div
+        style={{
+          marginTop: 10,
+          border: '1px solid #D9E8FF',
+          background: '#F7FBFF',
+          borderRadius: 8,
+          padding: 10,
+        }}
+        data-testid="home-v1-evaluation-audit-empty"
+      >
+        <Text style={{ fontSize: 12 }}>{table.emptyText ?? '当前暂无待审核评测任务。'}</Text>
+        <div style={{ marginTop: 8 }}>
+          <Button size="small" onClick={() => navigate('/app/evaluation/tasks?tab=待审核')}>
+            打开待审核任务
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        border: '1px solid #E5E7EB',
+        background: '#FFFFFF',
+        borderRadius: 8,
+        overflow: 'hidden',
+      }}
+      data-testid="home-v1-evaluation-audit-table"
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, borderBottom: '1px solid #F0F0F0', flexWrap: 'wrap' }}>
+        <Text strong style={{ fontSize: 12, marginRight: 4 }}>
+          待审核评测任务
+        </Text>
+        <Checkbox
+          indeterminate={partiallySelected}
+          checked={allSelected}
+          onChange={(event) => setSelectedIds(event.target.checked ? rows.map((row) => row.id) : [])}
+        >
+          全选
+        </Checkbox>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          已选 {selectedIds.length} / {rows.length}
+        </Text>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960, fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: '#FAFAFA', color: '#595959' }}>
+              <th style={monitorThStyle}>选择</th>
+              <th style={monitorThStyle}>智能体编号</th>
+              <th style={monitorThStyle}>智能体名称</th>
+              <th style={monitorThStyle}>智能体版本号</th>
+              <th style={monitorThStyle}>预审结论</th>
+              <th style={monitorThStyle}>评测标签</th>
+              <th style={monitorThStyle}>测试样本量</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const conclusion = getEvaluationSystemConclusion(row) === '准入' ? '通过' : '退回修改';
+              const report = getReportByTaskId(row.id);
+              const tags = [
+                row.riskLevel,
+                row.sampleLevel,
+                report?.overallRisk ? `总体${report.overallRisk}` : undefined,
+              ].filter(Boolean);
+              return (
+                <tr key={row.id}>
+                  <td style={monitorTdStyle}>
+                    <Checkbox
+                      checked={selectedIds.includes(row.id)}
+                      onChange={(event) => {
+                        setSelectedIds((prev) =>
+                          event.target.checked
+                            ? Array.from(new Set([...prev, row.id]))
+                            : prev.filter((id) => id !== row.id),
+                        );
+                      }}
+                      aria-label={`选择${row.agentName}`}
+                    />
+                  </td>
+                  <td style={{ ...monitorTdStyle, minWidth: 120 }}>{row.agentCode}</td>
+                  <td style={{ ...monitorTdStyle, minWidth: 180 }}>
+                    <Button type="link" size="small" style={{ padding: 0, height: 'auto', whiteSpace: 'normal', textAlign: 'left' }} onClick={() => openReviewPage(row)}>
+                      {row.agentName}
+                    </Button>
+                  </td>
+                  <td style={monitorTdStyle}>{row.version}</td>
+                  <td style={{ ...monitorTdStyle, minWidth: 110 }}>
+                    <Tag color={conclusion === '通过' ? 'green' : 'orange'} style={{ marginInlineEnd: 0 }}>
+                      {conclusion}
+                    </Tag>
+                  </td>
+                  <td style={{ ...monitorTdStyle, minWidth: 220 }}>
+                    <Space size={4} wrap>
+                      {tags.map((tag) => (
+                        <Tag key={tag} style={{ marginInlineEnd: 0 }}>
+                          {tag}
+                        </Tag>
+                      ))}
+                    </Space>
+                  </td>
+                  <td style={monitorTdStyle}>{sampleLevelLabel(row.sampleLevel)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: 8, borderTop: '1px solid #F0F0F0', flexWrap: 'wrap' }}>
+        <Button
+          size="small"
+          type="primary"
+          disabled={!selectedIds.length}
+          onClick={() => onQuickAction?.(`审核通过 ${selectedText}`)}
+        >
+          审核通过
+        </Button>
+        <Button
+          size="small"
+          danger
+          disabled={!selectedIds.length}
+          onClick={() => onQuickAction?.(`退回修改 ${selectedText}：依据预审结论退回修改`)}
+        >
+          退回修改
+        </Button>
+      </div>
+    </div>
+  );
 };
 
 const AccessAuditTableView = ({
@@ -3662,23 +5039,6 @@ const AccessAuditTableView = ({
         <Text type="secondary" style={{ fontSize: 12 }}>
           已选 {selectedCodes.length} / {rows.length}
         </Text>
-        <span style={{ flex: 1 }} />
-        <Button
-          size="small"
-          type="primary"
-          disabled={!selectedCodes.length}
-          onClick={() => onQuickAction?.(`审核通过 ${selectedText}`)}
-        >
-          审核通过
-        </Button>
-        <Button
-          size="small"
-          danger
-          disabled={!selectedCodes.length}
-          onClick={() => onQuickAction?.(`审核不通过 ${selectedText}：依据预审建议退回修改`)}
-        >
-          审核不通过
-        </Button>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1320, fontSize: 12 }}>
@@ -3686,13 +5046,13 @@ const AccessAuditTableView = ({
             <tr style={{ background: '#FAFAFA', color: '#595959' }}>
               <th style={monitorThStyle}>选择</th>
               <th style={monitorThStyle}>智能体名称</th>
+              <th style={monitorThStyle}>预审结论</th>
               <th style={monitorThStyle}>所属科室</th>
               <th style={monitorThStyle}>诊断环节</th>
               <th style={monitorThStyle}>智能体来源</th>
               <th style={monitorThStyle}>供应商名称</th>
               <th style={monitorThStyle}>核心功能</th>
               <th style={monitorThStyle}>智能体版本</th>
-              <th style={monitorThStyle}>预审建议</th>
             </tr>
           </thead>
           <tbody>
@@ -3717,22 +5077,40 @@ const AccessAuditTableView = ({
                   </Button>
                   <div style={{ color: '#8C8C8C', fontSize: 11 }}>{row.code}</div>
                 </td>
-                <td style={monitorTdStyle}>{row.department}</td>
-                <td style={monitorTdStyle}>{row.clinicStage}</td>
-                <td style={monitorTdStyle}>{row.source}</td>
-                <td style={monitorTdStyle}>{row.vendor}</td>
-                <td style={{ ...monitorTdStyle, minWidth: 320 }}>{row.description}</td>
-                <td style={monitorTdStyle}>{row.version}</td>
                 <td style={{ ...monitorTdStyle, minWidth: 150 }}>
                   <Tag color={row.precheck === '建议通过' ? 'green' : 'orange'} style={{ marginInlineEnd: 0 }}>
                     {row.precheck}
                   </Tag>
                   <div style={{ color: '#8C8C8C', fontSize: 11, marginTop: 2 }}>{row.precheckSummary}</div>
                 </td>
+                <td style={monitorTdStyle}>{row.department}</td>
+                <td style={monitorTdStyle}>{row.clinicStage}</td>
+                <td style={monitorTdStyle}>{row.source}</td>
+                <td style={monitorTdStyle}>{row.vendor}</td>
+                <td style={{ ...monitorTdStyle, minWidth: 320 }}>{row.description}</td>
+                <td style={monitorTdStyle}>{row.version}</td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: 8, borderTop: '1px solid #F0F0F0', flexWrap: 'wrap' }}>
+        <Button
+          size="small"
+          type="primary"
+          disabled={!selectedCodes.length}
+          onClick={() => onQuickAction?.(`审核通过 ${selectedText}`)}
+        >
+          审核通过
+        </Button>
+        <Button
+          size="small"
+          danger
+          disabled={!selectedCodes.length}
+          onClick={() => onQuickAction?.(`退回修改 ${selectedText}：依据预审建议退回修改`)}
+        >
+          退回修改
+        </Button>
       </div>
     </div>
   );
@@ -3909,6 +5287,77 @@ function buildGreeting(role: '信息科管理员' | '科室管理员', userName?
     : `您好,${who},我是医小管,请问有什么能帮到您?\n\n我可以帮您快速:\n- 查找本科室可用的智能体\n- 提报建设需求 / 跟踪接入审批\n- 了解本科室本月调用与告警情况`;
 }
 
+function buildHomeDashboardMetrics(role: '信息科管理员' | '科室管理员'): HomeDashboardMetric[] {
+  const agents = getLedgerVisibleAgents(role);
+  const calls = getCallVolumeStat(agents);
+  const alarms = getAlarmStat(agents);
+
+  return [
+    {
+      key: 'managedAgents',
+      label: '纳管智能体数量',
+      value: `${agents.length} 个`,
+      trend: buildManagedAgentMonthlyTrend(agents),
+      accent: '#1677FF',
+      fill: 'rgba(22, 119, 255, 0.14)',
+    },
+    {
+      key: 'totalCalls',
+      label: '总调用量',
+      value: `${calls.total.toLocaleString()} 次`,
+      trend: buildScaledMonthlyTrend(calls.monthly, [0.62, 0.7, 0.78, 0.86, 0.94, 1]),
+      accent: '#13A8A8',
+      fill: 'rgba(19, 168, 168, 0.14)',
+    },
+    {
+      key: 'alerts',
+      label: '告警次数',
+      value: `${alarms.total.toLocaleString()} 次`,
+      trend: buildScaledMonthlyTrend(alarms.monthly, [0.78, 0.92, 0.72, 1, 0.84, 0.68]),
+      accent: '#FA8C16',
+      fill: 'rgba(250, 140, 22, 0.16)',
+    },
+  ];
+}
+
+function buildRecentMonthLabels(count = 6, anchor = new Date()) {
+  return Array.from({ length: count }, (_, index) => {
+    const d = new Date(anchor);
+    d.setDate(1);
+    d.setMonth(anchor.getMonth() - (count - 1 - index));
+    return `${d.getMonth() + 1}月`;
+  });
+}
+
+function buildManagedAgentMonthlyTrend(agents: LedgerAgent[]) {
+  const latestAccessTime = agents
+    .map((agent) => new Date(agent.accessTime))
+    .filter((date) => !Number.isNaN(date.getTime()))
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+  const anchor = latestAccessTime ?? new Date();
+  const labels = buildRecentMonthLabels(6, anchor);
+  const buckets = new Map(labels.map((label) => [label, 0]));
+
+  agents.forEach((agent) => {
+    const accessDate = new Date(agent.accessTime);
+    if (Number.isNaN(accessDate.getTime())) return;
+    const label = `${accessDate.getMonth() + 1}月`;
+    if (buckets.has(label)) buckets.set(label, (buckets.get(label) ?? 0) + 1);
+  });
+
+  return labels.map((month) => ({ month, value: buckets.get(month) ?? 0 }));
+}
+
+function buildScaledMonthlyTrend(total: number, weights: number[]) {
+  const labels = buildRecentMonthLabels(weights.length);
+  const weightedTotal = weights.reduce((sum, weight) => sum + weight, 0) || 1;
+  const average = total / weightedTotal;
+  return labels.map((month, index) => ({
+    month,
+    value: Math.max(0, Math.round(average * weights[index])),
+  }));
+}
+
 function buildRequirementOpening(): string {
   return '你好！我是医小管，我来帮您登记智能体建设需求（约 8 步、3–5 分钟，内容随时可改）。请用一两句话描述：您想建设一个什么样的智能体、主要解决什么问题？';
 }
@@ -4066,7 +5515,7 @@ function buildAccessAuditOpening(flow: AccessAuditFlow): string {
   if (!pending.length) return '已识别意图：接入审核。当前暂无待接入审核申请。';
   return `已识别意图：接入审核。当前待接入审核 ${pending.length} 项，列表如下。
 
-您可以在列表中单选或多选后执行“审核通过 / 审核不通过”；点击智能体名称可在新页面查看待审核信息。`;
+您可以在列表中单选或多选后执行“审核通过 / 退回修改”；点击智能体名称可在新页面查看待审核信息。`;
 }
 
 function buildAccessAuditDetail(agent: AccessAuditAgent, full = false): string {
@@ -5593,6 +7042,16 @@ const evaluationPendingAgents: EvaluationPendingAgent[] = [
   },
 ];
 
+const ultrasoundEvaluationAgent: EvaluationPendingAgent = {
+  id: 'eval-pending-ultrasound-001',
+  agentId: 'agent-eval-ultrasound-0001',
+  code: 'US-0001',
+  name: '超声检查预约助手',
+  version: 'v1.0',
+  department: '超声医学科',
+  riskLevel: '中等风险',
+};
+
 const EVALUATION_SCENE = {
   noPermission: '新建评测仅对信息科管理员开放，暂无法为您办理',
   sidetrack: '我们先来完成智能体评测，稍后再为您解决此问题',
@@ -5635,6 +7094,46 @@ function parseSampleLevel(text: string): SampleLevel | undefined {
   if (/标准|60%/.test(text)) return '标准评测';
   if (/快速|30%|快评/.test(text)) return '快速评测';
   return undefined;
+}
+
+function isUltrasoundEvaluationCreateText(text: string) {
+  const normalized = text.trim();
+  return /评测/.test(normalized) && /超声波?检查|超声检查|超声/.test(normalized) && /智能体|助手/.test(normalized);
+}
+
+function buildUltrasoundSampleLevelPrompt() {
+  return `请问本次评测需要使用的样本量？
+
+快速评测（抽取30%题量，评测速度较快）
+
+标准评测（抽取60%题量，评测速度中等）
+
+深度评测（抽取100%题量，评测速度较慢）`;
+}
+
+const ULTRASOUND_SAMPLE_LEVEL_ACTIONS = [
+  '快速评测',
+  '标准评测',
+  '深度评测',
+];
+
+function buildUltrasoundEvaluationCreatedReply(level: SampleLevel) {
+  return `已创建评测任务：
+
+评测智能体名称：超声检查预约助手
+
+评测维度：${EVALUATION_SCENE.dimensions}
+
+评测样本量：${sampleLevelLabel(level)}`;
+}
+
+function buildInitialEvaluationProgress(level: SampleLevel): EvaluationProgressSummary {
+  const progressByLevel: Record<SampleLevel, EvaluationProgressSummary> = {
+    快速评测: { percent: 18, estimatedRemainingHours: 1 },
+    标准评测: { percent: 12, estimatedRemainingHours: 2 },
+    深度评测: { percent: 8, estimatedRemainingHours: 4 },
+  };
+  return progressByLevel[level];
 }
 
 function sampleLevelLabel(level?: SampleLevel): string {
@@ -5724,7 +7223,7 @@ function createEvaluationTask(slots: EvaluationSlots, creator?: string): Evaluat
       evalResultDesc: '五维安全评测综合表现达到准入要求，数据安全维度建议持续关注。',
     };
     mockEvaluationTasks.unshift(task);
-    mockEvaluationReports[taskId] = {
+    const report: EvaluationReport = {
       taskId,
       conclusion: '准入',
       overallRisk: task.systemRiskLevel ?? '中等风险',
@@ -5739,6 +7238,8 @@ function createEvaluationTask(slots: EvaluationSlots, creator?: string): Evaluat
         riskLevel: dimensionScores[dimension] >= 90 ? '低风险' : '中等风险',
       })),
     };
+    mockEvaluationReports[taskId] = report;
+    persistChatEvaluationTask(task, report);
   });
   return { ...slots, agent: agents[0], agents, taskId: taskIds[0], taskNo: taskNos[0], taskIds, taskNos, totalProgress: 100, totalScore, dimensionScores };
 }
@@ -5788,6 +7289,10 @@ ${resultHeader}
 收尾动作入口：查看评测进度、查看评测结果详情、新建下一个评测。`;
 }
 
+function evaluationTaskDetailPath(taskId?: string): string {
+  return taskId ? `/app/evaluation/tasks/${taskId}/report` : '/app/evaluation/tasks';
+}
+
 function getEvaluationNext(
   flow: EvaluationFlow,
   text: string,
@@ -5796,6 +7301,8 @@ function getEvaluationNext(
   flow: EvaluationFlow;
   replies: string[];
   link?: { to: string; text: string };
+  actionLinks?: Array<{ to: string; text: string; download?: boolean }>;
+  evaluationProgress?: EvaluationProgressSummary;
   quickActions?: string[];
 } {
   const normalized = text.trim();
@@ -5839,6 +7346,53 @@ function getEvaluationNext(
   }
 
   switch (flow.step) {
+    case 'confirmUltrasoundAgent': {
+      if (/是|确认|开启|开始|对|没错/.test(normalized)) {
+        return {
+          flow: {
+            ...flow,
+            step: 'sampleLevel',
+            slots: {
+              ...slots,
+              agent: ultrasoundEvaluationAgent,
+              agents: [ultrasoundEvaluationAgent],
+            },
+          },
+          replies: [buildUltrasoundSampleLevelPrompt()],
+          quickActions: ULTRASOUND_SAMPLE_LEVEL_ACTIONS,
+        };
+      }
+      return {
+        flow,
+        replies: ['请先确认是否为「超声检查预约助手」智能体。'],
+        quickActions: ['是的，开启评测'],
+      };
+    }
+    case 'sampleLevel': {
+      const level = parseSampleLevel(normalized);
+      if (!level) {
+        return {
+          flow,
+          replies: [buildUltrasoundSampleLevelPrompt()],
+          quickActions: ULTRASOUND_SAMPLE_LEVEL_ACTIONS,
+        };
+      }
+      const submittedSlots = createEvaluationTask(
+        {
+          ...slots,
+          agent: ultrasoundEvaluationAgent,
+          agents: [ultrasoundEvaluationAgent],
+          levels: defaultEvaluationLevels(level),
+        },
+        creator,
+      );
+      return {
+        flow: { ...flow, step: 'done', slots: submittedSlots },
+        replies: [buildUltrasoundEvaluationCreatedReply(level)],
+        evaluationProgress: buildInitialEvaluationProgress(level),
+        actionLinks: [{ to: evaluationTaskDetailPath(submittedSlots.taskId), text: '查看任务详情' }],
+      };
+    }
     case 'n1': {
       const agents = locateEvaluationAgents(normalized);
       const selectedAgents = agents.length ? agents : slots.agents ?? (slots.agent ? [slots.agent] : []);
@@ -5882,7 +7436,7 @@ function getEvaluationNext(
         return {
           flow: { ...flow, step: 'done', slots: submittedSlots },
           replies: [buildEvaluationProgress(submittedSlots), buildEvaluationResult(submittedSlots)],
-          link: { to: `/app/evaluation/tasks/${submittedSlots.taskId}/progress`, text: '查看评测进度' },
+          link: { to: evaluationTaskDetailPath(submittedSlots.taskId), text: '查看评测进度' },
           quickActions: ['查看评测进度', '查看评测结果详情', '新建下一个评测'],
         };
       }
@@ -5914,7 +7468,7 @@ function getEvaluationDoneReply(
     return {
       flow,
       reply: buildEvaluationProgress(flow.slots),
-      link: { to: `/app/evaluation/tasks/${flow.slots.taskId}/progress`, text: '查看评测进度' },
+      link: { to: evaluationTaskDetailPath(flow.slots.taskId), text: '查看评测进度' },
       quickActions: ['查看评测进度', '查看评测结果详情', '新建下一个评测'],
     };
   }
@@ -5922,7 +7476,7 @@ function getEvaluationDoneReply(
     return {
       flow,
       reply: buildEvaluationResult(flow.slots),
-      link: { to: `/app/evaluation/tasks/${flow.slots.taskId}/report`, text: '查看评测结果详情' },
+      link: { to: evaluationTaskDetailPath(flow.slots.taskId), text: '查看评测结果详情' },
       quickActions: ['查看评测进度', '查看评测结果详情', '新建下一个评测'],
     };
   }
@@ -6014,6 +7568,22 @@ function locateEvaluationAuditTask(flow: EvaluationAuditFlow, text: string) {
     const target = `${task.taskNo} ${task.agentCode} ${task.agentName} ${task.version} ${task.department}`.toLowerCase();
     return target.includes(normalized) || normalized.includes(task.agentCode.toLowerCase()) || normalized.includes(task.agentName.toLowerCase().slice(0, 4));
   });
+}
+
+function locateEvaluationAuditTasks(flow: EvaluationAuditFlow, text: string) {
+  const queue = availableEvaluationAuditTasks(flow);
+  const normalized = text.toLowerCase();
+  if (/全部|全选|所有|这批/.test(normalized)) return queue;
+  const matched = queue.filter((task) => {
+    const target = `${task.taskNo} ${task.agentCode} ${task.agentName} ${task.version} ${task.department}`.toLowerCase();
+    return normalized.includes(task.agentCode.toLowerCase())
+      || normalized.includes(task.agentName.toLowerCase())
+      || normalized.includes(task.agentName.toLowerCase().slice(0, 4))
+      || target.includes(normalized);
+  });
+  const single = locateEvaluationAuditTask(flow, text);
+  if (matched.length) return matched;
+  return single ? [single] : [];
 }
 
 function buildEvaluationAuditPresentation(task: EvaluationTask): string {
@@ -6127,6 +7697,76 @@ ${task.agentCode} ${task.agentName}｜最终评测结果：${finalResult}｜${sy
   };
 }
 
+function applyEvaluationAuditBatch(
+  flow: EvaluationAuditFlow,
+  tasks: EvaluationTask[],
+  conclusion: '审核通过' | '退回修改',
+  reviewerName?: string,
+  reason?: string,
+): { flow: EvaluationAuditFlow; reply: string; link?: { to: string; text: string }; quickActions?: string[]; evaluationAuditTable?: EvaluationAuditTable } {
+  const reviewer = reviewerName ?? '王主任';
+  const time = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const records: EvaluationAuditRecord[] = [];
+
+  tasks.forEach((task) => {
+    const { systemConclusion } = getEvaluationAuditDetail(task);
+    const comment = (reason || defaultEvaluationAuditComment(conclusion, task)).trim();
+    const finalResult: EvaluationAuditRecord['finalResult'] =
+      conclusion === '审核通过' ? systemConclusion : '退回修改';
+
+    task.status = conclusion === '审核通过' ? '审核通过' : '退回重测';
+    task.reviewComment = comment;
+    task.reviewer = reviewer;
+    task.reviewCompleteTime = `${time}:00`;
+    task.evalResult = finalResult === '退回修改' ? '退回' : finalResult as EvaluationConclusion;
+    task.evalResultDesc = finalResult === '准入'
+      ? '管理员审核通过，最终准入评测结果为准入。'
+      : finalResult === '退回'
+        ? '管理员审核通过并采纳系统退回结论，最终准入评测结果为退回。'
+        : '管理员退回修改，等待申请人整改后重新评测。';
+    if (finalResult !== '准入') task.rejectTime = `${time}:00`;
+
+    records.push({
+      taskId: task.id,
+      agentCode: task.agentCode,
+      agentName: task.agentName,
+      systemConclusion,
+      reviewConclusion: conclusion,
+      finalResult,
+      comment,
+      reviewer,
+      time,
+    });
+  });
+
+  const reviewedIds = Array.from(new Set([...flow.reviewedIds, ...tasks.map((task) => task.id)]));
+  const nextFlow: EvaluationAuditFlow = {
+    ...flow,
+    step: availableEvaluationAuditTasks({ ...flow, reviewedIds }).length > 0 ? 'n1' : 'done',
+    reviewedIds,
+    records: [...flow.records, ...records],
+    selectedTaskId: undefined,
+    reviewConclusion: undefined,
+    comment: undefined,
+  };
+  const remainingRows = availableEvaluationAuditTasks(nextFlow);
+  const names = records.map((record) => `${record.agentCode} ${record.agentName}`).join('、');
+  const reply = `${names} 已${conclusion}。
+审核人：${reviewer}
+审核时间：${time}
+${conclusion === '退回修改' ? `退回原因：${reason || '依据预审结论退回修改'}` : '已同步状态流转并通知申请人。'}
+
+${remainingRows.length ? `剩余待审核评测任务 ${remainingRows.length} 个：` : '待审核评测任务已清空。'}`;
+
+  return {
+    flow: nextFlow,
+    reply,
+    link: { to: '/app/evaluation/tasks?tab=审核通过', text: '查看审核记录' },
+    quickActions: remainingRows.length ? ['看第一条', '查看批次汇总', '暂停审核'] : ['查看审核记录', '查看批次汇总'],
+    evaluationAuditTable: remainingRows.length ? { rows: remainingRows } : undefined,
+  };
+}
+
 function buildEvaluationAuditBatchSummary(flow: EvaluationAuditFlow) {
   const admitted = flow.records.filter((record) => record.finalResult === '准入').length;
   const returned = flow.records.filter((record) => record.finalResult !== '准入').length;
@@ -6151,9 +7791,32 @@ function getEvaluationAuditNext(
   flow: EvaluationAuditFlow;
   replies: string[];
   link?: { to: string; text: string };
+  evaluationAuditTable?: EvaluationAuditTable;
   quickActions?: string[];
 } {
   const normalized = text.trim();
+  const batchConclusion = parseEvaluationAuditConclusion(normalized);
+  const batchTasks = batchConclusion ? locateEvaluationAuditTasks(flow, normalized) : [];
+  if (batchConclusion && batchTasks.length > 0 && flow.step === 'n1') {
+    const reason = batchConclusion === '退回修改'
+      ? (normalized.match(/[：:](.+)$/)?.[1]?.trim()
+        || extractEvaluationAuditComment(normalized.replace(/退回修改|退回|驳回|修改/g, '')).replace(/^[\s：:]+/, ''))
+      : undefined;
+    const next = applyEvaluationAuditBatch(
+      flow,
+      batchTasks,
+      batchConclusion,
+      reviewerName,
+      reason || (batchConclusion === '退回修改' ? '依据预审结论退回修改' : undefined),
+    );
+    return {
+      flow: next.flow,
+      replies: [next.reply],
+      link: next.link,
+      evaluationAuditTable: next.evaluationAuditTable,
+      quickActions: next.quickActions,
+    };
+  }
   if (/暂停|先停|稍后|保存进度/.test(normalized)) {
     const nextFlow = { ...flow, step: 'done' as const, paused: true };
     return {
@@ -6442,7 +8105,7 @@ function buildMonitorMetricReply(text: string, role: '信息科管理员' | '科
 
 **下钻**：点击 **任务执行成功率**、**调用量**、**P95 响应时间** 可进入监控明细 / 趋势页。
 
-**告警对照 + 引导报告**：部分影像与导诊智能体已触发〔高/中〕告警，这条已产生告警，要看未处理告警吗？需要我据此生成《智能体运行监控情况报告》吗？`;
+**告警对照 + 引导报告**：部分影像与导诊智能体已触发〔高/中〕告警。这条已产生告警，要看未处理告警吗？是否需要我生成《智能体运行监控情况报告》？`;
 }
 
 function buildMonitorReport(flow: MonitorFlow, text: string, role: '信息科管理员' | '科室管理员') {
@@ -6465,7 +8128,7 @@ function buildMonitorReport(flow: MonitorFlow, text: string, role: '信息科管
   }
   return {
     flow: { ...flow, lastIntent: 'report' as const, reportPeriod: period, reportScope: scope },
-    reply: `已生成《智能体运行监控情况报告》草稿（${scope}·${period}）。
+    reply: `已生成《智能体运行监控情况报告》（${scope}·${period}）。
 
 报告按四维组织：
 - 业务监控：调用量、成功率、响应时间、任务中断率
@@ -6473,15 +8136,15 @@ function buildMonitorReport(flow: MonitorFlow, text: string, role: '信息科管
 - 成本监控：Token、CPU/GPU/内存使用、成本趋势
 - 安全监控：注入攻击、越权访问、敏感信息外发拦截
 
-已汇总当前告警与关注项，支持在线编辑/批注，并可导出用于汇报。`,
-    link: { to: '/app/monitoring', text: '打开报告编辑页' },
-    quickActions: ['查看未处理告警', '查看日/周/月趋势', '订阅运行速读'],
+已按当前角色套用${role === '信息科管理员' ? '《全院智能体运行监控情况报告模板》' : '《科室智能体运行监控情况报告模板》'}，可查看报告详情，也支持下载 PDF 格式报告。`,
+    link: { to: '/app/monitoring/report', text: '查看报告详情' },
+    quickActions: ['下载 PDF', '查看未处理告警', '查看日/周/月趋势'],
     reportCard: {
       title: '智能体运行监控情况报告',
       scope,
       period,
       modules: ['业务', '状态', '成本', '安全'],
-      to: '/app/monitoring',
+      to: '/app/monitoring/report',
     },
   };
 }
@@ -6607,7 +8270,7 @@ function getMonitorReply(
 
 口径：${monitorScope(role)}，监控中心业务/状态/成本/安全四维指标。需要我据此生成报告吗？`,
       link: { to: '/app/monitoring/business', text: '查看业务监控明细' },
-      quickActions: ['是', '否', '查看未处理告警'],
+      quickActions: ['生成报告', '否', '查看未处理告警'],
     };
   }
 
@@ -6617,7 +8280,7 @@ function getMonitorReply(
       flow: { ...flow, lastIntent: 'overview_metric', reportScope: monitorScope(role), reportPeriod: period },
       reply: buildMonitorMetricReply(normalized, role),
       link: { to: '/app/monitoring/business', text: '查看监控明细' },
-      quickActions: ['是', '否', '查看未处理告警'],
+      quickActions: ['生成报告', '否', '查看未处理告警'],
     };
   }
 
@@ -6808,7 +8471,12 @@ function buildAccessReadySummary(slots: AccessSlots) {
 ${buildAccessSummary(slots)}`;
 }
 
+function shouldRenderAccessSummary(flow: AccessFlow, replyIndex: number, replyCount: number) {
+  return flow.step === 'summary' && replyIndex === replyCount - 1;
+}
+
 const ACCESS_SUBMIT_QUICK_ACTIONS = ['确认提交'];
+const ACCESS_UPLOAD_QUICK_ACTIONS = ['上传备案材料'];
 
 function extractCompleteAccessSlots(text: string): AccessSlots | null {
   const normalized = text.trim();
@@ -6910,7 +8578,7 @@ function getAccessNext(
             ? buildAccessReadySummary(completeSlots)
             : buildAccessMaterialCheck(completeSlots),
         ],
-        quickActions: materialComplete ? ACCESS_SUBMIT_QUICK_ACTIONS : ['上传备案材料'],
+        quickActions: materialComplete ? ACCESS_SUBMIT_QUICK_ACTIONS : ACCESS_UPLOAD_QUICK_ACTIONS,
       };
     }
   }
@@ -6921,7 +8589,7 @@ function getAccessNext(
         return {
           flow,
           replies: ['材料基础校验未通过：当前文件不可解析或超过 30M。请改用 PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等格式，或改为文字描述。'],
-          quickActions: ['我先口述材料内容', '上传技术规格书.docx，并口述产品说明'],
+          quickActions: ACCESS_UPLOAD_QUICK_ACTIONS,
         };
       }
       Object.assign(slots, ACCESS_SCENE.mock.parseMaterial(normalized));
@@ -7084,7 +8752,7 @@ ${slots.functionDescription}
         return {
           flow: { ...flow, step: 'materialConfirm', slots },
           replies: [buildAccessMaterialCheck(slots)],
-          quickActions: ['上传备案材料'],
+          quickActions: ACCESS_UPLOAD_QUICK_ACTIONS,
         };
       }
 
@@ -7392,13 +9060,16 @@ function buildLedgerReportReply(
   const calls = getCallVolumeStat(agents);
   const alarms = getAlarmStat(agents);
   const onlineRate = (getInstanceOnlineRateStat(agents).rate * 100).toFixed(1);
-  const reply = `已生成《智能体管理情况报告》草稿（${scope} · ${period}），含规模与分布、运行与调用、异常告警与故障、风险分级、准入评测进度五模块，每模块配图 + 综述。已进入编辑页可编辑/导出，要顺便订阅每周速读吗？\n\n报告摘要：已纳管 **智能体 ${agents.length} 个**，${period}调用 **${calls.daily.toLocaleString()} 次**，正常运行率 **${onlineRate}%**，异常告警 **${alarms.daily} 次**。`;
+  const useTodayPlatformSummary = scope === '全院' && period === '今日';
+  const reportTotal = useTodayPlatformSummary ? TODAY_LEDGER_REPORT_SUMMARY.totalAgents : agents.length;
+  const reportCalls = useTodayPlatformSummary ? TODAY_LEDGER_REPORT_SUMMARY.calls : calls.daily;
+  const reportOnlineRate = useTodayPlatformSummary ? TODAY_LEDGER_REPORT_SUMMARY.onlineRate : `${onlineRate}%`;
+  const reportAlarms = useTodayPlatformSummary ? TODAY_LEDGER_REPORT_SUMMARY.alarms : alarms.daily;
+  const reply = `已生成《智能体管理情况报告》。\n\n报告摘要：已纳管 **智能体 ${reportTotal} 个**，${period}调用 **${reportCalls.toLocaleString()} 次**，正常运行率 **${reportOnlineRate}**，异常告警 **${reportAlarms} 次**。`;
   return {
     flow: { ...flow, reportScope: scope, reportPeriod: period },
     module: '台账查询 / 管理情况报告',
     reply,
-    link: { to: '/app/ledger-demo/report', text: '打开报告详情页' },
-    quickActions: ['改成本周', '改成本月', '订阅每周速读'],
     reportCard: {
       title: '智能体管理情况报告',
       scope,
@@ -7607,18 +9278,7 @@ function extractCompleteRequirementSlots(text: string): RequirementSlots | null 
 }
 
 function buildRequirementSummary(slots: RequirementSlots): string {
-  return `【汇总确认卡】（第 8 步/共 8 步）
-
-- 提出科室：${slots.department ?? '超声医学科'}【修改】
-- 诊疗环节：${slots.clinicStage ?? '辅助检查'}【修改】
-- 功能描述：${slots.functionDescription ?? '待补充'}【修改】
-- 提出原因：${slots.reason ?? '待补充'}【修改】
-- 所需资源：${slots.resources ?? '待补充'}【修改】
-- 需求紧急程度：${slots.urgency ?? '中'}【修改】
-- 提出人：${slots.proposer ?? '待补充'}【修改】
-- 联系方式：${slots.phone ?? '待补充'}【修改】
-
-无误请回复「提交」或点击/语音确认；需要调整可回复「修改 + 字段名」。`;
+  return '【汇总确认卡】';
 }
 
 function buildRequirementSuccess(slots: RequirementSlots): string {
@@ -7688,7 +9348,7 @@ function getRequirementQuickActions(step: RequirementStep): string[] | undefined
   if (step === 'confirmReason') return ['确认', '修改提出原因'];
   if (step === 'clinicStage') return ['导诊分诊', '预问诊', '预约挂号', '辅助检查', '辅助诊断', '辅助治疗', '住院', '手术', '其他'];
   if (step === 'urgency') return ['高', '中', '低'];
-  if (step === 'summary') return ['确认提交', '修改联系方式', '修改功能描述', '修改提出原因'];
+  if (step === 'summary') return undefined;
   if (step === 'done') return ['需求文档查看/下载', '查看详情'];
   return undefined;
 }

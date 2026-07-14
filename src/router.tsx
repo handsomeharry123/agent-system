@@ -91,6 +91,7 @@ import Monitoring, {
   RuleForm as MonitoringRuleForm,
   RuleDetail as MonitoringRuleDetail,
 } from './pages/monitoring';
+import MonitoringReport from './pages/monitoring/Report';
 // 性能维度已并入三维（业务/状态/成本），旧 Performance 页面下线
 
 // Pages - Security
@@ -294,6 +295,8 @@ const routes: RouteObject[] = [
           { path: 'status', element: <StatusV18 /> },
           // 4. 成本监控
           { path: 'cost', element: <CostV18 /> },
+          // 运行监控报告详情页
+          { path: 'report', element: <MonitoringReport /> },
           // 5. 告警规则管理（仅管理员）
           { path: 'alert-rules', element: <MonitoringRuleManage /> },
           { path: 'alert-rules/create', element: <MonitoringRuleForm /> },
