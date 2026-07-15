@@ -581,6 +581,48 @@ mockAlertRulesV18.forEach((rule) => {
   rule.ruleConfig = buildRuleConfig(rule, rule.lastTriggeredAt || rule.createdAt);
 });
 
+const CHAT_ALERT_RULES_STORAGE_KEY = 'home-chat-alert-rules-v18';
+
+export function syncChatAlertRulesFromStorage() {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage.getItem(CHAT_ALERT_RULES_STORAGE_KEY);
+    if (!raw) return;
+    const rules = JSON.parse(raw) as AlertRuleV18[];
+    if (!Array.isArray(rules)) return;
+    rules.forEach((rule) => {
+      if (!rule?.id) return;
+      const idx = mockAlertRulesV18.findIndex((item) => item.id === rule.id);
+      if (idx >= 0) {
+        mockAlertRulesV18[idx] = rule;
+      } else {
+        mockAlertRulesV18.unshift(rule);
+      }
+    });
+  } catch {
+    // Ignore malformed demo storage and keep bundled mock data available.
+  }
+}
+
+export function persistChatAlertRule(rule: AlertRuleV18) {
+  if (typeof window === 'undefined') return;
+  syncChatAlertRulesFromStorage();
+  const idx = mockAlertRulesV18.findIndex((item) => item.id === rule.id);
+  if (idx >= 0) {
+    mockAlertRulesV18[idx] = rule;
+  } else {
+    mockAlertRulesV18.unshift(rule);
+  }
+  try {
+    const raw = window.localStorage.getItem(CHAT_ALERT_RULES_STORAGE_KEY);
+    const stored = raw ? (JSON.parse(raw) as AlertRuleV18[]) : [];
+    const next = [rule, ...(Array.isArray(stored) ? stored.filter((item) => item?.id !== rule.id) : [])];
+    window.localStorage.setItem(CHAT_ALERT_RULES_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Demo persistence is best effort; in-memory rule is already updated above.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 智能体（V1.8：在线/离线/禁用/异常）
 // ---------------------------------------------------------------------------

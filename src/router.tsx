@@ -162,6 +162,8 @@ const routes: RouteObject[] = [
           { path: 'dashboard', element: <Dashboard /> },
           // 两个工作台入口必须由 HomePage 承载，避免直接路由只渲染裸列表、丢失第二层功能栏。
           { path: 'connector', element: <HomePage /> },
+          { path: 'skill', element: <HomePage /> },
+          { path: 'skill/manage', element: <HomePage /> },
           { path: 'auto-tasks', element: <HomePage /> },
           { path: 'auto-tasks/templates', element: <AutoTaskTemplateList /> },
           { path: 'auto-tasks/new', element: <AutoTaskForm /> },

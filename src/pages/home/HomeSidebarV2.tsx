@@ -21,6 +21,7 @@ import {
   MenuFoldOutlined,
   PlusOutlined,
   SearchOutlined,
+  ToolOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -408,11 +409,13 @@ interface Props {
   onRestoreSession: (id: string) => void;
   onRestoreRun: (id: string) => void;
   /** 独立子页可指定进入时的工作台高亮项。 */
-  initialActiveKey?: 'new' | 'connector' | 'auto-task';
+  initialActiveKey?: 'new' | 'connector' | 'skill' | 'auto-task';
   /** 新建自动化任务成功 → 同步在右侧对话区推一条「任务创建成功」气泡 */
   onAutoTaskCreated?: (task: AutoTask, firstRunName: string) => void;
   /** 点 sidebar「连接器」→ 切换首页中间内容区(不跳路由) */
   onOpenConnector?: () => void;
+  /** 点 sidebar「技能」→ 切换首页中间内容区(不跳路由) */
+  onOpenSkill?: () => void;
   /** 点 sidebar「自动化任务」→ 切换首页中间内容区(不跳路由) */
   onOpenAutoTasks?: () => void;
   /** 与中间自动化列表共享的任务数据，确保测试运行记录实时同步到侧栏 */
@@ -427,7 +430,7 @@ interface Props {
   newReplySessionIds?: Set<string>;
 }
 
-const HomeSidebarV2 = ({ onNewTask, onRestoreSession, onRestoreRun, initialActiveKey = 'new', onAutoTaskCreated, onOpenConnector, onOpenAutoTasks, autoTasks = initialAutoTasks, sessions: sessionsProp, activeSessionId, generatingSessionId, newReplySessionIds }: Props) => {
+const HomeSidebarV2 = ({ onNewTask, onRestoreSession, onRestoreRun, initialActiveKey = 'new', onAutoTaskCreated, onOpenConnector, onOpenSkill, onOpenAutoTasks, autoTasks = initialAutoTasks, sessions: sessionsProp, activeSessionId, generatingSessionId, newReplySessionIds }: Props) => {
   const navigate = useNavigate();
   const sessions = sessionsProp ?? initialSessions;
 
@@ -545,6 +548,21 @@ const HomeSidebarV2 = ({ onNewTask, onRestoreSession, onRestoreRun, initialActiv
               icon={<ApiOutlined />}
             >
               连接器
+            </HighlightRow>
+            <HighlightRow
+              active={activeKey === 'skill'}
+              onClick={() => {
+                setActiveKey('skill');
+                if (onOpenSkill) {
+                  onOpenSkill();
+                } else {
+                  navigate('/app/home/skill');
+                }
+              }}
+              testId="home-v1-side-workbench-skill"
+              icon={<ToolOutlined />}
+            >
+              技能
             </HighlightRow>
             <HighlightRow
               active={activeKey === 'auto-task'}

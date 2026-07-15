@@ -30,6 +30,7 @@ import PageHeader from '../../components/PageHeader';
 import { PermissionDenied } from '../../components/PageStates';
 import {
   mockAlertRulesV18, mockAlertRuleLibrary, AlertRuleTypeLabels, TriggerActionLabels,
+  syncChatAlertRulesFromStorage,
   type AlertRuleV18,
 } from '../../mock/monitoringV18';
 import { useMonitoringGuard } from './useMonitoringGuard';
@@ -60,6 +61,7 @@ const RuleDetail = () => {
 
   useEffect(() => {
     if (params.id) {
+      syncChatAlertRulesFromStorage();
       const r = mockAlertRulesV18.find((it) => it.id === params.id);
       setRule(r);
       if (r) setLibraryTab(typeToCategory[r.type] || '业务执行');

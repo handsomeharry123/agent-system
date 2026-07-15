@@ -14,7 +14,7 @@
  *     第二层「历史会话」点击 → 重置 messages 载入该会话 mock 历史;
  *     第二层「新建任务」点击 → 重置 messages 注入问候语 + 聚焦输入框。
  */
-import { type DragEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type DragEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -26,6 +26,7 @@ import {
   AuditOutlined,
   ArrowUpOutlined,
   AudioOutlined,
+  CloseOutlined,
   DatabaseOutlined,
   ExperimentOutlined,
   FileAddOutlined,
@@ -36,8 +37,10 @@ import {
   ReloadOutlined,
   RightOutlined,
   SafetyCertificateOutlined,
+  SearchOutlined,
   StopOutlined,
   ThunderboltOutlined,
+  ToolOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import {
@@ -50,7 +53,9 @@ import {
   Dropdown,
   Empty,
   Input,
+  InputNumber,
   message,
+  Popover,
   Progress,
   Row,
   Select,
@@ -63,6 +68,7 @@ import {
 } from 'antd';
 import type { UploadFile } from 'antd';
 import ReactMarkdown from 'react-markdown';
+import { skillPromptExamples, type SkillItem, type SkillKey } from '../../mock/skills';
 import { useAuth } from '../../hooks/useAuth';
 import { useDemoSettings } from '../../hooks/useDemoSettings';
 import {
@@ -94,6 +100,7 @@ import {
   costKpiV18,
   mockAlertEventsV18,
   mockAlertRulesV18,
+  persistChatAlertRule,
   statusKpiV18,
   type AlertRuleV18,
   type AlertEventV18,
@@ -124,8 +131,12 @@ import HomeSidebarV2, {
   type SessionEntry,
 } from './HomeSidebarV2';
 import ConnectorList from './ConnectorList';
+import SkillList from './SkillList';
+import SkillManage from './SkillManage';
+import SkillImportModal from './SkillImportModal';
 import AutoTaskList from './AutoTaskList';
 import ModelSelector from './ModelSelector';
+import { useSkillState } from './useSkillState';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -313,11 +324,13 @@ type AlertRuleDraftField =
   | 'object'
   | 'type'
   | 'metric'
-  | 'condition'
-  | 'level'
+  | 'lowOperator'
+  | 'lowThreshold'
+  | 'mediumOperator'
+  | 'mediumThreshold'
+  | 'highOperator'
+  | 'highThreshold'
   | 'channels'
-  | 'status'
-  | 'effectiveTime'
   | 'creator';
 
 type AlertRuleDraft = Record<AlertRuleDraftField, string>;
@@ -329,27 +342,41 @@ function buildDefaultDailyCallAlertRuleDraft(): AlertRuleDraft {
     name: '全局日调用量达到 1 万告警',
     object: '全局智能体',
     type: '业务监控告警规则',
-    metric: '日调用量',
-    condition: '当日累计调用量 >= 10,000 次',
-    level: '中危',
+    metric: '业务调用总量',
+    lowOperator: '>=',
+    lowThreshold: '5000',
+    mediumOperator: '>=',
+    mediumThreshold: '10000',
+    highOperator: '>=',
+    highThreshold: '20000',
     channels: '企业微信',
-    status: '待确认',
-    effectiveTime: '确认后立即启用',
     creator: 'admin',
   };
+}
+
+function buildAlertRuleConditionDescription(draft: AlertRuleDraft) {
+  const metric = draft.metric || '业务调用总量';
+  const formatLevel = (level: string, operator: string, threshold: string) =>
+    `${level}：${metric} ${operator || '>='} ${threshold || '0'} 次`;
+  return [
+    formatLevel('低危', draft.lowOperator, draft.lowThreshold),
+    formatLevel('中危', draft.mediumOperator, draft.mediumThreshold),
+    formatLevel('高危', draft.highOperator, draft.highThreshold),
+  ].join('；');
 }
 
 function upsertDailyCallAlertRule(draft: AlertRuleDraft): AlertRuleV18 {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:00`;
+  const threshold = Number(draft.mediumThreshold || 10000);
   const triggerCondition = {
-    metric: draft.metric || '日调用量',
-    operator: '>=' as const,
-    threshold: 10000,
+    metric: draft.metric || '业务调用总量',
+    operator: (draft.mediumOperator || '>=') as '>' | '<' | '>=' | '<=' | '=',
+    threshold: Number.isFinite(threshold) ? threshold : 10000,
     thresholdUnit: '次',
     sustainDuration: '当日累计',
-    description: draft.condition || '当日累计调用量 >= 10,000 次',
+    description: buildAlertRuleConditionDescription(draft),
   };
   const rule: AlertRuleV18 = {
     id: DAILY_CALL_ALERT_RULE_ID,
@@ -377,6 +404,7 @@ function upsertDailyCallAlertRule(draft: AlertRuleDraft): AlertRuleV18 {
   } else {
     mockAlertRulesV18.unshift(rule);
   }
+  persistChatAlertRule(rule);
   return rule;
 }
 
@@ -396,7 +424,7 @@ function getAlertRuleConfigReply(text: string) {
       reply:
         `创建成功，告警规则 **${savedRule.name}** 已保存并启用。\n\n` +
         '后续当全院智能体当日累计调用量达到 10,000 次时，将按企业微信渠道发送中危告警通知。',
-      link: { to: `/app/monitoring/alert-rules/${savedRule.id}`, text: '查看规则详情' },
+      link: { to: `/app/monitoring/alert-rules/${savedRule.id}`, text: '查看规则详情', newTab: true },
     };
   }
   if (/清单|查看|当前|生效/.test(normalized)) {
@@ -423,7 +451,7 @@ function getAlertRuleConfigReply(text: string) {
       quickActions: ['确认停用', '取消'],
     };
   }
-  if (/修改|调整|阈值|通知渠道|企业微信|短信/.test(normalized)) {
+  if (/修改|调整|阈值|通知渠道|企业微信|短信|邮箱/.test(normalized)) {
     return {
       reply:
         '已识别业务场景标签/意图：**告警规则配置**。\n\n' +
@@ -431,7 +459,6 @@ function getAlertRuleConfigReply(text: string) {
         '- 规则对象：心内科智能体\n' +
         '- 触发条件：按您描述调整阈值或通知渠道\n' +
         '- 通知渠道：企业微信 + 短信\n' +
-        '- 状态：待确认\n\n' +
         '确认后我会保存到告警规则配置。',
       quickActions: ['确认保存', '继续修改阈值', '查看当前规则清单'],
     };
@@ -450,9 +477,9 @@ function getAlertRuleConfigReply(text: string) {
       '我先整理一条规则草稿：\n\n' +
       '- 规则对象：按您的描述定位到相关智能体 / 全局规则\n' +
       '- 触发条件：调用超时 / 日调用量突增 / 资源占用超阈值\n' +
-      '- 级别：待确认\n' +
+      '- 三档条件：待配置\n' +
       '- 通知渠道：待确认\n\n' +
-      '请补充阈值、告警级别和通知渠道。',
+      '请补充低危 / 中危 / 高危三档阈值和通知渠道。',
     quickActions: ['阈值 5 秒，高危，企业微信 + 短信', '查看当前生效的所有告警规则清单', '取消配置'],
   };
 }
@@ -634,40 +661,174 @@ async function exportLedgerReportPdf(reportCard: LedgerReportCard) {
   };
   const isMonitorReport = /运行监控/.test(reportCard.title);
   const nodes = isMonitorReport ? [] : buildPlatformReport();
+  const isHospitalScope = /全院/.test(reportCard.scope);
+  const monitorTemplateName = isHospitalScope
+    ? '全院智能体运行监控情况报告模板.docx'
+    : '科室智能体运行监控情况报告模板.docx';
+  const monitorOrg = isHospitalScope ? '××××医院' : '××××医院  ××科';
+  const monitorTitle = isHospitalScope ? '全院智能体运行监控情况报告' : '科室智能体运行监控情况报告';
+  const monitorCompileUnit = isHospitalScope ? '信息科' : '××科（科室管理员）';
+  const monitorScopeText = isHospitalScope ? '全院（含分院区）' : '本科室全部纳管智能体（示例：放射科）';
   const monitorSectionsHtml = `
     <section class="cover">
-      <div class="hospital">医疗智能体管理平台</div>
-      <h1>${esc(reportCard.title)}</h1>
-      <p>统计范围：${esc(reportCard.scope)}</p>
-      <p>统计周期：${esc(reportCard.period)}</p>
-      <p>生成依据：${
-        /全院/.test(reportCard.scope)
-          ? '全院智能体运行监控情况报告模板.docx'
-          : '科室智能体运行监控情况报告模板.docx'
-      }</p>
-      <p>${esc(new Date().toISOString().slice(0, 10))}</p>
+      <div class="hospital">${esc(monitorTemplateName.replace('.docx', ''))}</div>
+      <p>${esc(monitorOrg)}</p>
+      <h1>${esc(monitorTitle)}</h1>
+      <p>统计周期：2026年1月1日 — 2026年6月30日</p>
+      <p>统计范围：${esc(monitorScopeText)}</p>
+      <p>编制单位：${esc(monitorCompileUnit)}</p>
+      <p>编制日期：2026年7月</p>
+      <p class="note">模板说明：本报告由智能体管理平台基于监控平台实时与聚合数据一键生成；文中数据、图表与综述为演示示例。</p>
     </section>
-    <h2 class="section-title">一、整体运行结论</h2>
-    <p class="para">${esc(reportCard.scope)}智能体今日整体运行平稳，当日调用 12834 次，任务执行成功率 98.2%，任务中断率 6.8%，自助解决率 78%，P95 响应时间 4.8s。</p>
+    <section class="toc">
+      <h2>目 录</h2>
+      <div class="toc-grid">
+        <div>一、${isHospitalScope ? '监控总体情况' : '科室监控总体情况'}</div>
+        <div>二、业务监控情况</div>
+        <div>三、状态监控情况</div>
+        <div>四、成本监控情况</div>
+        <div>五、安全监控情况</div>
+        <div>六、监控告警与处置情况</div>
+        <div>七、报告总结</div>
+      </div>
+      <div class="note">提示：在 Word 中右键点击目录区域，选择“更新域”自动生成/刷新目录。</div>
+    </section>
+    <h2 class="section-title">一、${isHospitalScope ? '监控总体情况' : '科室监控总体情况'}</h2>
+    <h3>（一）总体监控概览</h3>
     ${renderKpis([
-      { label: '今日调用量', value: '12,834', unit: '次', color: '#1677FF' },
-      { label: '任务执行成功率', value: '98.2', unit: '%', color: '#13C2C2' },
-      { label: '在线率', value: '93.3', unit: '%', color: '#52C41A' },
-      { label: '今日 Token', value: '425,000', unit: '', color: '#FA8C16' },
+      { label: isHospitalScope ? '纳管智能体总数' : '科室纳管智能体', value: isHospitalScope ? '42' : '8', unit: '个', color: '#1677FF' },
+      { label: '累计调用次数', value: isHospitalScope ? '126.8' : '28.6', unit: '万', color: '#13C2C2' },
+      { label: '任务执行成功率', value: isHospitalScope ? '96.8' : '96.2', unit: '%', color: '#52C41A' },
+      { label: '智能体在线率', value: isHospitalScope ? '85.7' : '87.5', unit: '%', color: '#FA8C16' },
+      { label: '使用成本', value: isHospitalScope ? '38.6' : '8.2', unit: '万元', color: '#722ED1' },
     ])}
-    <h2 class="section-title">二、四维监控摘要</h2>
-    ${renderTable({
-      title: '业务 / 状态 / 成本 / 安全监控摘要',
-      headers: ['维度', '核心指标', '结论'],
-      rows: [
-        { key: 'biz', cells: ['业务监控', '调用量、成功率、响应时间、任务中断率', '调用活跃，影像类高峰响应需关注'] },
-        { key: 'status', cells: ['状态监控', '在线率、心跳、异常实例', '整体稳定，少量实例需复核心跳波动'] },
-        { key: 'cost', cells: ['成本监控', 'Token、CPU/GPU/内存、单任务成本', '成本可控，建议关注高成本模型占比'] },
-        { key: 'safe', cells: ['安全监控', '注入攻击、越权访问、敏感信息外发', '已触发拦截，暂无扩散风险'] },
+    <p class="para">口径：累计调用次数、任务执行成功率为统计周期累计值；在线率＝实时在线智能体数量÷纳管智能体总数；使用成本为统计周期内算力、许可、运维等各类成本之和。</p>
+    <p class="para">${isHospitalScope ? '截至2026年6月30日，全院纳管智能体42个，统计周期内累计调用126.8万次，任务执行成功率96.8%，实时在线率85.7%，使用成本合计38.6万元。业务、状态、成本、安全四个维度监控指标总体处于受控区间，全院智能体运行平稳。' : '截至2026年6月30日，本科室纳管智能体8个，统计周期内累计调用28.6万次，任务执行成功率96.2%，实时在线率87.5%，使用成本合计8.2万元。科室智能体运行总体平稳，1个智能体当前处于异常状态，详见第三部分。'}</p>
+    <h3>（二）监控告警维度分布</h3>
+    ${renderChart({
+      title: isHospitalScope ? '图1-1 四大监控维度告警次数分布（次）' : '图1-1 科室监控告警维度分布（次）',
+      chartType: 'pie',
+      data: [
+        { name: '业务监控', value: isHospitalScope ? 30 : 6 },
+        { name: '状态监控', value: isHospitalScope ? 21 : 4 },
+        { name: '成本监控', value: isHospitalScope ? 9 : 2 },
+        { name: '安全监控', value: isHospitalScope ? 8 : 2 },
       ],
     })}
-    <h2 class="section-title">三、告警与建议</h2>
-    <p class="para">部分影像与导诊智能体已触发高/中级告警，建议优先处理高风险事件，复核负责人闭环状态，并将本 PDF 归档至今日运行监控记录。</p>
+    <p class="para">${isHospitalScope ? '统计周期内监控平台累计产生告警68次，其中业务监控30次、状态监控21次、成本监控9次、安全监控8次。告警集中于业务与状态两个维度，主要与高峰时段接口及算力资源紧张相关。' : '统计周期内本科室共产生监控告警14次，其中业务监控6次、状态监控4次、成本监控2次、安全监控2次，主要集中于高峰时段响应超时与接口波动。'}</p>
+
+    <h2 class="section-title">二、业务监控情况</h2>
+    <h3>（一）任务执行情况</h3>
+    ${renderKpis([
+      { label: '任务执行成功率', value: isHospitalScope ? '96.8' : '96.2', unit: '%', color: '#52C41A' },
+      { label: '任务中断率', value: isHospitalScope ? '2.1' : '2.4', unit: '%', color: '#FA8C16' },
+      { label: '自助解决率', value: isHospitalScope ? '83.5' : '81.9', unit: '%', color: '#1677FF' },
+    ])}
+    <p class="para">图2-1 任务执行成功率与任务中断率月度趋势。统计周期内任务执行质量持续改善，中断任务主要集中于高峰时段接口超时场景。</p>
+    <h3>（二）调用情况</h3>
+    ${renderKpis([
+      { label: '累计调用次数', value: isHospitalScope ? '126.8' : '28.6', unit: '万次', color: '#1677FF' },
+      { label: '当日调用次数', value: isHospitalScope ? '1.12' : '2560', unit: isHospitalScope ? '万次' : '次', color: '#13C2C2' },
+      { label: isHospitalScope ? 'TOP10智能体调用占比' : 'TOP1智能体调用占比', value: isHospitalScope ? '71' : '43', unit: '%', color: '#722ED1' },
+    ])}
+    <p class="para">${isHospitalScope ? '图2-2 调用次数月度趋势（万次；平台支持日/周/月粒度切换）。调用量持续攀升，需同步关注高峰时段资源保障。' : '图2-2 科室调用次数月度趋势；图2-3 科室各智能体日均调用次数排行。影像报告解读助手日均调用1120次、居科室首位。'}</p>
+    <h3>（三）响应性能</h3>
+    ${renderKpis([
+      { label: '平均响应时间', value: isHospitalScope ? '1.7' : '1.8', unit: '秒', color: '#1677FF' },
+      { label: '响应时间P95', value: isHospitalScope ? '4.0' : '4.1', unit: '秒', color: '#13C2C2' },
+      { label: '响应时间P99', value: '6.2', unit: '秒', color: '#FA8C16' },
+      { label: '响应超时率', value: isHospitalScope ? '0.9' : '1.1', unit: '%', color: '#F5222D' },
+    ])}
+    <p class="para">图2-3 响应时间P95/P99与平均值周度趋势。P99与平均值差距较大，提示长尾请求集中于复杂多步任务。</p>
+    <h3>（四）任务链路与工具调用质量</h3>
+    <p class="para">${isHospitalScope ? '单任务平均推理步数4.6步，平均工具调用时延320毫秒；工具执行成功率97.1%、工具选择准确率94.2%、参数提取准确率92.5%、知识库命中率88.7%。' : '科室智能体单任务平均推理步数4.2步，平均工具调用时延290毫秒；工具执行成功率97.6%、工具选择准确率95.1%、参数提取准确率93.4%、知识库命中率90.2%。'}</p>
+    <h3>（五）医生采纳与用户满意度</h3>
+    <p class="para">${isHospitalScope ? '医生采纳率76.4%，用户满意度4.6分，二者均连续6个月上升。' : '科室整体医生采纳率76.8%、用户满意度4.5分；剂量监测助手、影像知识问答助手、排班辅助助手低于70%关注线。'}</p>
+
+    <h2 class="section-title">三、状态监控情况</h2>
+    <h3>（一）${isHospitalScope ? '实时在线/离线情况' : '实时运行状态'}</h3>
+    ${renderKpis([
+      { label: isHospitalScope ? '实时在线智能体数量' : '实时在线', value: isHospitalScope ? '36' : '7', unit: '个', color: '#52C41A' },
+      { label: '在线率', value: isHospitalScope ? '85.7' : '87.5', unit: '%', color: '#1677FF' },
+      { label: isHospitalScope ? '实时离线智能体数量' : '实时离线', value: isHospitalScope ? '2' : '0', unit: '个', color: '#FA8C16' },
+      { label: isHospitalScope ? '累计异常智能体' : '当前异常', value: isHospitalScope ? '4' : '1', unit: '个', color: '#F5222D' },
+    ])}
+    <p class="para">${isHospitalScope ? '截至报告导出时，全院42个纳管智能体中在线36个、离线2个、异常2个、禁用2个。离线智能体平均离线时长1.6小时，均已触发自动告警并通知责任工程师处置。' : '截至报告导出时，科室8个智能体中在线7个、异常1个，无离线、禁用智能体。当前异常智能体为影像质控助手，因PACS接口网关超时导致质控任务响应失败。'}</p>
+    ${isHospitalScope ? '<h3>（二）禁用与异常情况</h3><p class="para">统计周期内累计新增异常智能体4个、新增禁用智能体2个，平均异常持续时长38分钟。异常期间相关业务均已切换至人工流程，未对临床工作造成影响。</p><h3>（三）各科室智能体状态分布</h3><p class="para">在线智能体主要分布于放射科、检验科、心内科；异常智能体分布于放射科、药剂科各1个。各科室在线、离线、异常、禁用状态数量占比可在平台按科室下钻查看。</p>' : renderTable({
+      title: '（二）智能体状态明细',
+      headers: ['智能体名称', '当前状态', '本期异常次数', '处理情况'],
+      rows: [
+        { key: 'a', cells: ['影像报告解读助手', '在线', '1', '已恢复'] },
+        { key: 'b', cells: ['影像质控助手', '异常', '2', '处置中'] },
+        { key: 'c', cells: ['危急值提醒助手', '在线', '0', '—'] },
+        { key: 'd', cells: ['检查预约助手', '在线', '0', '—'] },
+      ],
+    })}
+
+    <h2 class="section-title">四、成本监控情况</h2>
+    <h3>（一）单位成本情况</h3>
+    ${renderKpis([
+      { label: '单次会话平均成本', value: isHospitalScope ? '0.31' : '0.29', unit: '元', color: '#1677FF' },
+      { label: '单任务平均成本', value: isHospitalScope ? '0.42' : '0.38', unit: '元', color: '#13C2C2' },
+      { label: '使用成本合计', value: isHospitalScope ? '38.6' : '8.2', unit: '万元', color: '#FA8C16' },
+    ])}
+    <h3>（二）算力资源使用情况</h3>
+    ${renderTable({
+      title: 'CPU/GPU/内存使用情况',
+      headers: ['资源类型', '累计使用量', '当日使用量', '累计使用率', '当日使用率'],
+      rows: [
+        { key: 'cpu', cells: ['CPU', isHospitalScope ? '4.2万核·时' : '0.9万核·时', isHospitalScope ? '286核·时' : '61核·时', isHospitalScope ? '58.6%' : '56.2%', isHospitalScope ? '62.4%' : '60.1%'] },
+        { key: 'gpu', cells: ['GPU', isHospitalScope ? '1.8万卡·时' : '0.5万卡·时', isHospitalScope ? '128卡·时' : '36卡·时', isHospitalScope ? '68.2%' : '70.4%', isHospitalScope ? '71.5%' : '74.2%'] },
+        { key: 'mem', cells: ['内存', isHospitalScope ? '8.6万GB·时' : '1.9万GB·时', isHospitalScope ? '590GB·时' : '130GB·时', isHospitalScope ? '61.3%' : '58.9%', isHospitalScope ? '66.0%' : '63.5%'] },
+      ],
+    })}
+    <h3>（三）Token使用情况</h3>
+    <p class="para">${isHospitalScope ? 'Token累计使用12.5亿，当日Token使用820万，单任务输入Token均值1850、输出Token均值620。建议压缩系统提示词与检索上下文长度。' : '科室Token累计使用2.6亿，当日Token使用18万，影像报告解读助手Token消耗占比52%，为科室Token成本主要来源。'}</p>
+
+    <h2 class="section-title">五、安全监控情况</h2>
+    <h3>（一）安全事件总体情况</h3>
+    <p class="para">${isHospitalScope ? '统计周期内安全防护体系累计检出/拦截安全事件184次，其中异常/对抗输入检出126次、有害内容拦截38次、敏感数据外发拦截17次、工具越权调用3次，全部事件均已自动阻断并留存审计日志。' : '统计周期内科室智能体累计检出/拦截安全事件32次，其中异常/对抗输入检出22次、有害内容拦截6次、敏感数据外发拦截3次、工具越权调用1次，全部事件均已自动阻断并留存审计日志。'}</p>
+    <h3>（二）安全关键指标达标情况</h3>
+    ${renderTable({
+      title: '安全关键指标达标情况',
+      headers: ['安全维度', '监控指标', '本期值', '管理目标', '达标情况'],
+      rows: [
+        { key: 'p', cells: ['输入安全', 'Prompt注入攻击成功率', isHospitalScope ? '0.02%' : '0.01%', '≤0.1%', '达标'] },
+        { key: 'h', cells: ['输出安全', '幻觉检测率', isHospitalScope ? '1.8%' : '1.6%', '≤2.0%', '达标'] },
+        { key: 'c', cells: ['输出安全', '输出内容合规率', isHospitalScope ? '99.6%' : '99.7%', '≥99.5%', '达标'] },
+        { key: 'd', cells: ['数据安全', 'PHI/PII泄露率', '0', '0', '达标'] },
+      ],
+    })}
+
+    <h2 class="section-title">六、监控告警与处置情况</h2>
+    <h3>（一）告警总体情况</h3>
+    ${renderKpis([
+      { label: '告警次数', value: isHospitalScope ? '68' : '14', unit: '次', color: '#FA8C16' },
+      { label: '故障次数', value: isHospitalScope ? '3' : '1', unit: '次', color: '#F5222D' },
+      { label: '故障平均恢复时间', value: isHospitalScope ? '42' : '35', unit: '分钟', color: '#1677FF' },
+    ])}
+    <h3>（二）${isHospitalScope ? '告警原因分析' : '典型问题及处理方案'}</h3>
+    ${renderTable({
+      title: isHospitalScope ? '告警原因分析' : '典型问题及处理方案',
+      headers: isHospitalScope ? ['监控维度', '告警次数', '占比', '主要成因分析'] : ['序号', '典型问题', '影响范围', '处理方案', '处理进展', '责任方'],
+      rows: isHospitalScope ? [
+        { key: 'b', cells: ['业务监控', '30', '44.1%', '高峰时段响应超时、任务中断率瞬时越限'] },
+        { key: 's', cells: ['状态监控', '21', '30.9%', '接口网关波动导致智能体短时离线、心跳丢失'] },
+        { key: 'c', cells: ['成本监控', '9', '13.2%', '调用量与Token消耗突增触发预算阈值'] },
+      ] : [
+        { key: '1', cells: ['1', '影像质控助手因PACS接口网关超时运行异常', '质控流程', '接口网关扩容、重连机制优化', '处置中', '信息科/供应商'] },
+        { key: '2', cells: ['2', '影像报告解读助手高峰期P99响应超时告警', '报告解读', '错峰调度、推理缓存优化', '已完成', '信息科'] },
+      ],
+    })}
+
+    <h2 class="section-title">七、报告总结</h2>
+    <h3>（一）存在的问题</h3>
+    <p class="para">${isHospitalScope ? '一是高峰期性能余量不足；二是知识库支撑能力偏弱；三是算力与Token成本增长较快；四是个别安全细项需持续关注。' : '一是头部智能体依赖度高；二是部分智能体采纳率偏低；三是GPU配额余量收窄；四是影像质控助手异常尚未闭环。'}</p>
+    <h3>（二）下一步工作建议</h3>
+    <p class="para">${isHospitalScope ? '建议实施高峰期资源保障专项、开展知识库补链行动、完善成本配额管理、强化安全纵深防御。' : '建议配合信息科完成接口治理与性能优化，组织低采纳率智能体使用反馈评议，提交GPU配额评估申请，并持续落实高度关注类智能体输出人工复核。'}</p>
+    <p class="para" style="text-align:right">${isHospitalScope ? '××××医院信息科' : '××××医院××科（科室管理员）'}<br />2026年7月×日</p>
+    <h2 class="section-title">${isHospitalScope ? '附1：监控指标体系及口径说明' : '附：编制说明'}</h2>
+    <p class="para">${isHospitalScope ? '全院智能体监控指标体系分为业务、状态、成本、安全四个维度，共70项指标，指标数据由智能体管理平台自动采集与计算。' : '本报告由智能体管理平台按科室范围一键生成，面向科室管理员，数据范围为本科室全部纳管智能体，统计周期与筛选条件见封面。监控指标体系与口径同《全院智能体运行监控情况报告》附1。'}</p>
   `;
   const sectionsHtml = isMonitorReport
     ? monitorSectionsHtml
@@ -792,7 +953,7 @@ async function exportLedgerReportPdf(reportCard: LedgerReportCard) {
       heightLeft -= pageContentHeight;
     }
     pdf.save(`${reportCard.title}_${new Date().toISOString().slice(0, 10)}.pdf`);
-    message.success('已下载 PDF 格式报告');
+    message.success('已导出报告');
   } finally {
     document.body.removeChild(node);
   }
@@ -884,6 +1045,11 @@ type AccessAuditTable = {
   emptyText?: string;
 };
 
+type AccessAuditConfirmation = {
+  rows: AccessAuditAgent[];
+  conclusion: '审核通过' | '退回修改';
+};
+
 type EvaluationAuditTable = {
   rows: EvaluationTask[];
   emptyText?: string;
@@ -928,6 +1094,13 @@ type AccessSlots = {
 };
 
 type AccessMode = 'API' | 'SDK' | 'OTel';
+
+type AccessFormField = {
+  key: keyof AccessSlots;
+  label: string;
+  multiline?: boolean;
+  placeholder: string;
+};
 
 type AccessFlow = {
   sessionId: string;
@@ -1128,6 +1301,7 @@ type AccessAuditPendingDecision = {
   codes: string[];
   result: '审核通过' | '退回修改';
   reason?: string;
+  reasons?: Record<string, string>;
   overridePrecheck?: boolean;
   batch?: boolean;
 };
@@ -1182,13 +1356,14 @@ const HomePage = () => {
     role: 'user' | 'assistant';
     content: string;
     module?: string;
-    link?: { to: string; text: string };
+    link?: { to: string; text: string; newTab?: boolean };
     actionLinks?: Array<{ to: string; text: string; download?: boolean }>;
     quickActions?: string[];
     candidates?: LedgerCandidate[];
     reportCard?: LedgerReportCard;
     monitorAlertTable?: MonitorAlertTable;
     accessAuditTable?: AccessAuditTable;
+    accessAuditConfirmation?: AccessAuditConfirmation;
     evaluationAuditTable?: EvaluationAuditTable;
     alertRuleDraft?: AlertRuleDraft;
     dashboardMetrics?: HomeDashboardMetric[];
@@ -1199,6 +1374,7 @@ const HomePage = () => {
   };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
+  const [selectedSkillTags, setSelectedSkillTags] = useState<string[]>([]);
   const [model, setModel] = useState('auto');
   const [loading, setLoading] = useState(false);
   const [extraSessions, setExtraSessions] = useState<SessionEntry[]>([]);
@@ -1220,27 +1396,42 @@ const HomePage = () => {
 
   /* 底栏「+」下拉:连接器 Drawer */
   const [connectorOpen, setConnectorOpen] = useState(false);
+  const [skillPickerOpen, setSkillPickerOpen] = useState(false);
+  const [skillImportOpen, setSkillImportOpen] = useState(false);
+  const [skillSearch, setSkillSearch] = useState('');
+  const { skills: skillOptions } = useSkillState();
   const [connectorMap, setConnectorMap] = useState<Record<string, boolean>>({
     wechat: false,
     feishu: false,
     email: false,
     sms: false,
   });
-  /* 首页中间内容区 slot:'overview' 显示医小管对话;'connector' 显示连接器列表;'auto-tasks' 显示自动化任务列表 */
+  /* 首页中间内容区 slot:'overview' 显示医小管对话;'connector' 显示连接器列表;'skill' 显示技能列表;'skill-manage' 显示技能管理;'auto-tasks' 显示自动化任务列表 */
   const requestedMiddleView = (
     location.state as {
-      middleView?: 'overview' | 'connector' | 'auto-tasks';
+      middleView?: 'overview' | 'connector' | 'skill' | 'skill-manage' | 'auto-tasks';
     } | null
   )?.middleView;
-  const routeMiddleView: 'connector' | 'auto-tasks' | undefined =
+  const routeMiddleView: 'connector' | 'skill' | 'skill-manage' | 'auto-tasks' | undefined =
     location.pathname.endsWith('/connector')
       ? 'connector'
+      : location.pathname.endsWith('/skill/manage')
+        ? 'skill-manage'
+        : location.pathname.endsWith('/skill')
+          ? 'skill'
       : location.pathname.endsWith('/auto-tasks')
         ? 'auto-tasks'
         : undefined;
-  const [middleView, setMiddleView] = useState<'overview' | 'connector' | 'auto-tasks'>(
+  const [middleView, setMiddleView] = useState<'overview' | 'connector' | 'skill' | 'skill-manage' | 'auto-tasks'>(
     requestedMiddleView ?? routeMiddleView ?? 'overview',
   );
+  useEffect(() => {
+    if (routeMiddleView) {
+      setMiddleView(routeMiddleView);
+    } else if (location.pathname.endsWith('/overview')) {
+      setMiddleView(requestedMiddleView ?? 'overview');
+    }
+  }, [location.pathname, requestedMiddleView, routeMiddleView]);
   const [autoTasks, setAutoTasks] = useState<AutoTask[]>(() =>
     initialAutoTasks.map((task) => ({
       ...task,
@@ -1282,6 +1473,27 @@ const HomePage = () => {
       behavior: 'smooth',
     });
   };
+
+  useEffect(() => {
+    if (!skillPickerOpen) return;
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (
+        target.closest('[data-testid="home-skill-picker"]') ||
+        target.closest('[data-testid="home-v1-toolbar-add"]')
+      ) {
+        return;
+      }
+      setSkillPickerOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown, true);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsidePointerDown, true);
+    };
+  }, [skillPickerOpen]);
 
   useEffect(() => {
     if (!isNewTaskView) {
@@ -1358,6 +1570,15 @@ const HomePage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConnector]);
 
+  const trySkillKey = (location.state as { trySkillKey?: SkillKey } | null)?.trySkillKey;
+  useEffect(() => {
+    if (!trySkillKey) return;
+    const skill = skillOptions.find((item) => item.key === trySkillKey);
+    if (skill) applySkillPrompt(skill);
+    navigate(location.pathname, { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trySkillKey, skillOptions]);
+
   const handleUploadFiles = useCallback(
     (files: FileList | null) => {
       const selectedFiles = Array.from(files ?? []);
@@ -1383,7 +1604,7 @@ const HomePage = () => {
             module: '接入申请',
             link: index === next.replies.length - 1 ? next.link : undefined,
             actionLinks: index === next.replies.length - 1 ? next.actionLinks : undefined,
-            accessSummary: shouldRenderAccessSummary(next.flow, index, next.replies.length)
+            accessSummary: shouldRenderAccessForm(next.flow, index, next.replies.length)
               ? next.flow.slots
               : undefined,
             quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
@@ -1474,6 +1695,22 @@ const HomePage = () => {
     setAccessAuditFlow(null);
   }, []);
 
+  /* 与连接器一致，重复点击仍保持技能列表。 */
+  const handleOpenSkill = useCallback(() => {
+    setMiddleView('skill');
+    setActiveSessionId(null);
+    setRequirementFlow(null);
+    setLedgerFlow(null);
+    setAccessFlow(null);
+    setResourceRegisterFlow(null);
+    setResourceApplyFlow(null);
+    setResourceAuditFlow(null);
+    setEvaluationFlow(null);
+    setEvaluationAuditFlow(null);
+    setMonitorFlow(null);
+    setAccessAuditFlow(null);
+  }, []);
+
   /* 与连接器一致，重复点击仍保持自动化任务列表。 */
   const handleOpenAutoTasks = useCallback(() => {
     setMiddleView('auto-tasks');
@@ -1518,6 +1755,7 @@ const HomePage = () => {
       },
     ]);
     setDraft('');
+    setSelectedSkillTags([]);
     setIsNewTaskView(true);
     window.setTimeout(() => {
       const el = document.querySelector<HTMLTextAreaElement>(
@@ -1526,6 +1764,164 @@ const HomePage = () => {
       el?.focus();
     }, 60);
   }, [role, currentUser?.name]);
+
+  const focusHomeInput = () => {
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>('[data-testid="home-v1-input"]');
+      el?.focus();
+    }, 40);
+  };
+
+  const applySkillPrompt = useCallback((skill: Pick<SkillItem, 'key' | 'name'>) => {
+    setMiddleView('overview');
+    setSelectedSkillTags([skill.name]);
+    setDraft(skillPromptExamples[skill.key] ?? '');
+    setSkillPickerOpen(false);
+    setSkillSearch('');
+    focusHomeInput();
+  }, []);
+
+  const appendSkillTag = (skill: Pick<SkillItem, 'key' | 'name'>) => {
+    applySkillPrompt(skill);
+  };
+
+  const removeSkillTag = (skillName: string) => {
+    setSelectedSkillTags((prev) => prev.filter((name) => name !== skillName));
+    focusHomeInput();
+  };
+
+  const recommendedSkillNames = ['PPT 制作', '报告撰写', '数据分析', '去 AI 味工具'];
+  const recommendedSkills = recommendedSkillNames
+    .map((name) => skillOptions.find((skill) => skill.name === name))
+    .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+  const searchedSkills = skillSearch.trim()
+    ? skillOptions
+        .filter((skill) => {
+          const keyword = skillSearch.trim().toLowerCase();
+          return skill.name.toLowerCase().includes(keyword) || skill.description.toLowerCase().includes(keyword);
+        })
+        .slice(0, 6)
+    : [];
+
+  const renderSkillOption = (skill: (typeof skillOptions)[number], testIdPrefix: string) => (
+    <button
+      key={skill.key}
+      type="button"
+      data-testid={`${testIdPrefix}-${skill.key}`}
+      onClick={() => appendSkillTag(skill)}
+      style={{
+        width: '100%',
+        border: 0,
+        background: 'transparent',
+        padding: '8px 10px',
+        borderRadius: 8,
+        display: 'grid',
+        gridTemplateColumns: '28px minmax(0, 1fr)',
+        columnGap: 10,
+        textAlign: 'left',
+        cursor: 'pointer',
+      }}
+      onMouseEnter={(event) => {
+        event.currentTarget.style.background = '#F7F8FA';
+      }}
+      onMouseLeave={(event) => {
+        event.currentTarget.style.background = 'transparent';
+      }}
+    >
+      <span
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: '50%',
+          background: `${skill.iconColor}1F`,
+          color: skill.iconColor,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 13,
+          fontWeight: 800,
+        }}
+      >
+        {skill.iconText}
+      </span>
+      <span style={{ minWidth: 0 }}>
+        <Text strong ellipsis style={{ display: 'block', color: '#1F2329', fontSize: 14, lineHeight: '20px' }}>
+          {skill.name}
+        </Text>
+        <Text
+          type="secondary"
+          ellipsis
+          style={{ display: 'block', marginTop: 2, fontSize: 12, lineHeight: '18px' }}
+        >
+          {skill.description}
+        </Text>
+      </span>
+    </button>
+  );
+
+  const skillPickerContent = (
+    <div data-testid="home-skill-picker" style={{ width: 360 }}>
+      <Input
+        allowClear
+        autoFocus
+        prefix={<SearchOutlined style={{ color: '#8A8F98' }} />}
+        placeholder="搜索技能"
+        value={skillSearch}
+        onChange={(event) => setSkillSearch(event.target.value)}
+        data-testid="home-skill-search"
+        style={{ height: 38, borderRadius: 10, marginBottom: 10 }}
+      />
+
+      {skillSearch.trim() ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10 }}>
+          {searchedSkills.length > 0 ? (
+            searchedSkills.map((skill) => renderSkillOption(skill, 'home-skill-search-result'))
+          ) : (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="未找到匹配技能" style={{ margin: '12px 0' }} />
+          )}
+        </div>
+      ) : (
+        <>
+          <Text type="secondary" style={{ display: 'block', margin: '0 2px 6px', fontSize: 12 }}>
+            常用技能推荐
+          </Text>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10 }}>
+            {recommendedSkills.map((skill) => renderSkillOption(skill, 'home-skill-recommend'))}
+          </div>
+        </>
+      )}
+
+      <div style={{ height: 1, background: '#F0F0F0', margin: '4px 0 8px' }} />
+      <Button
+        type="text"
+        block
+        icon={<PlusOutlined />}
+        data-testid="home-skill-add"
+        onClick={() => {
+          setSkillPickerOpen(false);
+          setSkillImportOpen(true);
+        }}
+        style={{ height: 38, justifyContent: 'flex-start', borderRadius: 8, fontWeight: 600 }}
+      >
+        添加技能
+      </Button>
+      <Button
+        type="text"
+        block
+        icon={<ToolOutlined />}
+        data-testid="home-skill-manage"
+        onClick={() => {
+          setSkillPickerOpen(false);
+          setSkillSearch('');
+          handleOpenSkill();
+          navigate('/app/home/skill');
+        }}
+        style={{ height: 38, justifyContent: 'flex-start', borderRadius: 8, fontWeight: 600 }}
+      >
+        管理技能
+      </Button>
+    </div>
+  );
 
   const handleRestoreSession = useCallback((id: string) => {
     setNewReplySessionIds((prev) => {
@@ -2183,7 +2579,7 @@ const HomePage = () => {
       role: 'assistant',
       content:
         `已进入「告警规则配置」。${sourceText ? `我理解您想处理：${sourceText}\n\n` : ''}` +
-        '当前可配置：调用超时、日调用量突增、资源占用超阈值、异常失败率、通知渠道（企业微信 / 短信）。\n\n' +
+        '当前可配置：调用超时、日调用量突增、资源占用超阈值、异常失败率、通知渠道（企业微信 / 短信 / 邮箱）。\n\n' +
         '请告诉我规则对象、触发条件、阈值和通知渠道，例如：为“处方前置审核”配置调用超时超过 5 秒的高危告警，通知企业微信 + 短信。',
       module: '告警规则配置',
       quickActions: [
@@ -2286,18 +2682,20 @@ const HomePage = () => {
     switch (sceneKey) {
       case 'register-requirement': {
         resetFlows();
-        const completeSlots = extractCompleteRequirementSlots(text);
+        const isIntentOnly = isRequirementIntentOnlyText(text);
+        const completeSlots = isIntentOnly ? null : extractCompleteRequirementSlots(text);
+        const partialSlots = completeSlots ?? (isIntentOnly ? {} : extractPartialRequirementSlots(text));
         setRequirementFlow({
           sessionId,
           step: completeSlots ? 'summary' : 'n0',
-          slots: completeSlots ?? {},
+          slots: partialSlots,
         });
         enterScene({
           id: `req-a-${Date.now()}`,
           role: 'assistant',
           content: completeSlots ? buildRequirementSummary(completeSlots) : buildRequirementOpening(),
           module: '需求登记',
-          requirementSummary: completeSlots ?? undefined,
+          requirementSummary: partialSlots,
           quickActions: undefined,
           time: nowStr(),
         });
@@ -2324,11 +2722,12 @@ const HomePage = () => {
         resetFlows();
         const completeSlots = extractCompleteAccessSlots(text);
         const readySlots = completeSlots ? normalizeAccessReadySlots(completeSlots) : null;
+        const partialSlots = readySlots ?? extractPartialAccessSlots(text);
         const materialComplete = readySlots ? isAccessMaterialsComplete(readySlots) : false;
         setAccessFlow({
           sessionId,
           step: readySlots ? (materialComplete ? 'summary' : 'materialConfirm') : 'collectMaterial',
-          slots: readySlots ?? {},
+          slots: partialSlots,
         });
         enterScene({
           id: `access-a-${Date.now()}`,
@@ -2339,7 +2738,7 @@ const HomePage = () => {
               : buildAccessMaterialCheck(readySlots)
             : buildAccessOpening(),
           module: '接入申请',
-          accessSummary: readySlots && materialComplete ? readySlots : undefined,
+          accessSummary: partialSlots,
           quickActions: readySlots
             ? materialComplete
               ? ACCESS_SUBMIT_QUICK_ACTIONS
@@ -2503,7 +2902,7 @@ const HomePage = () => {
   );
 
   const handleRequirementSummaryConfirm = useCallback((editedSlots: RequirementSlots) => {
-    if (!requirementFlow || requirementFlow.sessionId !== activeSessionId || requirementFlow.step !== 'summary') {
+    if (!requirementFlow || requirementFlow.sessionId !== activeSessionId) {
       handleSend('确认提交');
       return;
     }
@@ -2536,6 +2935,48 @@ const HomePage = () => {
     );
   }, [activeSessionId, requirementFlow]);
 
+  const handleAccessSummaryConfirm = useCallback((editedSlots: AccessSlots) => {
+    if (!accessFlow || accessFlow.sessionId !== activeSessionId) {
+      handleSend('确认提交');
+      return;
+    }
+    const nextSlots = { ...accessFlow.slots, ...editedSlots };
+    if (getAccessMissingLabels(nextSlots).length > 0) return;
+    const nextFlow: AccessFlow = {
+      ...accessFlow,
+      step: 'done',
+      slots: nextSlots,
+    };
+    const timestamp = Date.now();
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `access-confirm-u-${timestamp}`,
+        role: 'user' as const,
+        content: '确认提交',
+        time: nowStr(),
+      },
+      {
+        id: `access-confirm-a-${timestamp}`,
+        role: 'assistant' as const,
+        content: `接入注册申请已提交！
+
+- 智能体编号：${nextSlots.departmentCode ?? '0503'}-0001（按“科室编号-准入顺序号”自动生成）
+- 名称：${nextSlots.agentName ?? '内分泌糖尿病随访管理助手'}
+- 版本：${nextSlots.version ?? '2.1'}
+
+${ACCESS_SCENE.closing}`,
+        module: '接入申请',
+        actionLinks: getAccessDoneActionLinks(),
+        time: nowStr(),
+      },
+    ]);
+    setAccessFlow(nextFlow);
+    setExtraSessions((prev) =>
+      prev.map((s) => (s.id === nextFlow.sessionId ? { ...s, updatedAt: '刚刚' } : s)),
+    );
+  }, [accessFlow, activeSessionId]);
+
   const handleAlertRuleDraftConfirm = useCallback((editedDraft: AlertRuleDraft) => {
     const savedRule = upsertDailyCallAlertRule(editedDraft);
     const timestamp = Date.now();
@@ -2552,9 +2993,9 @@ const HomePage = () => {
         role: 'assistant' as const,
         content:
           `创建成功，告警规则 **${savedRule.name}** 已保存并启用。\n\n` +
-          `后续当${editedDraft.object || '全局智能体'}满足「${editedDraft.condition || savedRule.triggerCondition.description}」时，将通过${editedDraft.channels || '企业微信'}发送${editedDraft.level || '中危'}告警通知。`,
+          `后续当${editedDraft.object || '全局智能体'}满足「${buildAlertRuleConditionDescription(editedDraft)}」时，将通过${editedDraft.channels || '企业微信'}发送告警通知。`,
         module: '告警规则配置',
-        link: { to: `/app/monitoring/alert-rules/${savedRule.id}`, text: '查看规则详情' },
+        link: { to: `/app/monitoring/alert-rules/${savedRule.id}`, text: '查看规则详情', newTab: true },
         time: nowStr(),
       },
     ]);
@@ -2572,16 +3013,18 @@ const HomePage = () => {
   }, [messages, loading]);
 
   /* ---------- 事件:发送 / 停止 ---------- */
-  const handleSend = (overrideText?: string) => {
-    const text = (overrideText ?? draft).trim();
+  const handleSend = (overrideText?: string, visibleText?: string) => {
+    const selectedSkillText = selectedSkillTags.map((name) => `#${name}`).join(' ');
+    const text = (overrideText ?? [selectedSkillText, draft].filter(Boolean).join(' ')).trim();
     if (!text || loading) return;
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
       role: 'user',
-      content: text,
+      content: visibleText ?? text,
       time: nowStr(),
     };
     setDraft('');
+    setSelectedSkillTags([]);
 
     const isFreshHomeQuestion =
       !activeSessionId &&
@@ -2706,20 +3149,20 @@ const HomePage = () => {
           ...next.replies.map((content, index) => ({
             id: `req-a-${Date.now()}-${index}`,
             role: 'assistant' as const,
-          content,
-          module: '需求登记',
-          link: index === next.replies.length - 1 ? next.link : undefined,
-          actionLinks: index === next.replies.length - 1 ? next.actionLinks : undefined,
-          requirementSummary:
-            index === next.replies.length - 1 && next.flow.step === 'summary'
-              ? next.flow.slots
-              : undefined,
-          quickActions:
-            index === next.replies.length - 1 && next.flow.step !== 'summary'
-              ? next.quickActions
-              : undefined,
-          time: nowStr(),
-        })),
+            content,
+            module: '需求登记',
+            link: index === next.replies.length - 1 ? next.link : undefined,
+            actionLinks: index === next.replies.length - 1 ? next.actionLinks : undefined,
+            requirementSummary:
+              index === next.replies.length - 1 && next.flow.step !== 'done'
+                ? next.flow.slots
+                : undefined,
+            quickActions:
+              index === next.replies.length - 1 && next.flow.step !== 'summary'
+                ? next.quickActions
+                : undefined,
+            time: nowStr(),
+          })),
         ]);
         setRequirementFlow(next.flow);
         setExtraSessions((prev) =>
@@ -2762,7 +3205,7 @@ const HomePage = () => {
             module: '接入申请',
             link: index === next.replies.length - 1 ? next.link : undefined,
             actionLinks: index === next.replies.length - 1 ? next.actionLinks : undefined,
-            accessSummary: shouldRenderAccessSummary(next.flow, index, next.replies.length)
+            accessSummary: shouldRenderAccessForm(next.flow, index, next.replies.length)
               ? next.flow.slots
               : undefined,
             quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
@@ -3052,6 +3495,7 @@ const HomePage = () => {
             module: '接入审核',
             link: index === next.replies.length - 1 ? next.link : undefined,
             accessAuditTable: index === next.replies.length - 1 ? next.accessAuditTable : undefined,
+            accessAuditConfirmation: index === next.replies.length - 1 ? next.accessAuditConfirmation : undefined,
             quickActions: index === next.replies.length - 1 ? next.quickActions : undefined,
             time: nowStr(),
           })),
@@ -3225,12 +3669,15 @@ const HomePage = () => {
       }
       if (!activeSessionId && isDirectRequirementText(text)) {
         const sessionId = `req-${Date.now()}`;
+        const completeSlots = extractCompleteRequirementSlots(text);
+        const partialSlots = completeSlots ?? extractPartialRequirementSlots(text);
+        const initialStep: RequirementStep = completeSlots ? 'summary' : 'n0';
         setExtraSessions((prev) => [
           { id: sessionId, title: '智能体建设需求登记', updatedAt: '刚刚' },
           ...prev,
         ]);
         setActiveSessionId(sessionId);
-        setRequirementFlow({ sessionId, step: 'n0', slots: {} });
+        setRequirementFlow({ sessionId, step: initialStep, slots: partialSlots });
         setLedgerFlow(null);
         setAccessFlow(null);
         setResourceRegisterFlow(null);
@@ -3246,8 +3693,9 @@ const HomePage = () => {
           {
             id: `req-a-${Date.now()}`,
             role: 'assistant' as const,
-            content: buildRequirementOpening(),
+            content: completeSlots ? buildRequirementSummary(completeSlots) : buildRequirementOpening(),
             module: '需求登记',
+            requirementSummary: partialSlots,
             time: nowStr(),
           },
         ]);
@@ -3291,13 +3739,14 @@ const HomePage = () => {
         const sessionId = `access-${Date.now()}`;
         const completeSlots = extractCompleteAccessSlots(text);
         const readySlots = completeSlots ? normalizeAccessReadySlots(completeSlots) : null;
+        const partialSlots = readySlots ?? extractPartialAccessSlots(text);
         const materialComplete = readySlots ? isAccessMaterialsComplete(readySlots) : false;
         setExtraSessions((prev) => [{ id: sessionId, title: '接入申请', updatedAt: '刚刚' }, ...prev]);
         setActiveSessionId(sessionId);
         setAccessFlow({
           sessionId,
           step: readySlots ? (materialComplete ? 'summary' : 'materialConfirm') : 'collectMaterial',
-          slots: readySlots ?? {},
+          slots: partialSlots,
         });
         setRequirementFlow(null);
         setLedgerFlow(null);
@@ -3320,7 +3769,7 @@ const HomePage = () => {
                 : buildAccessMaterialCheck(readySlots)
               : buildAccessOpening(),
             module: '接入申请',
-            accessSummary: readySlots && materialComplete ? readySlots : undefined,
+            accessSummary: partialSlots,
             quickActions: readySlots
               ? materialComplete
                 ? ACCESS_SUBMIT_QUICK_ACTIONS
@@ -3450,6 +3899,8 @@ const HomePage = () => {
             initialActiveKey={
               middleView === 'connector'
                 ? 'connector'
+                : middleView === 'skill' || middleView === 'skill-manage'
+                  ? 'skill'
                 : middleView === 'auto-tasks'
                   ? 'auto-task'
                   : 'new'
@@ -3459,6 +3910,7 @@ const HomePage = () => {
             onRestoreRun={handleRestoreRun}
             onAutoTaskCreated={handleAutoTaskCreated}
             onOpenConnector={handleOpenConnector}
+            onOpenSkill={handleOpenSkill}
             onOpenAutoTasks={handleOpenAutoTasks}
             autoTasks={autoTasks}
             sessions={[...extraSessions, ...initialSessions]}
@@ -3482,6 +3934,13 @@ const HomePage = () => {
                 data-testid="home-v1-narrow-connector"
               >
                 连接器
+              </Button>
+              <Button
+                size="small"
+                onClick={() => message.info('技能:请在宽屏(≥1280)下使用第二层入口', 2)}
+                data-testid="home-v1-narrow-skill"
+              >
+                技能
               </Button>
               <Button
                 size="small"
@@ -3519,6 +3978,14 @@ const HomePage = () => {
             {/* 内嵌连接器列表（隐藏副标题 + 演示态 Segmented）。 */}
             <ConnectorList embedded />
           </div>
+        ) : middleView === 'skill' ? (
+          <div style={{ height: '100%', overflow: 'auto' }} data-testid="home-v1-middle-skill">
+            <SkillList embedded onTrySkill={applySkillPrompt} />
+          </div>
+        ) : middleView === 'skill-manage' ? (
+          <div style={{ height: '100%', overflow: 'auto' }} data-testid="home-v1-middle-skill-manage-wrap">
+            <SkillManage embedded />
+          </div>
         ) : middleView === 'auto-tasks' ? (
           <div style={{ height: '100%', overflow: 'auto' }} data-testid="home-v1-middle-auto-tasks">
             {/* 内嵌自动化任务列表（隐藏返回按钮）。 */}
@@ -3543,7 +4010,7 @@ const HomePage = () => {
               医小管
             </Title>
             <Text style={{ fontSize: 12, color: '#555', display: 'block', marginTop: 2 }}>
-              接入 · 台账 · 资源 · 评测 · 监控，一句话就能办
+              需求· 接入 · 台账 · 资源 · 评测 · 监控，一句话就能办
             </Text>
           </div>
         </div>
@@ -3572,10 +4039,15 @@ const HomePage = () => {
                     uploadInputRef.current?.click();
                     return;
                   }
+                  if (action.startsWith('确认退回清单 ')) {
+                    handleSend(action, '确认退回修改');
+                    return;
+                  }
                   handleSend(action);
                 }}
                 onMetricClick={(label) => navigate(resolveLedgerMetricRoute(label))}
                 onRequirementSummaryConfirm={handleRequirementSummaryConfirm}
+                onAccessSummaryConfirm={handleAccessSummaryConfirm}
                 onAlertRuleDraftConfirm={handleAlertRuleDraftConfirm}
               />
             ))
@@ -3739,24 +4211,82 @@ const HomePage = () => {
                 松开即可上传文件
               </div>
             )}
-            <TextArea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onDragEnter={handleInputDragOver}
-              onDragOver={handleInputDragOver}
-              onDragLeave={handleInputDragLeave}
-              onDrop={handleInputDrop}
-              onPressEnter={(e) => {
-                if (!e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 8,
+                flexWrap: 'wrap',
               }}
-              placeholder="向医小管提问:例如「本月准入评测通过率是多少」…"
-              autoSize={{ minRows: 2, maxRows: 5 }}
-              variant="borderless"
-              data-testid="home-v1-input"
-            />
+            >
+              {selectedSkillTags.map((skillName) => (
+                <span
+                  key={skillName}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    height: 30,
+                    maxWidth: '100%',
+                    padding: '0 8px',
+                    borderRadius: 8,
+                    background: '#F1F2F3',
+                    color: '#262626',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    lineHeight: '30px',
+                    whiteSpace: 'nowrap',
+                  }}
+                  data-testid={`home-v1-skill-tag-${skillName}`}
+                >
+                  <ToolOutlined style={{ fontSize: 15, color: '#262626' }} />
+                  <span>{skillName}</span>
+                  <button
+                    type="button"
+                    aria-label={`移除${skillName}`}
+                    onClick={() => removeSkillTag(skillName)}
+                    style={{
+                      width: 18,
+                      height: 18,
+                      padding: 0,
+                      border: 0,
+                      borderRadius: 999,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'transparent',
+                      color: '#8C8C8C',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <CloseOutlined style={{ fontSize: 10 }} />
+                  </button>
+                </span>
+              ))}
+              <TextArea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onDragEnter={handleInputDragOver}
+                onDragOver={handleInputDragOver}
+                onDragLeave={handleInputDragLeave}
+                onDrop={handleInputDrop}
+                onPressEnter={(e) => {
+                  if (!e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder={selectedSkillTags.length ? '继续输入任务内容' : '向医小管提问:例如「今天整体台账情况如何?」'}
+                autoSize={{ minRows: selectedSkillTags.length ? 1 : 2, maxRows: 5 }}
+                variant="borderless"
+                data-testid="home-v1-input"
+                style={{
+                  flex: '1 1 260px',
+                  minWidth: 180,
+                  paddingTop: selectedSkillTags.length ? 3 : undefined,
+                }}
+              />
+            </div>
             <div
               style={{
                 display: 'flex',
@@ -3780,38 +4310,56 @@ const HomePage = () => {
                 aria-hidden="true"
                 tabIndex={-1}
               />
-              <Dropdown
-                menu={{
-                  items: [
-                    {
-                      key: 'file',
-                      label: '添加文件',
-                      icon: <PaperClipOutlined />,
-                    },
-                    {
-                      key: 'connector',
-                      label: '连接器',
-                      icon: <ApiOutlined />,
-                    },
-                  ],
-                  onClick: ({ key }) => {
-                    if (key === 'file') {
-                      uploadInputRef.current?.click();
-                    } else if (key === 'connector') {
-                      setConnectorOpen(true);
-                    }
-                  },
-                }}
-                trigger={['click']}
+              <Popover
+                open={skillPickerOpen}
+                onOpenChange={setSkillPickerOpen}
+                content={skillPickerContent}
+                trigger={[]}
                 placement="topLeft"
+                overlayInnerStyle={{ borderRadius: 16, padding: 14 }}
               >
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<PlusOutlined />}
-                  data-testid="home-v1-toolbar-add"
-                />
-              </Dropdown>
+                <Dropdown
+                  menu={{
+                    items: [
+                      {
+                        key: 'file',
+                        label: '添加文件',
+                        icon: <PaperClipOutlined />,
+                      },
+                      {
+                        key: 'skill',
+                        label: '技能选择',
+                        icon: <ToolOutlined />,
+                      },
+                      {
+                        key: 'connector',
+                        label: '连接器',
+                        icon: <ApiOutlined />,
+                      },
+                    ],
+                    onClick: ({ key }) => {
+                      if (key === 'file') {
+                        uploadInputRef.current?.click();
+                        setSkillPickerOpen(false);
+                      } else if (key === 'skill') {
+                        setSkillPickerOpen(true);
+                      } else if (key === 'connector') {
+                        setConnectorOpen(true);
+                        setSkillPickerOpen(false);
+                      }
+                    },
+                  }}
+                  trigger={['click']}
+                  placement="topLeft"
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<PlusOutlined />}
+                    data-testid="home-v1-toolbar-add"
+                  />
+                </Dropdown>
+              </Popover>
               <span style={{ flex: 1 }} />
               {/* 右侧:模型 + 语音 + 发送 */}
               <Space size={4}>
@@ -3853,14 +4401,14 @@ const HomePage = () => {
                     shape="circle"
                     icon={<ArrowUpOutlined style={{ fontSize: 16, fontWeight: 600 }} />}
                     onClick={() => handleSend()}
-                    disabled={!draft.trim()}
+                    disabled={!draft.trim() && selectedSkillTags.length === 0}
                     aria-label="发送消息"
                     style={{
                       width: 34,
                       height: 34,
                       border: 0,
                       boxShadow: 'none',
-                      background: draft.trim() ? '#1677FF' : '#D9D9D9',
+                      background: draft.trim() || selectedSkillTags.length > 0 ? '#1677FF' : '#D9D9D9',
                       color: '#FFFFFF',
                     }}
                     data-testid="home-v1-send"
@@ -3869,15 +4417,14 @@ const HomePage = () => {
               </Space>
             </div>
           </div>
-          <div style={{ marginTop: 4, fontSize: 10, color: '#999' }}>
-            Enter 发送 · Shift + Enter 换行 · 输出形式:文本/列表/跳转/报告(Word/PDF)/消息推送
-          </div>
         </div>
           </>
         )}
       </Card>
         </Col>
       </Row>
+
+      <SkillImportModal open={skillImportOpen} onClose={() => setSkillImportOpen(false)} />
 
       {/* ============ Drawer:连接器(由底栏「+ → 连接器」打开) ============ */}
       <Drawer
@@ -3947,6 +4494,7 @@ const MessageBubble = ({
   onQuickAction,
   onMetricClick,
   onRequirementSummaryConfirm,
+  onAccessSummaryConfirm,
   onAlertRuleDraftConfirm,
 }: {
   msg: any;
@@ -3954,11 +4502,12 @@ const MessageBubble = ({
   onQuickAction?: (text: string) => void;
   onMetricClick?: (text: string) => void;
   onRequirementSummaryConfirm?: (slots: RequirementSlots) => void;
+  onAccessSummaryConfirm?: (slots: AccessSlots) => void;
   onAlertRuleDraftConfirm?: (draft: AlertRuleDraft) => void;
 }) => {
   const isUser = msg.role === 'user';
   const hasDashboardMetrics = !isUser && Array.isArray(msg.dashboardMetrics) && msg.dashboardMetrics.length > 0;
-  const isWideAssistantContent = !isUser && Boolean(msg.accessAuditTable || msg.evaluationAuditTable || msg.accessSummary || msg.alertRuleDraft);
+  const isWideAssistantContent = !isUser && Boolean(msg.accessAuditTable || msg.accessAuditConfirmation || msg.evaluationAuditTable || msg.accessSummary || msg.requirementSummary || msg.alertRuleDraft);
   const shouldShowStandaloneMetrics = hasDashboardMetrics;
   return (
     <div
@@ -4006,12 +4555,25 @@ const MessageBubble = ({
             <AccessSummaryCard
               slots={msg.accessSummary}
               intro={msg.content}
+              onConfirm={(slots) => onAccessSummaryConfirm?.(slots)}
             />
           ) : msg.requirementSummary ? (
-            <RequirementSummaryCard
-              slots={msg.requirementSummary}
-              onConfirm={(slots) => onRequirementSummaryConfirm?.(slots)}
-            />
+            <>
+              {msg.content !== '【汇总确认卡】' && (
+                <ReactMarkdown
+                  components={{
+                    p: ({ children }) => <span style={{ display: 'block', marginBottom: 4 }}>{children}</span>,
+                    strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              )}
+              <RequirementSummaryCard
+                slots={msg.requirementSummary}
+                onConfirm={(slots) => onRequirementSummaryConfirm?.(slots)}
+              />
+            </>
           ) : msg.alertRuleDraft ? (
             <>
               <ReactMarkdown
@@ -4131,7 +4693,7 @@ const MessageBubble = ({
                     });
                   }}
                 >
-                  下载 PDF
+                  导出报告
                 </Button>
               </Space>
             </div>
@@ -4150,6 +4712,12 @@ const MessageBubble = ({
               onQuickAction={onQuickAction}
             />
           )}
+          {!isUser && msg.accessAuditConfirmation && (
+            <AccessAuditConfirmationView
+              confirmation={msg.accessAuditConfirmation}
+              onConfirm={onQuickAction}
+            />
+          )}
           {!isUser && msg.evaluationAuditTable && (
             <EvaluationAuditTableView
               table={msg.evaluationAuditTable}
@@ -4166,7 +4734,14 @@ const MessageBubble = ({
                 type="link"
                 size="small"
                 style={{ padding: 0, color: isUser ? '#fff' : '#1677FF' }}
-                onClick={() => navigate(msg.link!.to)}
+                onClick={() => {
+                  if (msg.link!.newTab) {
+                    const url = new URL(msg.link!.to, window.location.origin);
+                    window.open(url.toString(), '_blank', 'noopener,noreferrer');
+                    return;
+                  }
+                  navigate(msg.link!.to);
+                }}
                 data-testid="home-v1-link"
               >
                 {msg.link.text} →
@@ -4191,7 +4766,7 @@ const MessageBubble = ({
               ))}
             </div>
           )}
-          {!isUser && Array.isArray(msg.quickActions) && msg.quickActions.length > 0 && (
+          {!isUser && !msg.accessSummary && Array.isArray(msg.quickActions) && msg.quickActions.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
               {msg.quickActions.map((action: string) => (
                 <Button
@@ -4276,9 +4851,11 @@ const EvaluationProgressCard = ({ progress }: { progress: EvaluationProgressSumm
 const AccessSummaryCard = ({
   slots,
   intro,
+  onConfirm,
 }: {
   slots: AccessSlots;
   intro?: string;
+  onConfirm: (slots: AccessSlots) => void;
 }) => {
   const normalizeAccessMode = (value?: string): AccessMode => {
     if (value === 'SDK' || value === 'OTel') return value;
@@ -4293,10 +4870,7 @@ const AccessSummaryCard = ({
     const key = values.platformKey || `sk-${mode.toLowerCase()}-********`;
     return `import { init } from '@platform/agent-${mode.toLowerCase()}';\ninit({\n  endpoint: '${url}',\n  apiKey: '${key}',\n});`;
   };
-  const buildDefaultMaterials = (values: AccessSlots) =>
-    values.materials && values.materials.length > 0
-      ? values.materials
-      : ['超声检查预约助手-技术规格书.doc（已上传，内容达标，将转 PDF 留存）', '超声检查预约助手-产品说明书.doc（已上传，内容达标，将转 PDF 留存）'];
+  const buildDefaultMaterials = (values: AccessSlots) => values.materials ?? [];
   const toUploadFiles = (materials: string[]): UploadFile[] =>
     materials
       .flatMap((name) => {
@@ -4316,16 +4890,11 @@ const AccessSummaryCard = ({
   const [draftSlots, setDraftSlots] = useState<AccessSlots>(() => {
     const mode = normalizeAccessMode(slots.accessMethod);
     const initial = { ...slots, accessMethod: mode };
-    if (mode !== 'API') {
-      initial.platformUrl = initial.platformUrl || buildPlatformUrl(mode, initial);
-      initial.platformKey = initial.platformKey || `sk-${mode.toLowerCase()}-********`;
-      initial.instrumentationCode = initial.instrumentationCode || buildInstrumentationCode(mode, initial);
-    }
     return initial;
   });
   const [materialFiles, setMaterialFiles] = useState<UploadFile[]>(() => toUploadFiles(buildDefaultMaterials(slots)));
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState(slots.connectivity ?? '通过（320ms，接口响应正常）');
+  const [testResult, setTestResult] = useState(slots.connectivity ?? '');
 
   const updateSlot = (key: keyof AccessSlots, value: string) => {
     setDraftSlots((prev) => ({
@@ -4359,20 +4928,47 @@ const AccessSummaryCard = ({
       message.success('联通测试通过');
     }, 520);
   };
-  const rows: Array<{ key: keyof AccessSlots; label: string; multiline?: boolean; fallback: string }> = [
-    { key: 'agentName', label: '名称', fallback: '内分泌糖尿病随访管理助手' },
-    { key: 'version', label: '版本', fallback: '2.1' },
-    { key: 'department', label: '所属科室', fallback: '内分泌科' },
-    { key: 'clinicStage', label: '诊疗环节', fallback: '其他（出院后随访管理）' },
-    { key: 'functionDescription', label: '功能描述', multiline: true, fallback: buildAccessFunctionDescription() },
-    { key: 'source', label: '来源', fallback: '合作研发' },
-    { key: 'vendor', label: '供应商', fallback: '智医健康科技有限公司' },
-    { key: 'contact', label: '技术联系人', fallback: '陈明' },
-    { key: 'phone', label: '联系方式', fallback: '13812345678' },
-  ];
-  const introText = intro?.split(/\n\s*\n/)[0] ?? '描述信息完整 + 材料齐全 + 连通测试通过，可以提交。';
+  const buildGeneratedMaterialName = (type: 'tech' | 'product') => {
+    const baseName = (draftSlots.agentName || '智能体接入申请').replace(/[\\/:*?"<>|]/g, '');
+    return type === 'tech'
+      ? `${baseName}-技术规格说明书.pdf`
+      : `${baseName}-产品说明书.pdf`;
+  };
+  const addGeneratedMaterial = (types: Array<'tech' | 'product'>) => {
+    const generatedFiles: UploadFile[] = types.map((type) => ({
+      uid: `access-generated-${type}-${Date.now()}`,
+      name: buildGeneratedMaterialName(type),
+      status: 'done' as const,
+      percent: 100,
+    }));
+    setMaterialFiles((prev) => {
+      const existingNames = new Set(prev.map((file) => file.name));
+      return [...prev, ...generatedFiles.filter((file) => !existingNames.has(file.name))];
+    });
+    setDraftSlots((prev) => ({
+      ...prev,
+      techSpecUploaded: prev.techSpecUploaded || types.includes('tech'),
+      productDocUploaded: prev.productDocUploaded || types.includes('product'),
+    }));
+    message.success(types.length === 2 ? '已生成全部备案材料' : `已生成${types[0] === 'tech' ? '技术规格说明书' : '产品说明书'}`);
+  };
+  const rows = getAccessBaseRows();
+  const materialNames = materialFiles.map((file) => file.name);
+  const localSlots: AccessSlots = {
+    ...draftSlots,
+    materials: materialNames,
+    techSpecUploaded: materialNames.some((name) => /技术规格|技术文档|接口文档|规格书/.test(name)),
+    productDocUploaded: materialNames.some((name) => /产品说明|产品文档|产品.*说明书/.test(name)),
+    connectivity: testResult,
+  };
+  const missingLabels = getAccessMissingLabels(localSlots);
+  const fieldMissingLabels = getAccessFieldMissingLabels(localSlots);
+  const { missingTech, missingProduct } = getAccessMissingMaterialTypes(localSlots);
+  const canGenerateMaterials = fieldMissingLabels.length === 0 && (missingTech || missingProduct);
+  const canSubmit = missingLabels.length === 0;
+  const introText = intro?.split(/\n\s*\n/)[0] ?? (canSubmit ? '描述信息完整 + 材料齐全 + 连通测试通过，可以提交。' : '描述信息不完整，请补全表单后提交。');
   const accessMode = normalizeAccessMode(draftSlots.accessMethod);
-  const renderHeaderCell = (label: string) => (
+  const renderHeaderCell = (label: ReactNode) => (
     <th
       style={{
         width: 118,
@@ -4398,6 +4994,11 @@ const AccessSummaryCard = ({
       <Text style={{ display: 'block', fontSize: 12, color: '#595959', marginBottom: 8 }}>
         {introText}
       </Text>
+      {!canSubmit && (
+        <Text type="secondary" style={{ display: 'block', fontSize: 12, marginBottom: 8 }}>
+          还缺：{missingLabels.join('、')}。可以直接在表格中补全，补齐后即可确认提交。
+        </Text>
+      )}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760, fontSize: 12 }}>
           <tbody>
@@ -4405,24 +5006,32 @@ const AccessSummaryCard = ({
               const rawValue = draftSlots[row.key];
               const value = Array.isArray(rawValue)
                 ? rawValue.join('\n')
-                : String(rawValue ?? row.fallback);
+                : String(rawValue ?? '');
+              const missing = !value.trim() || (row.key === 'phone' && !isValidAccessPhone(value));
               const fieldControl = row.multiline ? (
                 <TextArea
                   value={value}
                   autoSize={{ minRows: row.key === 'functionDescription' ? 4 : 2, maxRows: 8 }}
+                  placeholder={row.placeholder}
                   onChange={(event) => updateSlot(row.key, event.target.value)}
                   style={{ fontSize: 12, lineHeight: 1.6, resize: 'none' }}
                 />
               ) : (
                 <Input
                   value={value}
+                  placeholder={row.placeholder}
                   onChange={(event) => updateSlot(row.key, event.target.value)}
                   style={{ fontSize: 12 }}
                 />
               );
               return (
                 <tr key={row.key}>
-                  {renderHeaderCell(row.label)}
+                  {renderHeaderCell(
+                    <Space size={4}>
+                      <span>{row.label}</span>
+                      {missing && <Tag color="warning" style={{ margin: 0, fontSize: 10 }}>未填</Tag>}
+                    </Space>,
+                  )}
                   {renderBodyCell(fieldControl)}
                 </tr>
               );
@@ -4448,7 +5057,8 @@ const AccessSummaryCard = ({
                   {renderHeaderCell('接口地址')}
                   {renderBodyCell(
                     <Input
-                      value={draftSlots.endpoint ?? 'https://api.hospital.local/agent/access/v1'}
+                      value={draftSlots.endpoint ?? ''}
+                      placeholder="请输入接口地址，例如 https://api.example.com/agent/v1"
                       onChange={(event) => updateSlot('endpoint', event.target.value)}
                       style={{ fontSize: 12 }}
                     />,
@@ -4458,7 +5068,8 @@ const AccessSummaryCard = ({
                   {renderHeaderCell('API key')}
                   {renderBodyCell(
                     <Input.Password
-                      value={draftSlots.apiKeyMasked ?? '********'}
+                      value={draftSlots.apiKeyMasked ?? ''}
+                      placeholder="请输入或确认 API key"
                       onChange={(event) => updateSlot('apiKeyMasked', event.target.value)}
                       style={{ fontSize: 12 }}
                     />,
@@ -4471,7 +5082,8 @@ const AccessSummaryCard = ({
                   {renderHeaderCell('平台 URL 地址')}
                   {renderBodyCell(
                     <Input
-                      value={draftSlots.platformUrl ?? buildPlatformUrl(accessMode, draftSlots)}
+                      value={draftSlots.platformUrl ?? ''}
+                      placeholder={buildPlatformUrl(accessMode, draftSlots)}
                       onChange={(event) => updateSlot('platformUrl', event.target.value)}
                       style={{ fontSize: 12 }}
                     />,
@@ -4481,7 +5093,8 @@ const AccessSummaryCard = ({
                   {renderHeaderCell('平台密钥 key')}
                   {renderBodyCell(
                     <Input.Password
-                      value={draftSlots.platformKey ?? `sk-${accessMode.toLowerCase()}-********`}
+                      value={draftSlots.platformKey ?? ''}
+                      placeholder={`sk-${accessMode.toLowerCase()}-********`}
                       onChange={(event) => updateSlot('platformKey', event.target.value)}
                       style={{ fontSize: 12 }}
                     />,
@@ -4491,7 +5104,8 @@ const AccessSummaryCard = ({
                   {renderHeaderCell('埋点代码生成')}
                   {renderBodyCell(
                     <TextArea
-                      value={draftSlots.instrumentationCode ?? buildInstrumentationCode(accessMode, draftSlots)}
+                      value={draftSlots.instrumentationCode ?? ''}
+                      placeholder={buildInstrumentationCode(accessMode, draftSlots)}
                       onChange={(event) => updateSlot('instrumentationCode', event.target.value)}
                       autoSize={{ minRows: 4, maxRows: 6 }}
                       style={{ fontSize: 12, lineHeight: 1.6, resize: 'none', fontFamily: 'monospace' }}
@@ -4517,7 +5131,9 @@ const AccessSummaryCard = ({
                     </Button>
                   </Upload>
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    已上传 {materialFiles.length} 个文件，支持替换或继续补充备案材料。
+                    {materialFiles.length > 0
+                      ? `已上传 ${materialFiles.length} 个文件，需包含技术规格书和产品说明书。`
+                      : '暂未上传文件，需包含技术规格书和产品说明书。'}
                   </Text>
                 </Space>,
               )}
@@ -4536,7 +5152,7 @@ const AccessSummaryCard = ({
                     联通测试
                   </Button>
                   <Tag color="success" icon={<FileTextOutlined />}>
-                    {testResult}
+                    {testResult || '待测试'}
                   </Tag>
                 </Space>,
               )}
@@ -4544,9 +5160,53 @@ const AccessSummaryCard = ({
           </tbody>
         </table>
       </div>
-      <div style={{ marginTop: 10 }}>
+      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {canGenerateMaterials && (
+          <>
+            {missingTech && missingProduct && (
+              <Button
+                size="small"
+                type="primary"
+                icon={<FileTextOutlined />}
+                onClick={() => addGeneratedMaterial(['tech', 'product'])}
+                data-testid="home-v1-access-generate-all-materials"
+              >
+                生成全部备案材料
+              </Button>
+            )}
+            {missingTech && (
+              <Button
+                size="small"
+                icon={<FileTextOutlined />}
+                onClick={() => addGeneratedMaterial(['tech'])}
+                data-testid="home-v1-access-generate-tech-material"
+              >
+                生成技术规格说明书
+              </Button>
+            )}
+            {missingProduct && (
+              <Button
+                size="small"
+                icon={<FileTextOutlined />}
+                onClick={() => addGeneratedMaterial(['product'])}
+                data-testid="home-v1-access-generate-product-material"
+              >
+                生成产品说明书
+              </Button>
+            )}
+          </>
+        )}
+        <Button
+          type="primary"
+          size="small"
+          disabled={!canSubmit}
+          onClick={() => canSubmit && onConfirm(localSlots)}
+          data-testid="home-v1-access-summary-submit"
+        >
+          确认提交
+        </Button>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          哪项有误可直接在表格内修改。
+          {canSubmit ? '哪项有误可直接在表格内修改。' : '表单信息完整后可提交。'}
         </Text>
       </div>
     </div>
@@ -4563,30 +5223,42 @@ const RequirementSummaryCard = ({
   const [draftSlots, setDraftSlots] = useState<RequirementSlots>(() => ({ ...slots }));
   const urgencyOptions = ['低', '中', '高'].map((value) => ({ label: value, value }));
   const normalizeUrgencyValue = (value?: string) => (
-    value && ['低', '中', '高'].includes(value) ? value : '中'
+    value && ['低', '中', '高'].includes(value) ? value : undefined
   );
-  const updateSlot = (key: keyof RequirementSlots, value: string) => {
+  const updateSlot = (key: keyof RequirementSlots, value?: string) => {
     setDraftSlots((prev) => ({ ...prev, [key]: value }));
   };
-  const rows: Array<{ key: keyof RequirementSlots; label: string; multiline?: boolean; fallback: string }> = [
-    { key: 'department', label: '提出科室', fallback: '超声医学科' },
-    { key: 'clinicStage', label: '诊疗环节', fallback: '辅助检查' },
-    { key: 'functionDescription', label: '功能描述', multiline: true, fallback: '待补充' },
-    { key: 'reason', label: '提出原因', multiline: true, fallback: '待补充' },
-    { key: 'resources', label: '所需资源', multiline: true, fallback: '待补充' },
-    { key: 'urgency', label: '需求紧急程度', fallback: '中' },
-    { key: 'proposer', label: '提出人', fallback: '待补充' },
-    { key: 'phone', label: '联系方式', fallback: '待补充' },
+  const rows: Array<{ key: keyof RequirementSlots; label: string; multiline?: boolean; placeholder: string }> = [
+    { key: 'department', label: '提出科室', placeholder: '请输入提出科室' },
+    { key: 'clinicStage', label: '诊疗环节', placeholder: '请选择或填写诊疗环节' },
+    { key: 'functionDescription', label: '功能描述', multiline: true, placeholder: '请说明服务对象、读取信息与输出结果' },
+    { key: 'reason', label: '提出原因', multiline: true, placeholder: '请说明现有流程和主要痛点' },
+    { key: 'resources', label: '所需资源', multiline: true, placeholder: '请说明业务系统、模型或数据资源' },
+    { key: 'urgency', label: '需求紧急程度', placeholder: '请选择高/中/低' },
+    { key: 'proposer', label: '提出人', placeholder: '请输入提出人姓名' },
+    { key: 'phone', label: '联系方式', placeholder: '请输入 11 位手机号' },
   ];
+  const isFilled = (key: keyof RequirementSlots) => String(draftSlots[key] ?? '').trim().length > 0;
+  const missingLabels = rows
+    .filter((row) => !isFilled(row.key) || (row.key === 'phone' && !/^\d{11}$/.test(String(draftSlots.phone ?? '').trim())))
+    .map((row) => row.label);
+  const canSubmit = missingLabels.length === 0;
+  const title = canSubmit ? '【汇总确认卡】' : '【需求登记表单】';
 
   return (
     <div data-testid="home-v1-requirement-summary-card">
-      <div style={{ fontWeight: 700, marginBottom: 8 }}>【汇总确认卡】</div>
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>{title}</div>
+      {!canSubmit && (
+        <Text type="secondary" style={{ display: 'block', fontSize: 12, marginBottom: 8 }}>
+          还缺：{missingLabels.join('、')}。可以直接在表格中补全，补齐后即可确认提交。
+        </Text>
+      )}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640, fontSize: 12 }}>
           <tbody>
             {rows.map((row) => {
-              const value = String(draftSlots[row.key] ?? row.fallback);
+              const value = String(draftSlots[row.key] ?? '');
+              const missing = !value.trim() || (row.key === 'phone' && !/^\d{11}$/.test(value.trim()));
               return (
                 <tr key={row.key}>
                   <th
@@ -4601,12 +5273,17 @@ const RequirementSummaryCard = ({
                       fontWeight: 600,
                     }}
                   >
-                    {row.label}
+                    <Space size={4}>
+                      <span>{row.label}</span>
+                      {missing && <Tag color="warning" style={{ margin: 0, fontSize: 10 }}>未填</Tag>}
+                    </Space>
                   </th>
                   <td style={{ padding: 6, border: '1px solid #D9E8FF', background: '#FFFFFF' }}>
                     {row.key === 'urgency' ? (
                       <Select
                         value={normalizeUrgencyValue(value)}
+                        placeholder={row.placeholder}
+                        allowClear
                         options={urgencyOptions}
                         onChange={(nextValue) => updateSlot(row.key, nextValue)}
                         style={{ width: '100%', fontSize: 12 }}
@@ -4615,12 +5292,14 @@ const RequirementSummaryCard = ({
                       <TextArea
                         value={value}
                         autoSize={{ minRows: 2, maxRows: 5 }}
+                        placeholder={row.placeholder}
                         onChange={(event) => updateSlot(row.key, event.target.value)}
                         style={{ fontSize: 12, lineHeight: 1.6, resize: 'none' }}
                       />
                     ) : (
                       <Input
                         value={value}
+                        placeholder={row.placeholder}
                         onChange={(event) => updateSlot(row.key, event.target.value)}
                         style={{ fontSize: 12 }}
                       />
@@ -4633,9 +5312,20 @@ const RequirementSummaryCard = ({
         </table>
       </div>
       <div style={{ marginTop: 10 }}>
-        <Button type="primary" size="small" onClick={() => onConfirm(draftSlots)} data-testid="home-v1-requirement-summary-submit">
+        <Button
+          type="primary"
+          size="small"
+          disabled={!canSubmit}
+          onClick={() => canSubmit && onConfirm(draftSlots)}
+          data-testid="home-v1-requirement-summary-submit"
+        >
           确认提交
         </Button>
+        {!canSubmit && (
+          <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+            表单信息完整后可提交
+          </Text>
+        )}
       </div>
     </div>
   );
@@ -4652,18 +5342,26 @@ const AlertRuleDraftCard = ({
   const updateDraft = (key: AlertRuleDraftField, value: string) => {
     setEditedDraft((prev) => ({ ...prev, [key]: value }));
   };
-  const rows: Array<{ key: AlertRuleDraftField; label: string; multiline?: boolean; options?: string[] }> = [
+  const updateChannels = (channels: string[]) => {
+    updateDraft('channels', channels.join('、'));
+  };
+  const rows: Array<{ key: AlertRuleDraftField; label: string; options?: string[] }> = [
     { key: 'name', label: '规则名称' },
     { key: 'object', label: '规则对象' },
     { key: 'type', label: '规则类型', options: ['业务监控告警规则', '状态监控告警规则', '成本监控告警规则', '安全监控告警规则'] },
-    { key: 'metric', label: '触发指标' },
-    { key: 'condition', label: '触发条件', multiline: true },
-    { key: 'level', label: '告警级别', options: ['低危', '中危', '高危'] },
-    { key: 'channels', label: '通知渠道', options: ['企业微信', '企业微信 + 短信', '短信'] },
-    { key: 'status', label: '状态', options: ['待确认', '启用', '停用'] },
-    { key: 'effectiveTime', label: '生效时间' },
-    { key: 'creator', label: '创建人' },
+    { key: 'metric', label: '触发指标', options: ['业务调用总量', '任务完成率', '不合规回答率', '高风险拦截数', '心跳成功率', '运行状态变更', 'GPU 显存使用率', '周期总成本', 'Token 消耗', '实例闲置率'] },
   ];
+  const alertLevels: Array<{
+    label: string;
+    operatorKey: AlertRuleDraftField;
+    thresholdKey: AlertRuleDraftField;
+  }> = [
+    { label: '低危', operatorKey: 'lowOperator', thresholdKey: 'lowThreshold' },
+    { label: '中危', operatorKey: 'mediumOperator', thresholdKey: 'mediumThreshold' },
+    { label: '高危', operatorKey: 'highOperator', thresholdKey: 'highThreshold' },
+  ];
+  const operatorOptions = ['>', '>=', '<', '<=', '='];
+  const channelValues = editedDraft.channels ? editedDraft.channels.split('、').filter(Boolean) : [];
 
   return (
     <div data-testid="home-v1-alert-rule-draft-card" style={{ marginTop: 8 }}>
@@ -4696,13 +5394,6 @@ const AlertRuleDraftCard = ({
                         onChange={(nextValue) => updateDraft(row.key, nextValue)}
                         style={{ width: '100%' }}
                       />
-                    ) : row.multiline ? (
-                      <TextArea
-                        value={value}
-                        autoSize={{ minRows: 2, maxRows: 4 }}
-                        onChange={(event) => updateDraft(row.key, event.target.value)}
-                        style={{ fontSize: 12, lineHeight: 1.6, resize: 'none' }}
-                      />
                     ) : (
                       <Input
                         value={value}
@@ -4714,6 +5405,89 @@ const AlertRuleDraftCard = ({
                 </tr>
               );
             })}
+            <tr>
+              <th
+                style={{
+                  width: 118,
+                  verticalAlign: 'top',
+                  textAlign: 'left',
+                  padding: '8px 10px',
+                  color: '#595959',
+                  background: '#F7FBFF',
+                  border: '1px solid #D9E8FF',
+                  fontWeight: 600,
+                }}
+              >
+                触发条件
+              </th>
+              <td style={{ padding: 6, border: '1px solid #D9E8FF', background: '#FFFFFF' }}>
+                <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                  {alertLevels.map((level) => (
+                    <Space key={level.label} size={8} style={{ display: 'flex' }}>
+                      <Tag style={{ width: 48, textAlign: 'center', marginInlineEnd: 0 }}>{level.label}</Tag>
+                      <Select
+                        value={editedDraft[level.operatorKey]}
+                        options={operatorOptions.map((operator) => ({ label: operator, value: operator }))}
+                        onChange={(value) => updateDraft(level.operatorKey, value)}
+                        style={{ width: 92 }}
+                      />
+                      <InputNumber
+                        min={0}
+                        value={Number(editedDraft[level.thresholdKey] || 0)}
+                        onChange={(value) => updateDraft(level.thresholdKey, String(value ?? ''))}
+                        addonAfter="次"
+                        style={{ width: 180 }}
+                      />
+                    </Space>
+                  ))}
+                </Space>
+              </td>
+            </tr>
+            <tr>
+              <th
+                style={{
+                  width: 118,
+                  verticalAlign: 'top',
+                  textAlign: 'left',
+                  padding: '8px 10px',
+                  color: '#595959',
+                  background: '#F7FBFF',
+                  border: '1px solid #D9E8FF',
+                  fontWeight: 600,
+                }}
+              >
+                通知渠道
+              </th>
+              <td style={{ padding: 6, border: '1px solid #D9E8FF', background: '#FFFFFF' }}>
+                <Select
+                  mode="multiple"
+                  value={channelValues}
+                  options={['企业微信', '短信', '邮箱'].map((option) => ({ label: option, value: option }))}
+                  onChange={updateChannels}
+                  maxTagCount="responsive"
+                  style={{ width: '100%' }}
+                />
+              </td>
+            </tr>
+            <tr>
+              <th
+                style={{
+                  width: 118,
+                  verticalAlign: 'top',
+                  textAlign: 'left',
+                  padding: '8px 10px',
+                  color: '#595959',
+                  background: '#F7FBFF',
+                  border: '1px solid #D9E8FF',
+                  fontWeight: 600,
+                }}
+              >
+                创建人
+              </th>
+              <td style={{ padding: 6, border: '1px solid #D9E8FF', background: '#FFFFFF' }}>
+                <Input value={editedDraft.creator} disabled style={{ fontSize: 12 }} />
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -4733,52 +5507,41 @@ const AlertRuleDraftCard = ({
 
 const HomeDashboardMetricsView = ({ metrics }: { metrics: HomeDashboardMetric[] }) => (
   <div
-    style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-      gap: 8,
-      marginTop: 10,
-      minWidth: 0,
-      width: '100%',
-    }}
+    className="home-v1-metric-grid"
     data-testid="home-v1-greeting-metrics"
   >
     {metrics.map((metric) => (
       <div
         key={metric.key}
+        className="home-v1-metric-card"
         style={{
-          border: '1px solid #D9E8FF',
-          background: '#F7FBFF',
-          borderRadius: 8,
-          padding: '10px 12px 12px',
-          minWidth: 0,
-          minHeight: 132,
-          display: 'flex',
-          flexDirection: 'column',
-        }}
+          '--metric-accent': metric.accent,
+          '--metric-fill': metric.fill,
+        } as CSSProperties}
         data-testid={`home-v1-greeting-metric-${metric.key}`}
       >
-        <div style={{ color: '#595959', fontSize: 11, lineHeight: '16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {metric.label}
+        <div className="home-v1-metric-glow" />
+        <div className="home-v1-metric-header">
+          <span className="home-v1-metric-kicker">{metric.label}</span>
+          <span className="home-v1-metric-live">LIVE</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 2 }}>
-          <strong style={{ color: '#262626', fontSize: 18, lineHeight: '24px', fontWeight: 700 }}>
-            {metric.value}
-          </strong>
+        <div className="home-v1-metric-value-row">
+          <strong className="home-v1-metric-value">{metric.value}</strong>
+          <span className="home-v1-metric-chip">近6月</span>
         </div>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', marginTop: 10, minHeight: 62 }}>
-          <MiniTrendChart values={metric.trend.map((item) => item.value)} color={metric.accent} fill={metric.fill} />
+        <div className="home-v1-metric-chart">
+          <MiniTrendChart metricKey={metric.key} values={metric.trend.map((item) => item.value)} color={metric.accent} fill={metric.fill} />
         </div>
       </div>
     ))}
   </div>
 );
 
-const MiniTrendChart = ({ values, color, fill }: { values: number[]; color: string; fill: string }) => {
+const MiniTrendChart = ({ metricKey, values, color, fill }: { metricKey: string; values: number[]; color: string; fill: string }) => {
   const width = 260;
-  const height = 62;
-  const paddingX = 3;
-  const paddingY = 4;
+  const height = 72;
+  const paddingX = 8;
+  const paddingY = 8;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = Math.max(1, max - min);
@@ -4787,24 +5550,57 @@ const MiniTrendChart = ({ values, color, fill }: { values: number[]; color: stri
     const y = height - paddingY - ((value - min) / span) * (height - paddingY * 2);
     return { x, y };
   });
-  const line = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
-  const area = `${paddingX},${height - paddingY} ${line} ${width - paddingX},${height - paddingY}`;
+  const linePath = points.reduce((path, point, index) => {
+    if (index === 0) return `M ${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
+    const previous = points[index - 1];
+    const controlX = previous.x + (point.x - previous.x) / 2;
+    return `${path} C ${controlX.toFixed(1)} ${previous.y.toFixed(1)}, ${controlX.toFixed(1)} ${point.y.toFixed(1)}, ${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
+  }, '');
+  const areaPath = `${linePath} L ${(width - paddingX).toFixed(1)} ${(height - paddingY).toFixed(1)} L ${paddingX.toFixed(1)} ${(height - paddingY).toFixed(1)} Z`;
+  const lastPoint = points[points.length - 1];
+  const gradientId = `homeMetricGradient-${metricKey}`;
+  const haloId = `homeMetricHalo-${metricKey}`;
 
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
       width="100%"
-      height="62"
+      height="72"
       role="img"
       aria-label="月趋势图"
-      style={{ display: 'block', width: '100%', marginTop: 4 }}
+      className="home-v1-metric-svg"
     >
-      <polyline points={`${paddingX},${height - paddingY} ${width - paddingX},${height - paddingY}`} fill="none" stroke="#E8EEF7" strokeWidth="1" />
-      <polygon points={area} fill={fill} />
-      <polyline points={line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      {points.map((point, index) => (
-        <circle key={`${point.x}-${index}`} cx={point.x} cy={point.y} r="1.8" fill="#FFFFFF" stroke={color} strokeWidth="1.4" />
+      <defs>
+        <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+          <stop offset="72%" stopColor={fill} stopOpacity="0.14" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+        <filter id={haloId} x="-30%" y="-60%" width="160%" height="220%">
+          <feGaussianBlur stdDeviation="2.8" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      {[0, 1, 2].map((lineIndex) => (
+        <line
+          key={lineIndex}
+          x1={paddingX}
+          x2={width - paddingX}
+          y1={paddingY + (lineIndex * (height - paddingY * 2)) / 2}
+          y2={paddingY + (lineIndex * (height - paddingY * 2)) / 2}
+          className="home-v1-metric-grid-line"
+        />
       ))}
+      <path d={areaPath} fill={`url(#${gradientId})`} className="home-v1-metric-area" />
+      <path d={linePath} fill="none" stroke={color} strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round" filter={`url(#${haloId})`} className="home-v1-metric-line" pathLength="1" />
+      {points.map((point, index) => (
+        <circle key={`${point.x}-${index}`} cx={point.x} cy={point.y} r={index === points.length - 1 ? 2.8 : 2.1} fill="#FFFFFF" stroke={color} strokeWidth="1.6" className="home-v1-metric-dot" />
+      ))}
+      <circle cx={lastPoint.x} cy={lastPoint.y} r="6.5" fill={color} className="home-v1-metric-pulse" />
+      <line x1="0" x2={width} y1="1" y2="1" className="home-v1-metric-scan" />
     </svg>
   );
 };
@@ -4888,14 +5684,15 @@ const EvaluationAuditTableView = ({
         </Text>
       </div>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960, fontSize: 12 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180, fontSize: 12 }}>
           <thead>
             <tr style={{ background: '#FAFAFA', color: '#595959' }}>
               <th style={monitorThStyle}>选择</th>
               <th style={monitorThStyle}>智能体编号</th>
               <th style={monitorThStyle}>智能体名称</th>
-              <th style={monitorThStyle}>智能体版本号</th>
               <th style={monitorThStyle}>预审结论</th>
+              <th style={monitorThStyle}>结论说明</th>
+              <th style={monitorThStyle}>智能体版本号</th>
               <th style={monitorThStyle}>评测标签</th>
               <th style={monitorThStyle}>测试样本量</th>
             </tr>
@@ -4903,10 +5700,9 @@ const EvaluationAuditTableView = ({
           <tbody>
             {rows.map((row) => {
               const conclusion = getEvaluationSystemConclusion(row) === '准入' ? '通过' : '退回修改';
-              const report = getReportByTaskId(row.id);
+              const { report, detail } = getEvaluationAuditDetail(row);
               const tags = [
                 row.riskLevel,
-                row.sampleLevel,
                 report?.overallRisk ? `总体${report.overallRisk}` : undefined,
               ].filter(Boolean);
               return (
@@ -4930,12 +5726,15 @@ const EvaluationAuditTableView = ({
                       {row.agentName}
                     </Button>
                   </td>
-                  <td style={monitorTdStyle}>{row.version}</td>
                   <td style={{ ...monitorTdStyle, minWidth: 110 }}>
                     <Tag color={conclusion === '通过' ? 'green' : 'orange'} style={{ marginInlineEnd: 0 }}>
                       {conclusion}
                     </Tag>
                   </td>
+                  <td style={{ ...monitorTdStyle, minWidth: 300, maxWidth: 420, color: '#595959', lineHeight: 1.55 }}>
+                    {detail}
+                  </td>
+                  <td style={monitorTdStyle}>{row.version}</td>
                   <td style={{ ...monitorTdStyle, minWidth: 220 }}>
                     <Space size={4} wrap>
                       {tags.map((tag) => (
@@ -5107,9 +5906,82 @@ const AccessAuditTableView = ({
           size="small"
           danger
           disabled={!selectedCodes.length}
-          onClick={() => onQuickAction?.(`退回修改 ${selectedText}：依据预审建议退回修改`)}
+          onClick={() => onQuickAction?.(`退回修改 ${selectedText}`)}
         >
           退回修改
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const AccessAuditConfirmationView = ({
+  confirmation,
+  onConfirm,
+}: {
+  confirmation: AccessAuditConfirmation;
+  onConfirm?: (text: string) => void;
+}) => {
+  const isReturn = confirmation.conclusion === '退回修改';
+  const [reasons, setReasons] = useState<Record<string, string>>(() =>
+    Object.fromEntries(confirmation.rows.map((row) => [
+      row.code,
+      isReturn && row.precheck === '建议退回修改' ? row.precheckSummary : '',
+    ])),
+  );
+  const missingReason = isReturn && confirmation.rows.some((row) => !reasons[row.code]?.trim());
+
+  return (
+    <div style={{ marginTop: 10, border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }} data-testid="home-v1-access-audit-confirmation">
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isReturn ? 900 : 680, fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: '#FAFAFA', color: '#595959' }}>
+              <th style={monitorThStyle}>智能体编号</th>
+              <th style={monitorThStyle}>智能体名称</th>
+              <th style={monitorThStyle}>版本</th>
+              <th style={monitorThStyle}>审核结论</th>
+              {isReturn && <th style={monitorThStyle}>具体说明</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {confirmation.rows.map((row) => (
+              <tr key={row.code}>
+                <td style={monitorTdStyle}>{row.code}</td>
+                <td style={{ ...monitorTdStyle, minWidth: 180 }}>{row.name}</td>
+                <td style={monitorTdStyle}>{row.version}</td>
+                <td style={monitorTdStyle}>
+                  <Tag color={isReturn ? 'orange' : 'green'} style={{ marginInlineEnd: 0 }}>{confirmation.conclusion}</Tag>
+                </td>
+                {isReturn && (
+                  <td style={{ ...monitorTdStyle, minWidth: 360 }}>
+                    <Input.TextArea
+                      value={reasons[row.code]}
+                      rows={2}
+                      maxLength={500}
+                      showCount
+                      status={!reasons[row.code]?.trim() ? 'error' : undefined}
+                      placeholder={row.precheck === '建议通过' ? '该项预审建议通过，请填写退回修改的具体说明' : '请填写具体说明'}
+                      onChange={(event) => setReasons((prev) => ({ ...prev, [row.code]: event.target.value }))}
+                      aria-label={`${row.name}具体说明`}
+                    />
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: 10, borderTop: '1px solid #F0F0F0' }}>
+        <Button
+          type="primary"
+          danger={isReturn}
+          disabled={missingReason}
+          onClick={() => onConfirm?.(isReturn
+            ? `确认退回清单 ${encodeURIComponent(JSON.stringify(reasons))}`
+            : '确认审核通过清单')}
+        >
+          {isReturn ? '提交' : '确认'}
         </Button>
       </div>
     </div>
@@ -5587,7 +6459,7 @@ function applyAccessAuditDecision(
   const decisions = pending.codes.map((code) => ({
     code,
     result: pending.result,
-    reason: pending.reason,
+    reason: pending.reasons?.[code] ?? pending.reason,
     overridePrecheck: pending.overridePrecheck,
     time,
   }));
@@ -5604,13 +6476,17 @@ function applyAccessAuditDecision(
     .map((agent) => `${agent!.code} ${agent!.name}`)
     .join('、');
   const status = pending.result === '审核通过' ? '状态→已纳管' : '状态→退回申请人';
-  const reason = pending.result === '退回修改' ? `\n待修改说明：${pending.reason}` : '';
-  const override = pending.overridePrecheck ? '\n已记录“覆盖预审”标记，供审计追溯。' : '';
+  const reason = pending.result === '退回修改'
+    ? `\n\n具体说明：\n${pending.codes.map((code) => `- **${code}**：${pending.reasons?.[code] ?? pending.reason ?? ''}`).join('\n')}`
+    : '';
+  const override = pending.overridePrecheck ? '\n\n已记录“覆盖预审”标记，供审计追溯。' : '';
   return {
     flow: nextFlow,
     receipt: `${names} 已${pending.result}，${status}。
-审核人：${reviewerName}
-审核时间：${time}${reason}${override}
+
+- 审核人：${reviewerName}
+- 审核时间：${time}${reason}${override}
+
 已通知申请人。`,
   };
 }
@@ -5646,6 +6522,7 @@ function getAccessAuditNext(
   replies: string[];
   link?: { to: string; text: string };
   accessAuditTable?: AccessAuditTable;
+  accessAuditConfirmation?: AccessAuditConfirmation;
   quickActions?: string[];
 } {
   const normalized = text.trim();
@@ -5665,7 +6542,22 @@ function getAccessAuditNext(
     };
   }
   if (flow.pendingDecision && yes) {
-    const applied = applyAccessAuditDecision(flow, flow.pendingDecision, reviewer);
+    let pendingDecision = flow.pendingDecision;
+    const encodedReasons = normalized.match(/^确认退回清单\s+(.+)$/)?.[1];
+    if (pendingDecision.result === '退回修改' && encodedReasons) {
+      try {
+        pendingDecision = {
+          ...pendingDecision,
+          reasons: JSON.parse(decodeURIComponent(encodedReasons)) as Record<string, string>,
+        };
+      } catch {
+        return { flow, replies: ['具体说明读取失败，请检查后重新提交。'], accessAuditConfirmation: { rows: flow.agents.filter((agent) => pendingDecision.codes.includes(agent.code)), conclusion: '退回修改' } };
+      }
+    }
+    if (pendingDecision.result === '退回修改' && pendingDecision.codes.some((code) => !pendingDecision.reasons?.[code]?.trim())) {
+      return { flow, replies: ['退回修改清单中每一项都必须填写具体说明后才可提交。'], accessAuditConfirmation: { rows: flow.agents.filter((agent) => pendingDecision.codes.includes(agent.code)), conclusion: '退回修改' } };
+    }
+    const applied = applyAccessAuditDecision(flow, pendingDecision, reviewer);
     return finishAccessAuditIfNeeded(applied.flow, [applied.receipt]);
   }
   if (flow.pendingDecision && /取消|不确认|等等|返回/.test(normalized)) {
@@ -5711,41 +6603,25 @@ function getAccessAuditNext(
       batch: explicitAgents.length > 1,
       overridePrecheck: explicitAgents.some((agent) => agent.precheck !== '建议通过'),
     };
-    if (pendingDecision.overridePrecheck) {
-      return {
-        flow: { ...flow, step: 'n3', pendingDecision },
-        replies: [`已选择 ${explicitAgents.map((agent) => `${agent.code} ${agent.name}`).join('、')}。其中存在预审非“建议通过”的项目，请确认是否覆盖预审并审核通过？`],
-        quickActions: ['确认覆盖预审并通过', '取消'],
-      };
-    }
-    const applied = applyAccessAuditDecision(flow, pendingDecision, reviewer);
-    return finishAccessAuditIfNeeded(applied.flow, [applied.receipt]);
+    return {
+      flow: { ...flow, step: 'n3', pendingDecision },
+      replies: ['请确认以下智能体审核通过清单。确认后将完成批量审核通过。'],
+      accessAuditConfirmation: { rows: explicitAgents, conclusion: '审核通过' },
+    };
   }
 
   if (isRejectAction && explicitAgents.length > 0) {
-    const reasonMatch = normalized.match(/(?:审核不通过|不通过|退回修改|退回|驳回|说明|原因)[:：]?\s*(.+)/);
-    const rawReason = reasonMatch?.[1]?.trim();
-    const reason = rawReason && rawReason.length >= 6
-      ? rawReason
-      : explicitAgents.length === 1
-        ? `依据预审意见退回修改：${explicitAgents[0].precheckSummary}`
-        : '依据预审意见退回修改，请申请人按各项预审建议补充材料或修正接入配置后重新提交';
     const pendingDecision: AccessAuditPendingDecision = {
       codes: explicitAgents.map((agent) => agent.code),
       result: '退回修改',
-      reason,
       batch: explicitAgents.length > 1,
       overridePrecheck: explicitAgents.some((agent) => agent.precheck !== '建议退回修改'),
     };
-    if (pendingDecision.overridePrecheck) {
-      return {
-        flow: { ...flow, step: 'n3', pendingDecision },
-        replies: [`已选择 ${explicitAgents.map((agent) => `${agent.code} ${agent.name}`).join('、')} 退回修改。部分项目预审为“建议通过”，请确认是否覆盖预审并退回？\n\n待修改说明：${reason}`],
-        quickActions: ['确认覆盖预审并退回', '取消'],
-      };
-    }
-    const applied = applyAccessAuditDecision(flow, pendingDecision, reviewer);
-    return finishAccessAuditIfNeeded(applied.flow, [applied.receipt]);
+    return {
+      flow: { ...flow, step: 'n3', pendingDecision },
+      replies: ['请确认以下退回修改清单。预审建议退回的项目已自动填入具体说明；其余项目请填写具体说明后提交。'],
+      accessAuditConfirmation: { rows: explicitAgents, conclusion: '退回修改' },
+    };
   }
 
   const current = flow.selectedCode ? flow.agents.find((agent) => agent.code === flow.selectedCode) : undefined;
@@ -8136,9 +9012,8 @@ function buildMonitorReport(flow: MonitorFlow, text: string, role: '信息科管
 - 成本监控：Token、CPU/GPU/内存使用、成本趋势
 - 安全监控：注入攻击、越权访问、敏感信息外发拦截
 
-已按当前角色套用${role === '信息科管理员' ? '《全院智能体运行监控情况报告模板》' : '《科室智能体运行监控情况报告模板》'}，可查看报告详情，也支持下载 PDF 格式报告。`,
+已按当前角色套用${role === '信息科管理员' ? '《全院智能体运行监控情况报告模板》' : '《科室智能体运行监控情况报告模板》'}，可查看报告详情，也支持导出报告。`,
     link: { to: '/app/monitoring/report', text: '查看报告详情' },
-    quickActions: ['下载 PDF', '查看未处理告警', '查看日/周/月趋势'],
     reportCard: {
       title: '智能体运行监控情况报告',
       scope,
@@ -8316,6 +9191,11 @@ function isDirectRequirementText(text: string) {
   return /我想提需求|想建一个智能体|搭建.*智能体|建.*智能体|帮我登记个需求|登记.*需求|建设需求|提报需求|智能体建设需求|需求登记/.test(text.trim());
 }
 
+function isRequirementIntentOnlyText(text: string) {
+  const normalized = text.trim().replace(/[，。！？!?,.\s]/g, '');
+  return /^(我想|我要|我需要|帮我|请帮我|麻烦帮我|想|需要)?(搭建|建设|建|创建|新建|登记|新增|提报|提交|提)(一个|个)?(AI智能体|智能体|智能助手)?(建设)?(需求)?$/.test(normalized);
+}
+
 function isDirectEvaluationCreateText(text: string) {
   return /新建评测|给.*做评测|有哪些待评测|待评测|开始.*评测|智能体安全评测任务|评测进度/.test(text.trim());
 }
@@ -8365,8 +9245,8 @@ const ACCESS_SCENE = {
         functionDescription: isUltrasoundAppointment
           ? buildAccessFunctionDescription('超声')
           : buildAccessFunctionDescription(),
-        materials: uploaded.materials.length > 0 ? uploaded.materials : ['技术规格书.docx（已解析，需转 PDF 留存）'],
-        techSpecUploaded: uploaded.techSpecUploaded || /技术规格|技术文档|接口文档|规格书/.test(text),
+        materials: uploaded.materials,
+        techSpecUploaded: uploaded.techSpecUploaded,
         productDocUploaded: uploaded.productDocUploaded,
       };
     },
@@ -8421,7 +9301,7 @@ function extractAccessUploadedMaterials(text: string) {
   const hasUploadSignal = /上传|已传|附件|文件|PDF|pdf|docx?|DOCX?|材料/.test(text);
   if (!hasUploadSignal) return { materials, techSpecUploaded: false, productDocUploaded: false };
   const techSpecUploaded = /技术规格|技术文档|接口文档|规格书/.test(text);
-  const productDocUploaded = /产品说明|产品文档|说明书/.test(text);
+  const productDocUploaded = /产品说明|产品文档|产品.*说明书/.test(text);
   const pickName = (keyword: RegExp, fallback: string) => {
     const match = text.match(new RegExp(`[^、，,\\s]*(?:${keyword.source})[^、，,\\s]*`, 'i'))?.[0];
     return (match ?? fallback).replace(/^已上传/, '');
@@ -8429,7 +9309,7 @@ function extractAccessUploadedMaterials(text: string) {
   const materialLabel = (name: string) =>
     /\.pdf$/i.test(name) ? `${name}（已上传，内容达标）` : `${name}（已上传，内容达标，将转 PDF 留存）`;
   if (techSpecUploaded) materials.push(materialLabel(pickName(/技术规格|技术文档|接口文档|规格书/, '技术规格书.pdf')));
-  if (productDocUploaded) materials.push(materialLabel(pickName(/产品说明|产品文档|说明书/, '产品说明书.pdf')));
+  if (productDocUploaded) materials.push(materialLabel(pickName(/产品说明|产品文档|产品.*说明书/, '产品说明书.pdf')));
   return { materials, techSpecUploaded, productDocUploaded };
 }
 
@@ -8437,8 +9317,15 @@ function isAccessMaterialsComplete(slots: AccessSlots) {
   const materialText = (slots.materials ?? []).join('、');
   return Boolean(
     (slots.techSpecUploaded || /技术规格|技术文档|接口文档|规格书/.test(materialText)) &&
-      (slots.productDocUploaded || /产品说明|产品文档|说明书/.test(materialText)),
+      (slots.productDocUploaded || /产品说明|产品文档|产品.*说明书/.test(materialText)),
   );
+}
+
+function getAccessMissingMaterialTypes(slots: AccessSlots) {
+  const materialText = (slots.materials ?? []).join('、');
+  const missingTech = !(slots.techSpecUploaded || /技术规格|技术文档|接口文档|规格书/.test(materialText));
+  const missingProduct = !(slots.productDocUploaded || /产品说明|产品文档|产品.*说明书/.test(materialText));
+  return { missingTech, missingProduct };
 }
 
 function normalizeAccessReadySlots(slots: AccessSlots): AccessSlots {
@@ -8447,6 +9334,60 @@ function normalizeAccessReadySlots(slots: AccessSlots): AccessSlots {
     next.connectivity = ACCESS_SCENE.mock.testConnectivity(next, true).message;
   }
   return next;
+}
+
+function isBlankAccessValue(value: unknown) {
+  return String(value ?? '').trim().length === 0;
+}
+
+function isValidAccessPhone(value?: string) {
+  return /^1\d{10}$/.test(String(value ?? '').trim());
+}
+
+function isValidAccessUrl(value?: string) {
+  return /^https?:\/\/[^\s，,。；;]+$/i.test(String(value ?? '').trim());
+}
+
+function getAccessBaseRows(): AccessFormField[] {
+  return [
+    { key: 'agentName', label: '名称', placeholder: '请输入智能体名称' },
+    { key: 'version', label: '版本', placeholder: '请输入版本号，例如 1.0' },
+    { key: 'department', label: '所属科室', placeholder: '请输入所属科室' },
+    { key: 'clinicStage', label: '诊疗环节', placeholder: '请选择或填写诊疗环节' },
+    { key: 'functionDescription', label: '功能描述', multiline: true, placeholder: '请说明服务对象、读取信息与输出结果' },
+    { key: 'source', label: '来源', placeholder: '请输入自研 / 第三方 / 合作研发' },
+    { key: 'vendor', label: '供应商', placeholder: '请输入供应商或开发单位' },
+    { key: 'contact', label: '技术联系人', placeholder: '请输入技术联系人姓名' },
+    { key: 'phone', label: '联系方式', placeholder: '请输入 11 位手机号' },
+  ];
+}
+
+function getAccessMissingLabels(slots: AccessSlots) {
+  const missing = getAccessFieldMissingLabels(slots);
+  if (!isAccessMaterialsComplete(slots)) missing.push('备案材料');
+  if (!/通过/.test(String(slots.connectivity ?? ''))) missing.push('联通测试');
+  return missing;
+}
+
+function getAccessFieldMissingLabels(slots: AccessSlots) {
+  const rows = getAccessBaseRows();
+  const missing = rows
+    .filter((row) => isBlankAccessValue(slots[row.key]) || (row.key === 'phone' && !isValidAccessPhone(slots.phone)))
+    .map((row) => row.label);
+  const mode = slots.accessMethod === 'SDK' || slots.accessMethod === 'OTel' ? slots.accessMethod : 'API';
+  if (mode === 'API') {
+    if (isBlankAccessValue(slots.endpoint) || !isValidAccessUrl(slots.endpoint)) missing.push('接口地址');
+    if (isBlankAccessValue(slots.apiKeyMasked)) missing.push('API key');
+  } else {
+    if (isBlankAccessValue(slots.platformUrl) || !isValidAccessUrl(slots.platformUrl)) missing.push('平台 URL 地址');
+    if (isBlankAccessValue(slots.platformKey)) missing.push('平台密钥 key');
+    if (isBlankAccessValue(slots.instrumentationCode)) missing.push('埋点代码生成');
+  }
+  return missing;
+}
+
+function shouldRenderAccessForm(flow: AccessFlow, replyIndex: number, replyCount: number) {
+  return flow.step !== 'done' && replyIndex === replyCount - 1;
 }
 
 function buildAccessMaterialCheck(slots: AccessSlots) {
@@ -8469,10 +9410,6 @@ function buildAccessReadySummary(slots: AccessSlots) {
   return `描述信息完整 + 材料齐全 + 连通测试通过，可以提交。
 
 ${buildAccessSummary(slots)}`;
-}
-
-function shouldRenderAccessSummary(flow: AccessFlow, replyIndex: number, replyCount: number) {
-  return flow.step === 'summary' && replyIndex === replyCount - 1;
 }
 
 const ACCESS_SUBMIT_QUICK_ACTIONS = ['确认提交'];
@@ -8518,6 +9455,40 @@ function extractCompleteAccessSlots(text: string): AccessSlots | null {
     endpoint,
     apiKeyMasked: '********',
     connectivity: ACCESS_SCENE.mock.testConnectivity({ accessMethod, endpoint }, true).message,
+    materials: uploaded.materials,
+    techSpecUploaded: uploaded.techSpecUploaded,
+    productDocUploaded: uploaded.productDocUploaded,
+  };
+}
+
+function extractPartialAccessSlots(text: string): AccessSlots {
+  const normalized = text.trim();
+  if (!normalized) return {};
+  const accessMethod = /SDK/i.test(normalized) ? 'SDK' : /OTel/i.test(normalized) ? 'OTel' : /API|接口|key|鉴权|token/i.test(normalized) ? 'API' : undefined;
+  const endpoint = normalized.match(/https?:\/\/[^\s，,。；;]+/i)?.[0];
+  const phone = normalized.match(/\b1\d{10}\b/)?.[0];
+  const contactMatch = normalized.match(/(?:联系人|提出人|技术联系人|负责人)(?:是|为|：|:)?\s*([\u4e00-\u9fa5]{2,10})/);
+  const vendorMatch = normalized.match(/(?:供应商|厂商|开发单位)(?:是|为|：|:)?\s*([\u4e00-\u9fa5A-Za-z0-9]{2,30})/);
+  const hasDept = /超声|内分泌|影像|放射|心内|心血管|门诊|信息中心|科|中心/.test(normalized);
+  const uploaded = extractAccessUploadedMaterials(normalized);
+  const source = /自研/.test(normalized) ? '自研' : /第三方|采购|外采/.test(normalized) ? '第三方' : /合作/.test(normalized) ? '合作研发' : undefined;
+  return {
+    agentName: /智能体|助手|系统|应用/.test(normalized) ? extractAccessAgentName(normalized) : undefined,
+    version: normalized.match(/(?:版本|v|V)?\s*([1-9]\d*\.\d)/)?.[1],
+    ...(hasDept ? extractAccessDepartment(normalized) : {}),
+    clinicStage: /导诊|分诊|预问诊|预约|挂号|检查|检验|影像|超声|PACS|LIS|诊断|判读|解读|治疗|处方|用药|住院|病程|手术/.test(normalized)
+      ? extractAccessClinicStage(normalized)
+      : undefined,
+    functionDescription: normalized.length >= 12 && /智能体|助手|系统|应用|服务|读取|生成|提醒|建议|接入/.test(normalized)
+      ? normalized.slice(0, 500)
+      : undefined,
+    source,
+    vendor: vendorMatch?.[1],
+    contact: contactMatch?.[1],
+    phone,
+    accessMethod,
+    endpoint,
+    apiKeyMasked: /key|密钥|鉴权|认证|token|已提供/i.test(normalized) ? '********' : undefined,
     materials: uploaded.materials,
     techSpecUploaded: uploaded.techSpecUploaded,
     productDocUploaded: uploaded.productDocUploaded,
@@ -8789,6 +9760,14 @@ ${slots.functionDescription}
           flow,
           replies: ['当前已到汇总确认节点。哪项要改直接说“修改××”；没问题请说“确认提交”。'],
           quickActions: ACCESS_SUBMIT_QUICK_ACTIONS,
+        };
+      }
+      const missing = getAccessMissingLabels(slots);
+      if (missing.length > 0) {
+        return {
+          flow: { ...flow, step: 'summary', slots },
+          replies: [`当前表单信息还不完整，仍缺：${missing.join('、')}。请先在表单内补齐。`],
+          quickActions: ACCESS_UPLOAD_QUICK_ACTIONS,
         };
       }
       return {
@@ -9242,6 +10221,32 @@ function extractContact(text: string): { proposer?: string; phone?: string; phon
   };
 }
 
+function extractPartialRequirementSlots(text: string): RequirementSlots {
+  const normalized = text.trim();
+  const contact = extractContact(normalized);
+  const hasMeaningfulNeed = /助手|智能体|帮助|自动|预约|审核|质控|诊断|随访|输出|生成|推送|解决|问题/.test(normalized);
+  const hasDepartmentSignal = /(?:提出科室|科室|我们|我院|超声|影像|放射|心内|心血管|急诊|检验)/.test(normalized);
+  const hasStageSignal = /预约|检查|超声|CT|检验|检前|报告|诊断|导诊|分诊|问诊|住院|手术/.test(normalized);
+  const hasReasonSignal = /现在|目前|人工|痛点|成本|效率|容易|希望|减少|提升|等待|反复|漏检|白跑|投诉/.test(normalized);
+  const hasResourceSignal = /HIS|EMR|RIS|PACS|LIS|短信|企业微信|微信|预约系统|资源|系统|模型/i.test(normalized);
+  const slots: RequirementSlots = {};
+
+  if (hasMeaningfulNeed) {
+    slots.rawNeed = normalized;
+    slots.functionDescription = buildFunctionDescription(slots, normalized);
+  }
+  if (hasDepartmentSignal) slots.department = extractRequirementDepartment(normalized);
+  if (hasStageSignal) slots.clinicStage = inferClinicStage(normalized);
+  if (hasReasonSignal) slots.reason = buildReason(normalized);
+  if (hasResourceSignal) slots.resources = buildResources(normalized);
+  const urgency = extractRequirementUrgency(normalized);
+  if (urgency) slots.urgency = urgency;
+  if (contact.proposer && /(?:提出人|联系人|申请人|我是)/.test(normalized)) slots.proposer = contact.proposer;
+  if (contact.phoneValid) slots.phone = contact.phone;
+
+  return slots;
+}
+
 function extractCompleteRequirementSlots(text: string): RequirementSlots | null {
   const contact = extractContact(text);
   const department = extractRequirementDepartment(text);
@@ -9401,7 +10406,9 @@ function getRequirementNext(
   }
 
   if (flow.step !== 'summary' && flow.step !== 'done') {
-    const completeSlots = extractCompleteRequirementSlots(`${slots.rawNeed ?? ''} ${normalized}`);
+    const completeSlots = isRequirementIntentOnlyText(normalized)
+      ? null
+      : extractCompleteRequirementSlots(`${slots.rawNeed ?? ''} ${normalized}`);
     if (completeSlots) {
       return {
         flow: { ...flow, step: 'summary', slots: completeSlots },
@@ -9413,8 +10420,11 @@ function getRequirementNext(
 
   switch (flow.step) {
     case 'n0': {
-      slots.rawNeed = normalized;
-      slots.department = normalizeDepartment(normalized);
+      if (!isRequirementIntentOnlyText(normalized)) {
+        Object.assign(slots, extractPartialRequirementSlots(normalized));
+        slots.rawNeed = normalized;
+      }
+      slots.department = slots.department ?? normalizeDepartment(normalized);
       return {
         flow: { ...flow, step: 'confirmDept', slots },
         replies: [`先确认科室：这条需求以【${slots.department}】名义提出，对吗？\n\n可回复「对」，或直接告诉我正确科室。（第 4 步/共 8 步）`],

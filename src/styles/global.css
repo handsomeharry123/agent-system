@@ -769,6 +769,264 @@ body[data-app-theme='tech'] ::-webkit-scrollbar-thumb {
 }
 body[data-app-theme='tech'] ::-webkit-scrollbar-track { background: transparent; }
 
+.home-v1-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+  min-width: 0;
+  width: 100%;
+}
+
+.home-v1-metric-card {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  min-height: 144px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(130, 178, 255, 0.42);
+  border-radius: 8px;
+  padding: 11px 13px 12px;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.92), rgba(246, 251, 255, 0.74)),
+    radial-gradient(160px 90px at 90% 4%, var(--metric-fill), transparent 70%),
+    linear-gradient(180deg, rgba(243, 249, 255, 0.96), rgba(248, 252, 255, 0.92));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 10px 26px rgba(22, 72, 156, 0.08);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.home-v1-metric-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.58;
+  background-image:
+    linear-gradient(rgba(36, 110, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(36, 110, 255, 0.05) 1px, transparent 1px);
+  background-size: 18px 18px;
+  animation: homeMetricGridFlow 18s linear infinite;
+}
+
+.home-v1-metric-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.72) 42%, transparent 58%);
+  transform: translateX(-120%);
+  animation: homeMetricSheen 4.8s ease-in-out infinite;
+}
+
+.home-v1-metric-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--metric-accent) 52%, #ffffff);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 14px 34px rgba(22, 72, 156, 0.13),
+    0 0 0 1px color-mix(in srgb, var(--metric-accent) 18%, transparent);
+}
+
+.home-v1-metric-glow {
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  right: -28px;
+  top: -34px;
+  z-index: -1;
+  border-radius: 50%;
+  background: var(--metric-accent);
+  filter: blur(34px);
+  opacity: 0.18;
+  animation: homeMetricGlow 3.6s ease-in-out infinite;
+}
+
+.home-v1-metric-header,
+.home-v1-metric-value-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.home-v1-metric-kicker {
+  min-width: 0;
+  overflow: hidden;
+  color: #526071;
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-v1-metric-live {
+  flex: 0 0 auto;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--metric-accent) 34%, #ffffff);
+  border-radius: 999px;
+  color: var(--metric-accent);
+  background: rgba(255, 255, 255, 0.68);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  letter-spacing: 0;
+}
+
+.home-v1-metric-value-row {
+  margin-top: 3px;
+}
+
+.home-v1-metric-value {
+  min-width: 0;
+  color: #182230;
+  font-size: 20px;
+  font-weight: 760;
+  line-height: 26px;
+  overflow-wrap: anywhere;
+}
+
+.home-v1-metric-chip {
+  flex: 0 0 auto;
+  color: #6b7280;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.home-v1-metric-chart {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  min-height: 74px;
+  margin-top: 7px;
+}
+
+.home-v1-metric-svg {
+  display: block;
+  width: 100%;
+  height: 72px;
+}
+
+.home-v1-metric-grid-line {
+  stroke: rgba(110, 147, 198, 0.16);
+  stroke-width: 1;
+  stroke-dasharray: 3 7;
+}
+
+.home-v1-metric-area {
+  opacity: 0;
+  animation: homeMetricAreaIn 900ms ease 160ms forwards;
+}
+
+.home-v1-metric-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: homeMetricLineDraw 1.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.home-v1-metric-dot {
+  opacity: 0;
+  animation: homeMetricDotIn 480ms ease forwards;
+}
+
+.home-v1-metric-dot:nth-of-type(1) { animation-delay: 180ms; }
+.home-v1-metric-dot:nth-of-type(2) { animation-delay: 300ms; }
+.home-v1-metric-dot:nth-of-type(3) { animation-delay: 420ms; }
+.home-v1-metric-dot:nth-of-type(4) { animation-delay: 540ms; }
+.home-v1-metric-dot:nth-of-type(5) { animation-delay: 660ms; }
+.home-v1-metric-dot:nth-of-type(6) { animation-delay: 780ms; }
+
+.home-v1-metric-pulse {
+  opacity: 0.22;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: homeMetricPulse 1.8s ease-in-out infinite;
+}
+
+.home-v1-metric-scan {
+  stroke: rgba(255, 255, 255, 0.78);
+  stroke-width: 1.4;
+  transform: translateY(0);
+  animation: homeMetricScan 3.2s ease-in-out infinite;
+}
+
+@keyframes homeMetricGridFlow {
+  0% { background-position: 0 0, 0 0; }
+  100% { background-position: 72px 54px, 72px 54px; }
+}
+
+@keyframes homeMetricSheen {
+  0%, 46% { transform: translateX(-120%); opacity: 0; }
+  62% { opacity: 0.86; }
+  82%, 100% { transform: translateX(120%); opacity: 0; }
+}
+
+@keyframes homeMetricGlow {
+  0%, 100% { opacity: 0.14; transform: scale(0.96); }
+  50% { opacity: 0.26; transform: scale(1.08); }
+}
+
+@keyframes homeMetricAreaIn {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes homeMetricLineDraw {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes homeMetricDotIn {
+  0% { opacity: 0; transform: scale(0.4); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes homeMetricPulse {
+  0%, 100% { opacity: 0.1; transform: scale(0.72); }
+  50% { opacity: 0.26; transform: scale(1.42); }
+}
+
+@keyframes homeMetricScan {
+  0%, 18% { opacity: 0; transform: translateY(0); }
+  40% { opacity: 0.68; }
+  78%, 100% { opacity: 0; transform: translateY(70px); }
+}
+
+@media (max-width: 1180px) {
+  .home-v1-metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-v1-metric-card::before,
+  .home-v1-metric-card::after,
+  .home-v1-metric-glow,
+  .home-v1-metric-area,
+  .home-v1-metric-line,
+  .home-v1-metric-dot,
+  .home-v1-metric-pulse,
+  .home-v1-metric-scan {
+    animation: none !important;
+  }
+
+  .home-v1-metric-area,
+  .home-v1-metric-dot {
+    opacity: 1 !important;
+  }
+
+  .home-v1-metric-line {
+    stroke-dashoffset: 0 !important;
+  }
+}
+
 .home-v1-scene-tag-scrollbar::-webkit-scrollbar {
   display: none;
 }
