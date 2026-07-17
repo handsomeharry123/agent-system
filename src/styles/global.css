@@ -252,6 +252,38 @@ html, body {
   background: linear-gradient(180deg, #F6FFED 0%, #D9F7BE 100%);
   border-color: #95DE64 !important;
 }
+
+/* 建设需求页：AI 自动填充字段沿用接入中心的绿色高亮语义。 */
+.need-ai-prefilled-field .ant-form-item-label > label::after {
+  content: 'AI填充';
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  margin-inline-start: 8px;
+  padding: 0 6px;
+  color: #389e0d;
+  font-size: 11px;
+  line-height: 18px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 9px;
+}
+
+.need-ai-prefilled-field .ant-input,
+.need-ai-prefilled-field .ant-input-affix-wrapper,
+.need-ai-prefilled-field .ant-select-selector,
+.need-ai-prefilled-field textarea.ant-input {
+  background: linear-gradient(180deg, #f6ffed 0%, #d9f7be 100%) !important;
+  border-color: #95de64 !important;
+  box-shadow: 0 0 0 2px rgba(82, 196, 26, 0.08);
+}
+
+.need-ai-prefilled-field .ant-radio-wrapper,
+.need-ai-prefilled-field .ant-checkbox-wrapper {
+  padding: 3px 7px;
+  background: #f6ffed;
+  border-radius: 6px;
+}
 /* 采纳瞬间闪烁高亮 (1.2s 后自动停止) */
 .ai-prefill-ack-flash {
   animation: aiPrefillAckFlash 1.2s ease-out;

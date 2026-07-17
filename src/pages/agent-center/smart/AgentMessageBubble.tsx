@@ -60,7 +60,24 @@ const REGISTER_FIELD_LABELS: Record<string, string> = {
   trackingCode: '埋点代码生成',
 };
 
-const getRegisterFieldLabel = (fieldKey: string) => REGISTER_FIELD_LABELS[fieldKey] || fieldKey;
+const NEED_FIELD_LABELS: Record<string, string> = {
+  name: '需求标题',
+  department: '提出科室',
+  reason: '提出原因',
+  proposer: '提出人',
+  contactPhone: '联系方式',
+  clinicalStage: '诊疗环节',
+  clinicalStageCustom: '诊疗环节（其他）',
+  description: '功能描述',
+  resources: '所需资源',
+  urgency: '需求紧急程度',
+};
+
+const isNeedDetectedFields = (fields?: Array<{ fieldKey: string }>) =>
+  Boolean(fields?.some((field) => ['reason', 'proposer', 'resources', 'urgency'].includes(field.fieldKey)));
+
+const getDetectedFieldLabel = (fieldKey: string, needFields = false) =>
+  (needFields ? NEED_FIELD_LABELS[fieldKey] : REGISTER_FIELD_LABELS[fieldKey]) || fieldKey;
 
 /**
  * 文件识别 / 图片识别 / 链接抓取 / 文字语音识别气泡
@@ -99,6 +116,7 @@ const FileDetectBubble = ({ msg, onAcknowledgeFields, onAcknowledge }: FileDetec
     () => [...allFields].sort((a, b) => b.confidence - a.confidence),
     [allFields],
   );
+  const needFields = isNeedDetectedFields(msg.payload?.detectedFields);
   // 兜底: 如果 store 没有 acknowledged 标志(单测/旧数据), 仍按字段全选
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(pendingFields.map((f) => f.fieldKey)),
@@ -185,7 +203,7 @@ const FileDetectBubble = ({ msg, onAcknowledgeFields, onAcknowledge }: FileDetec
                     onChange={() => toggle(f.fieldKey)}
                     data-testid={`file-detect-field-${f.fieldKey}`}
                   >
-                    <span style={{ color: '#1F1F1F' }}>{getRegisterFieldLabel(f.fieldKey)}</span>
+                    <span style={{ color: '#1F1F1F' }}>{getDetectedFieldLabel(f.fieldKey, needFields)}</span>
                   </Checkbox>
                   <span style={{ flex: 1, color: '#666', fontSize: 11 }}>{f.value}</span>
                 </div>
@@ -234,7 +252,7 @@ const FileDetectBubble = ({ msg, onAcknowledgeFields, onAcknowledge }: FileDetec
             <Space wrap>
               {pendingFields.map((f) => (
                 <Button key={f.fieldKey} size="small" onClick={() => onAcknowledge(f.fieldKey)}>
-                  采纳 {getRegisterFieldLabel(f.fieldKey)}
+                  采纳 {getDetectedFieldLabel(f.fieldKey, needFields)}
                 </Button>
               ))}
             </Space>
@@ -314,7 +332,12 @@ const AgentMessageBubble = ({
   severityFilter = 'all',
 }: Props) => {
   const isAgent = msg.role === 'agent';
-  const [welcomeMiniExpanded, setWelcomeMiniExpanded] = useState(false);
+  const isNeedDraftWelcome = msg.id.startsWith('__welcome__:agent-needs-draft:');
+  // 建设需求草稿欢迎语要求列表直接呈现在欢迎语下方；其他场景仍保持折叠，
+  // 避免较长的状态清单挤占对话窗口。
+  const [welcomeMiniExpanded, setWelcomeMiniExpanded] = useState(
+    () => isNeedDraftWelcome,
+  );
   // §3.4.1.2 「接入进度·核心指标」→ 对话窗口内呈现的「洞察详情」气泡:
   //   - 一键直达按钮（完善台账 / 发起准入评测 / 查看监控告警 / 编辑修改）通过 useNavigate 跳转
   const navigate = useNavigate();
@@ -432,7 +455,7 @@ const AgentMessageBubble = ({
                     }}
                   >
                     <span style={{ minWidth: 96, color: '#1F1F1F' }}>
-                      {getRegisterFieldLabel(f.fieldKey)}
+                      {getDetectedFieldLabel(f.fieldKey, isNeedDetectedFields(msg.payload?.detectedFields))}
                     </span>
                     {confidenceLevel(f.confidence) === 'low' && (
                       <Text style={{ fontSize: 11, color: '#389E0D' }}>
@@ -1141,13 +1164,15 @@ const AgentMessageBubble = ({
       const welcomeChips = msg.payload?.welcomeChips ?? [];
       const welcomeActions = msg.payload?.welcomeActions ?? [];
       const welcomeMiniList = msg.payload?.welcomeMiniList;
+      const needMatchRows = msg.payload?.needMatchRows ?? [];
       const hasWelcomeGuides =
         welcomeChips.length > 0 ||
         welcomeActions.length > 0 ||
+        needMatchRows.length > 0 ||
         !!(welcomeMiniList && welcomeMiniList.rows.length > 0);
       return (
         <div style={wrap}>
-          <div style={bubble}>
+          <div style={needMatchRows.length > 0 ? { ...bubble, maxWidth: '96%', width: 500 } : bubble}>
             <div>{msg.content}</div>
             {hasWelcomeGuides && (
               <div
@@ -1189,6 +1214,93 @@ const AgentMessageBubble = ({
                         {c.label}
                       </Tag.CheckableTag>
                     ))}
+                  </div>
+                )}
+
+                {needMatchRows.length > 0 && (
+                  <div
+                    data-testid="chat-need-match-table"
+                    style={{
+                      marginBottom: 10,
+                      overflowX: 'auto',
+                      border: '1px solid #E8F1FF',
+                      borderRadius: 8,
+                      background: '#FFFFFF',
+                    }}
+                  >
+                    <table
+                      style={{
+                        width: '100%',
+                        minWidth: 500,
+                        borderCollapse: 'collapse',
+                        fontSize: 12,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      <thead>
+                        <tr style={{ background: '#F3F8FF' }}>
+                          {['智能体编号', '智能体名称', '版本', '匹配度'].map((title) => (
+                            <th
+                              key={title}
+                              style={{
+                                padding: '7px 8px',
+                                color: '#4B5563',
+                                fontWeight: 600,
+                                textAlign: title === '匹配度' ? 'right' : 'left',
+                                borderBottom: '1px solid #E8F1FF',
+                                whiteSpace: 'nowrap',
+                                width:
+                                  title === '智能体名称'
+                                    ? 230
+                                    : title === '智能体编号'
+                                      ? 92
+                                      : title === '版本'
+                                        ? 70
+                                        : 70,
+                              }}
+                            >
+                              {title}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {needMatchRows.map((row) => (
+                          <tr key={`${row.rank}-${row.agentCode}`}>
+                            <td style={{ padding: '7px 8px', borderBottom: '1px solid #F3F4F6', whiteSpace: 'nowrap' }}>
+                              {row.agentCode}
+                            </td>
+                            <td
+                              style={{
+                                padding: '7px 8px',
+                                borderBottom: '1px solid #F3F4F6',
+                                color: '#1677FF',
+                                fontWeight: 600,
+                                minWidth: 230,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {row.agentName}
+                            </td>
+                            <td style={{ padding: '7px 8px', borderBottom: '1px solid #F3F4F6', whiteSpace: 'nowrap' }}>
+                              {row.version}
+                            </td>
+                            <td
+                              style={{
+                                padding: '7px 8px',
+                                borderBottom: '1px solid #F3F4F6',
+                                color: row.score >= 70 ? '#1677FF' : '#FA8C16',
+                                fontWeight: 700,
+                                textAlign: 'right',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {row.score}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
 
@@ -1240,8 +1352,8 @@ const AgentMessageBubble = ({
                           border: '1px solid #E8E8E8',
                           borderRadius: 8,
                           background: '#FFFFFF',
-                          maxHeight: 220,
-                          overflowY: 'auto',
+                          maxHeight: isNeedDraftWelcome ? 'none' : 220,
+                          overflowY: isNeedDraftWelcome ? 'visible' : 'auto',
                         }}
                       >
                         {welcomeMiniList.rows.map((row) => (
@@ -1310,22 +1422,24 @@ const AgentMessageBubble = ({
                             </Space>
                           </div>
                         ))}
-                        <Button
-                          type="link"
-                          size="small"
-                          block
-                          data-testid="chat-welcome-mini-footer"
-                          onClick={() => {
-                            window.dispatchEvent(
-                              new CustomEvent('agent-jump-tab', {
-                                detail: welcomeMiniList.targetTab,
-                              }),
-                            );
-                          }}
-                          style={{ fontSize: 12 }}
-                        >
-                          查看全部 ({welcomeMiniList.totalCount}) ›
-                        </Button>
+                        {!isNeedDraftWelcome && (
+                          <Button
+                            type="link"
+                            size="small"
+                            block
+                            data-testid="chat-welcome-mini-footer"
+                            onClick={() => {
+                              window.dispatchEvent(
+                                new CustomEvent('agent-jump-tab', {
+                                  detail: welcomeMiniList.targetTab,
+                                }),
+                              );
+                            }}
+                            style={{ fontSize: 12 }}
+                          >
+                            查看全部 ({welcomeMiniList.totalCount}) ›
+                          </Button>
+                        )}
                       </div>
                     )}
                   </div>

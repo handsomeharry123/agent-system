@@ -38,6 +38,7 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { departmentOptions } from '../../mock/departments';
 import PageHeader from '../../components/PageHeader';
+import { useSmartDraft } from '../agent-center/smart/store';
 import {
   ROLE_ADMIN,
   ROLE_DEPT,
@@ -64,6 +65,7 @@ const AgentNeeds = () => {
   const loginName = currentUser?.name || '当前用户';
 
   const needs = useNeeds();
+  const { pushWelcomeGreeting } = useSmartDraft();
 
   // Tab 由 URL ?tab= 决定，便于生成/编辑页带目标 Tab 跳回
   const urlTab = searchParams.get('tab');
@@ -99,6 +101,67 @@ const AgentNeeds = () => {
     return { list, draft };
   }, [needs, loginName, isPlatformAdmin]);
 
+  const listNeeds = useMemo(
+    () => needs.filter((n) => n.status === '已提交' && (isPlatformAdmin || n.applicant === loginName)),
+    [needs, isPlatformAdmin, loginName],
+  );
+
+  const urgencyCounts = useMemo(() => ({
+    total: listNeeds.length,
+    high: listNeeds.filter((n) => n.urgency === '高').length,
+    medium: listNeeds.filter((n) => n.urgency === '中').length,
+    low: listNeeds.filter((n) => n.urgency === '低').length,
+  }), [listNeeds]);
+
+  const draftNeeds = useMemo(
+    () => needs.filter((n) => n.status === '草稿' && n.applicant === loginName),
+    [needs, loginName],
+  );
+
+  useEffect(() => {
+    if (activeTab === 'draft') {
+      pushWelcomeGreeting(
+        'agent-needs-draft',
+        isPlatformAdmin ? 'admin' : 'dept',
+        () => [draftNeeds.length],
+        {
+          miniList: {
+            toggleLabel: '查看未完成的需求登记操作',
+            targetTab: 'draft',
+            totalCount: draftNeeds.length,
+            rows: draftNeeds.map((draft) => ({
+              recordId: draft.id,
+              title: draft.title || '未命名草稿',
+              subTitle: `提出科室：${draft.department || '--'}`,
+              meta: `需求紧急程度：${draft.urgency || '--'}`,
+              actions: [{
+                key: `edit-need-${draft.id}`,
+                label: '编辑',
+                kind: 'navigate-edit',
+                path: `/app/agent-needs/edit/${draft.id}`,
+              }],
+            })),
+          },
+        },
+      );
+      return;
+    }
+    const replacements = [urgencyCounts.total, urgencyCounts.high, urgencyCounts.medium, urgencyCounts.low];
+    pushWelcomeGreeting(
+      'agent-needs-list',
+      isPlatformAdmin ? 'admin' : 'dept',
+      () => replacements,
+      {
+        actions: [{
+          key: 'generate-need',
+          label: '生成需求',
+          path: '/app/agent-needs/create',
+          enabled: true,
+        }],
+      },
+    );
+  }, [activeTab, draftNeeds, isPlatformAdmin, pushWelcomeGreeting, urgencyCounts]);
+
   const filteredData = useMemo(() => {
     return needs
       .filter((n) => {
@@ -131,6 +194,17 @@ const AgentNeeds = () => {
   const goDetail = (n: BuildNeed) => navigate(`/app/agent-needs/detail/${n.id}`);
   const goEdit = (n: BuildNeed) => navigate(`/app/agent-needs/edit/${n.id}`);
   const goCreate = () => navigate('/app/agent-needs/create');
+
+  useEffect(() => {
+    const onBubbleRowAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind?: string; recordId?: string; path?: string }>).detail;
+      if (detail?.kind !== 'navigate-edit') return;
+      const draft = needs.find((n) => n.id === detail.recordId && n.status === '草稿' && n.applicant === loginName);
+      if (draft) goEdit(draft);
+    };
+    window.addEventListener('agent-bubble-row-action', onBubbleRowAction);
+    return () => window.removeEventListener('agent-bubble-row-action', onBubbleRowAction);
+  }, [loginName, needs]);
 
   // ── 智能化匹配 ──
   const doMatch = (n: BuildNeed) => {

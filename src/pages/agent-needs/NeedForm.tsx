@@ -8,7 +8,7 @@
  *           校验失败定位首个错误字段
  *   - 可选：提交前点【智能化匹配】预览 TOP3
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Button,
@@ -29,6 +29,7 @@ import { ThunderboltOutlined } from '@ant-design/icons';
 import { useAuth } from '../../hooks/useAuth';
 import { departmentOptions } from '../../mock/departments';
 import PageHeader from '../../components/PageHeader';
+import { useSmartDraft } from '../agent-center/smart/store';
 import {
   ROLE_DEPT,
   clinicalStageValues,
@@ -66,6 +67,7 @@ const NeedForm = () => {
   const { currentUser } = useAuth();
   const loginName = currentUser?.name || '当前用户';
   const [form] = Form.useForm<FormValues>();
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
 
   const editing = getNeed(id || '');
   const isEdit = !!editing;
@@ -76,6 +78,10 @@ const NeedForm = () => {
   const [previewTop, setPreviewTop] = useState<MatchItem[] | null>(null);
   // 提交二次确认
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const completionPromptedRef = useRef(false);
+  const [aiFilledFields, setAiFilledFields] = useState<Set<keyof FormValues>>(new Set());
+  const aiFieldClass = (field: keyof FormValues) =>
+    aiFilledFields.has(field) ? 'need-ai-prefilled-field' : undefined;
 
   // 监听诊疗环节，控制「其他」填空框显隐
   const stage = Form.useWatch('clinicalStage', form);
@@ -100,6 +106,83 @@ const NeedForm = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    if (isSubmittedEdit) return undefined;
+    pushWelcomeGreeting('agent-needs-create', 'provider', undefined, {
+      actions: [{
+        key: 'upload-need-file',
+        label: '上传文件',
+        event: 'agent-register-trigger-upload',
+        enabled: true,
+      }],
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isSubmittedEdit, pushWelcomeGreeting]);
+
+  useEffect(() => {
+    const onAiFill = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        fields?: Array<{ fieldKey: string; value: string }>;
+        rawText?: string;
+      }>).detail;
+      const detected = Object.fromEntries((detail?.fields ?? []).map((field) => [field.fieldKey, field.value]));
+      const rawText = detail?.rawText?.trim();
+      const current = form.getFieldsValue();
+      const next: FormValues = {};
+
+      if (!current.title && detected.name) next.title = detected.name.slice(0, 30);
+      if (!current.department && detected.department) next.department = detected.department;
+      if (!current.reason && detected.reason) next.reason = detected.reason.slice(0, 300);
+      if (!current.proposer && detected.proposer) next.proposer = detected.proposer.slice(0, 10);
+      if (!current.contactPhone && detected.contactPhone) next.contactPhone = detected.contactPhone;
+      if (!current.clinicalStage && detected.clinicalStage) next.clinicalStage = detected.clinicalStage as ClinicalStage;
+      if (!current.functionDesc && (detected.description || rawText)) next.functionDesc = detected.description || rawText;
+      if (!current.reason && !next.reason && (rawText || detected.description)) {
+        const source = rawText || detected.description;
+        next.reason = source.length >= 50
+          ? source.slice(0, 300)
+          : `当前业务流程主要依赖人工处理，存在效率低、信息收集不完整和结果不统一等问题。希望建设智能体辅助完成以下工作：${source}`.slice(0, 300);
+      }
+      if (!current.resources?.length) {
+        next.resources = detected.resources
+          ? detected.resources.split(/[；;,，]/).filter((item): item is ResourceType => item === '业务系统' || item === '模型')
+          : ['业务系统', '模型'];
+      }
+      if (!current.urgency && detected.urgency) next.urgency = detected.urgency as UrgencyLevel;
+
+      form.setFieldsValue(next);
+      const detectedFieldMap: Record<string, keyof FormValues> = {
+        name: 'title',
+        department: 'department',
+        reason: 'reason',
+        proposer: 'proposer',
+        contactPhone: 'contactPhone',
+        clinicalStage: 'clinicalStage',
+        clinicalStageCustom: 'clinicalStageOther',
+        description: 'functionDesc',
+        resources: 'resources',
+        urgency: 'urgency',
+      };
+      setAiFilledFields(new Set(
+        (detail?.fields ?? [])
+          .map((field) => detectedFieldMap[field.fieldKey])
+          .filter((field): field is keyof FormValues => Boolean(field)),
+      ));
+      const filledCount = Object.keys(next).length;
+      if (filledCount) message.success(`已智能填充 ${filledCount} 个需求字段，请核对并补充缺失内容`);
+      else message.info('已完成识别，现有字段未被覆盖，请继续补充缺失内容');
+    };
+    const onPrefillAcknowledged = () => {
+      window.setTimeout(promptSubmitWhenComplete, 0);
+    };
+    window.addEventListener('agent-needs-ai-fill', onAiFill);
+    window.addEventListener('agent-needs-prefill-acknowledged', onPrefillAcknowledged);
+    return () => {
+      window.removeEventListener('agent-needs-ai-fill', onAiFill);
+      window.removeEventListener('agent-needs-prefill-acknowledged', onPrefillAcknowledged);
+    };
+  }, [form]);
 
   const buildRecord = (values: FormValues, status: BuildNeed['status']): BuildNeed => {
     const now = nowStr(0);
@@ -126,6 +209,17 @@ const NeedForm = () => {
     };
   };
 
+  const promptSubmitWhenComplete = () => {
+    if (completionPromptedRef.current || isSubmittedEdit) return;
+    void form.validateFields({ validateOnly: true }).then(() => {
+      if (completionPromptedRef.current) return;
+      completionPromptedRef.current = true;
+      pushWelcomeGreeting('agent-needs-complete', 'provider', undefined, {
+        actions: [{ key: 'submit-need', label: '提交', event: 'agent-needs-submit', enabled: true }],
+      });
+    }).catch(() => undefined);
+  };
+
   // 暂存：不做必填校验（仅草稿态需求可用）
   const handleSave = () => {
     const values = form.getFieldsValue();
@@ -139,15 +233,39 @@ const NeedForm = () => {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
-      const rec = buildRecord(values, '已提交');
+      const draftRecord = buildRecord(values, '已提交');
+      const top = matchAgents(draftRecord);
+      const rec: BuildNeed = {
+        ...draftRecord,
+        matchResult: top.length ? buildMatchResult(top, nowStr(0)) : undefined,
+      };
       upsertNeed(rec);
       setConfirmOpen(false);
       if (isSubmittedEdit) {
         message.success('需求信息已更新');
         navigate(`/app/agent-needs/detail/${editing!.id}`);
       } else {
-        message.success('需求已提交');
-        navigate('/app/agent-needs');
+        message.success('需求已提交并完成智能化匹配');
+        navigate(`/app/agent-needs/detail/${rec.id}`);
+        const needMatchRows = Array.from({ length: 3 }).map((_, index) => {
+          const item = top[index];
+          return {
+            rank: index + 1,
+            agentCode: item?.agentCode ?? '--',
+            agentName: item?.agentName ?? '暂无匹配智能体',
+            version: item?.version ?? '--',
+            score: item?.score ?? 0,
+          };
+        });
+        window.setTimeout(() => {
+          pushWelcomeGreeting('agent-needs-match-result', 'provider', undefined, {
+            actions: [
+              { key: 'need-preview', label: '需求文档预览', path: `/app/agent-needs/doc/${rec.id}`, enabled: true },
+              { key: 'need-download', label: '需求文档下载', path: `/app/agent-needs/doc/${rec.id}?download=pdf`, enabled: true },
+            ],
+            needMatchRows,
+          });
+        }, 100);
       }
     } catch (err: any) {
       setConfirmOpen(false);
@@ -157,6 +275,14 @@ const NeedForm = () => {
       message.error('请完善表单必填项与格式后再提交');
     }
   };
+
+  useEffect(() => {
+    const onSubmitByAgent = () => void handleSubmit();
+    window.addEventListener('agent-needs-submit', onSubmitByAgent);
+    return () => {
+      window.removeEventListener('agent-needs-submit', onSubmitByAgent);
+    };
+  });
 
   // 智能化匹配预览（不落库）
   const handlePreviewMatch = async () => {
@@ -211,8 +337,18 @@ const NeedForm = () => {
           requiredMark
           style={{ maxWidth: 860 }}
           initialValues={{ resources: [], urgency: '中' }}
+          onValuesChange={(changedValues) => {
+            const changedFields = Object.keys(changedValues) as Array<keyof FormValues>;
+            setAiFilledFields((prev) => {
+              const next = new Set(prev);
+              changedFields.forEach((field) => next.delete(field));
+              return next;
+            });
+            window.setTimeout(promptSubmitWhenComplete, 0);
+          }}
         >
           <Form.Item
+            className={aiFieldClass('title')}
             label="需求标题"
             name="title"
             rules={[
@@ -224,11 +360,12 @@ const NeedForm = () => {
             <Input placeholder="请输入需求标题" maxLength={30} showCount />
           </Form.Item>
 
-          <Form.Item label="提出科室" name="department" rules={[{ required: true, message: '请选择提出科室' }]}>
+          <Form.Item className={aiFieldClass('department')} label="提出科室" name="department" rules={[{ required: true, message: '请选择提出科室' }]}>
             <Select placeholder="请选择提出科室" options={departmentOptions} showSearch style={{ maxWidth: 320 }} />
           </Form.Item>
 
           <Form.Item
+            className={aiFieldClass('reason')}
             label="提出原因"
             name="reason"
             rules={[
@@ -242,6 +379,7 @@ const NeedForm = () => {
           </Form.Item>
 
           <Form.Item
+            className={aiFieldClass('proposer')}
             label="提出人"
             name="proposer"
             rules={[
@@ -253,6 +391,7 @@ const NeedForm = () => {
           </Form.Item>
 
           <Form.Item
+            className={aiFieldClass('contactPhone')}
             label="联系方式"
             name="contactPhone"
             validateTrigger={['onBlur']}
@@ -262,7 +401,7 @@ const NeedForm = () => {
             <Input placeholder="请输入 11 位手机号" maxLength={11} style={{ maxWidth: 320 }} />
           </Form.Item>
 
-          <Form.Item label="诊疗环节" name="clinicalStage" rules={[{ required: true, message: '请选择诊疗环节' }]}>
+          <Form.Item className={aiFieldClass('clinicalStage')} label="诊疗环节" name="clinicalStage" rules={[{ required: true, message: '请选择诊疗环节' }]}>
             <Radio.Group>
               <Space wrap>
                 {clinicalStageOptions.map((o) => (
@@ -276,6 +415,7 @@ const NeedForm = () => {
 
           {stage === '其他' && (
             <Form.Item
+              className={aiFieldClass('clinicalStageOther')}
               label="诊疗环节（其他）"
               name="clinicalStageOther"
               rules={[
@@ -288,6 +428,7 @@ const NeedForm = () => {
           )}
 
           <Form.Item
+            className={aiFieldClass('functionDesc')}
             label="功能描述"
             name="functionDesc"
             rules={[
@@ -304,11 +445,11 @@ const NeedForm = () => {
             />
           </Form.Item>
 
-          <Form.Item label="所需资源" name="resources" extra="可多选：业务系统、模型">
+          <Form.Item className={aiFieldClass('resources')} label="所需资源" name="resources" extra="可多选：业务系统、模型">
             <Checkbox.Group options={resourceOptions} />
           </Form.Item>
 
-          <Form.Item label="需求紧急程度" name="urgency" rules={[{ required: true, message: '请选择需求紧急程度' }]} extra="提出人建议值，最终由 IT 管理员核定">
+          <Form.Item className={aiFieldClass('urgency')} label="需求紧急程度" name="urgency" rules={[{ required: true, message: '请选择需求紧急程度' }]} extra="提出人建议值，最终由 IT 管理员核定">
             <Radio.Group options={urgencyOptions} optionType="button" buttonStyle="solid" />
           </Form.Item>
 

@@ -1446,7 +1446,9 @@ const HomePage = () => {
   const [sceneTagScrollState, setSceneTagScrollState] = useState({ left: false, right: false });
 
   const visibleSceneTags = sceneTags.filter(
-    (t) => !['evaluation-create', 'evaluation-audit', 'access-audit', 'resource-audit'].includes(t.key) || isItAdmin,
+    (t) =>
+      !['register-requirement', 'access-apply', 'resource-register', 'resource-apply', 'resource-audit'].includes(t.key)
+      && (!['evaluation-create', 'evaluation-audit', 'access-audit'].includes(t.key) || isItAdmin),
   );
 
   const updateSceneTagScrollState = useCallback(() => {

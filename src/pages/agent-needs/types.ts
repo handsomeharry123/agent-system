@@ -46,6 +46,8 @@ export interface MatchItem {
   agentCode: string;
   /** 智能体名称 */
   agentName: string;
+  /** 智能体版本 */
+  version?: string;
   /** 台账内的智能体 id（用于跳转 360 画像） */
   agentId: string;
   /** 匹配度百分比（0-100 整数） */
@@ -199,6 +201,7 @@ export const matchAgents = (need: Pick<BuildNeed, 'clinicalStage' | 'functionDes
     return {
       agentCode: `AG-${String(idx + 1).padStart(4, '0')}`,
       agentName: agent.name,
+      version: agent.version,
       agentId: agent.id,
       score,
     } as MatchItem;

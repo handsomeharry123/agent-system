@@ -155,6 +155,13 @@ export interface AgentMessage {
       enabled: boolean;
       reason?: string;
     }>;
+    needMatchRows?: Array<{
+      rank: number;
+      agentCode: string;
+      agentName: string;
+      version: string;
+      score: number;
+    }>;
     welcomeMiniList?: {
       toggleLabel: string;
       targetTab: string;

@@ -31,6 +31,11 @@ import type {
 const initialMessages: AgentMessage[] = [];
 
 export type WelcomePageKey =
+  | 'agent-needs-list'         // 建设需求管理「需求管理列表」Tab
+  | 'agent-needs-draft'        // 建设需求管理「草稿列表」Tab
+  | 'agent-needs-create'       // 建设需求管理「生成需求」页
+  | 'agent-needs-complete'     // 需求字段完整后的提交确认
+  | 'agent-needs-match-result' // 需求提交后的 TOP3 匹配结果
   // 提供方侧列表 (各 Tab)
   | 'agent-center-all'          // 「全部」Tab — 提供方/管理方 文案不同
   | 'agent-center-draft'       // 「草稿」Tab
@@ -70,6 +75,67 @@ const registerWindowCopy =
  *   其余页面两角色走同一句欢迎语。
  */
 const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>> = {
+  'agent-needs-draft': {
+    dept: {
+      bubble: '您好！我是医小管，您还有 X 条未完成的需求登记草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有 X 条未完成的需求登记草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+    provider: {
+      bubble: '您好！我是医小管，您还有 X 条未完成的需求登记草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有 X 条未完成的需求登记草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+    admin: {
+      bubble: '您好！我是医小管，您还有 X 条未完成的需求登记草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有 X 条未完成的需求登记草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+  },
+  'agent-needs-complete': {
+    dept: { bubble: '当前信息已完整，是否需要帮你提交？', window: '当前信息已完整，是否需要帮你提交？' },
+    provider: { bubble: '当前信息已完整，是否需要帮你提交？', window: '当前信息已完整，是否需要帮你提交？' },
+    admin: { bubble: '当前信息已完整，是否需要帮你提交？', window: '当前信息已完整，是否需要帮你提交？' },
+  },
+  'agent-needs-match-result': {
+    dept: {
+      bubble: '已完成智能化匹配，匹配度 TOP3 如下。',
+      window: '已完成智能化匹配，匹配度 TOP3 如下。',
+    },
+    provider: {
+      bubble: '已完成智能化匹配，匹配度 TOP3 如下。',
+      window: '已完成智能化匹配，匹配度 TOP3 如下。',
+    },
+    admin: {
+      bubble: '已完成智能化匹配，匹配度 TOP3 如下。',
+      window: '已完成智能化匹配，匹配度 TOP3 如下。',
+    },
+  },
+  'agent-needs-create': {
+    dept: {
+      bubble: '您想要建设什么智能体？把需求文档说明发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您登记需求~',
+      window: '您想要建设什么智能体？把需求文档说明发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您登记需求~',
+    },
+    provider: {
+      bubble: '您想要建设什么智能体？把需求文档说明发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您登记需求~',
+      window: '您想要建设什么智能体？把需求文档说明发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您登记需求~',
+    },
+    admin: {
+      bubble: '您想要建设什么智能体？把需求文档说明发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您登记需求~',
+      window: '您想要建设什么智能体？把需求文档说明发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您登记需求~',
+    },
+  },
+  'agent-needs-list': {
+    dept: {
+      bubble: '您好，我是医小管。当前已登记 X 条建设需求（高优先级 X 条、中优先级 X 条、低优先级 X 条），点击对应分类查看需求详情。',
+      window: '您好！我是医小管。您想要建设什么智能体？点击【生成需求】，把需求文档说明发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您登记需求~',
+    },
+    provider: {
+      bubble: '您好，我是医小管。当前已登记 X 条建设需求（高优先级 X 条、中优先级 X 条、低优先级 X 条），点击对应分类查看需求详情。',
+      window: '您好！我是医小管。您想要建设什么智能体？点击【生成需求】，把需求文档说明发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您登记需求~',
+    },
+    admin: {
+      bubble: '您好，我是医小管。当前已登记 X 条建设需求（高优先级 X 条、中优先级 X 条、低优先级 X 条），点击对应分类查看需求详情。',
+      window: '您好！我是医小管。您想要建设什么智能体？点击【生成需求】，把需求文档说明发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您登记需求~',
+    },
+  },
   'agent-center-all': {
     dept: {
       bubble: deptSituationBubble,
@@ -354,6 +420,13 @@ interface SmartDraftCtx {
       actions?: Array<{ key: string; label: string; path?: string; event?: string; enabled: boolean; reason?: string }>;
       miniList?: WelcomeMiniList;
       windowReplacements?: Array<string | number>;
+      needMatchRows?: Array<{
+        rank: number;
+        agentCode: string;
+        agentName: string;
+        version: string;
+        score: number;
+      }>;
       previewProblems?: { total: number; items: WelcomePreviewProblem[] };
     },
   ) => void;
@@ -601,6 +674,7 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
             payload: {
               welcomeChips: extras?.chips,
               welcomeActions: extras?.actions,
+              needMatchRows: extras?.needMatchRows,
               welcomeMiniList: extras?.miniList,
             },
           },

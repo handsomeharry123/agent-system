@@ -60,6 +60,20 @@ interface RecognizeResult {
 const recognizeFile = async (fileName: string): Promise<RecognizeResult> => {
   // 模拟「正在识别」的延迟
   await new Promise((r) => setTimeout(r, 1500));
+  if (/建设需求自动填充示例/i.test(fileName)) {
+    const fields: RecognizeResult['fields'] = [
+      { fieldKey: 'name', value: '心电智能辅助诊断助手', confidence: 0.99, source: `${fileName} 第 2 行` },
+      { fieldKey: 'department', value: '心内科', confidence: 0.99, source: `${fileName} 第 2 行` },
+      { fieldKey: 'reason', value: '当前心电图检查结果主要依赖医生人工判读，在门诊高峰期存在报告等待时间较长、异常特征容易遗漏、结果表达不统一等问题，希望通过智能体提升判读效率与质量。', confidence: 0.99, source: `${fileName} 第 2 行` },
+      { fieldKey: 'proposer', value: 'admin', confidence: 0.99, source: `${fileName} 第 2 行` },
+      { fieldKey: 'contactPhone', value: '13800138001', confidence: 0.99, source: `${fileName} 第 2 行` },
+      { fieldKey: 'clinicalStage', value: '辅助诊断', confidence: 0.99, source: `${fileName} 第 2 行` },
+      { fieldKey: 'description', value: '面向门诊及住院患者的心电图检查场景，自动识别ST段抬高、室性早搏等异常特征，生成结构化辅助诊断建议并提示医生复核。', confidence: 0.99, source: `${fileName} 第 2 行` },
+      { fieldKey: 'resources', value: '业务系统；模型', confidence: 0.99, source: `${fileName} 第 2 行` },
+      { fieldKey: 'urgency', value: '中', confidence: 0.99, source: `${fileName} 第 2 行` },
+    ];
+    return { fields, summary: `已从「${fileName}」中识别全部 9 个需求登记字段，并自动填充到表单。` };
+  }
   // 通用 PDF 识别模板：覆盖 PRD §3.1.2.2/2.3 必填字段，不再依赖文件名启发式
   // 仅当文件名含「技术规格|API」关键词时额外补充技术信息字段
   const isTechSpec = /技术规格|API|接口|SDK|OTel/i.test(fileName);
@@ -296,10 +310,20 @@ const AgentAssistant = () => {
     setMaterialOffer,
   } = useSmartDraft();
 
-  const visibleMessages = useMemo(
-    () => messages.filter((m) => !HIDDEN_CHAT_MESSAGE_TYPES.has(m.type)),
-    [messages],
-  );
+  const visibleMessages = useMemo(() => {
+    const isNeedDraftTab =
+      location.pathname === '/app/agent-needs' &&
+      new URLSearchParams(location.search).get('tab') === 'draft';
+    return messages.filter((m) => {
+      if (HIDDEN_CHAT_MESSAGE_TYPES.has(m.type)) return false;
+      // 草稿入口只展示当前草稿场景的欢迎消息，避免接入中心、需求列表等
+      // 历史页面欢迎气泡混入当前智能体窗口；用户后续对话消息仍正常保留。
+      if (isNeedDraftTab && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:agent-needs-draft:');
+      }
+      return true;
+    });
+  }, [location.pathname, location.search, messages]);
 
   // 滚动到底部
   useEffect(() => {
@@ -523,6 +547,7 @@ const AgentAssistant = () => {
       label: '正在识别文字描述…',
       resultType: 'text-detect',
       recognitionMode: 'text',
+      rawText: text,
     });
   };
 
@@ -573,6 +598,7 @@ const AgentAssistant = () => {
     extra?: {
       fileName?: string;
       fileSize?: number;
+      rawText?: string;
       label?: string;
       resultType?: AgentMessageType;
       recognitionMode?: 'text' | 'voice';
@@ -604,6 +630,11 @@ const AgentAssistant = () => {
       });
       // 写入 store
       applyPrefill(result.fields);
+      if (/^\/app\/agent-needs\/(?:create|edit\/[^/]+)$/.test(location.pathname)) {
+        window.dispatchEvent(new CustomEvent('agent-needs-ai-fill', {
+          detail: { fields: result.fields, rawText: extra?.rawText, fileName: extra?.fileName },
+        }));
+      }
       setMood('happy');
       setTimeout(() => setMood('idle'), 1200);
     } catch (e) {
@@ -620,6 +651,7 @@ const AgentAssistant = () => {
   // ─── 上传文件 / 图片 ───
   const handleUpload = async (file: UploadFile) => {
     const isPdf = file.name?.toLowerCase().endsWith('.pdf');
+    const isDocument = /\.(pdf|doc|docx|xls|xlsx|csv)$/i.test(file.name || '');
     const size = file.size ?? 0;
     if (size > 30 * 1024 * 1024) {
       message.error('上传失败，单文件超过最大限制 30M');
@@ -628,7 +660,7 @@ const AgentAssistant = () => {
     addMessage({
       role: 'user',
       type: 'text',
-      content: isPdf ? `上传文件：${file.name}` : `上传图片：${file.name}`,
+      content: isDocument ? `上传文件：${file.name}` : `上传图片：${file.name}`,
       payload: { fileName: file.name, fileSize: size },
     });
     // §3.1.1 同步到「备案材料」列表：仅 PDF（图片仅用于 OCR 识别，不入备案材料）。
@@ -637,10 +669,10 @@ const AgentAssistant = () => {
       const uid = (file.uid as string) || `agent-up-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       syncUploadedFile({ uid, name: file.name, size, type: file.type });
     }
-    runRecognitionFlow(() => (isPdf ? recognizeFile(file.name) : recognizeImage(file.name)), {
+    runRecognitionFlow(() => (isDocument ? recognizeFile(file.name) : recognizeImage(file.name)), {
       fileName: file.name,
       fileSize: size,
-      label: isPdf ? `正在解析 ${file.name}…` : `正在 OCR 识别 ${file.name}…`,
+      label: isDocument ? `正在解析 ${file.name}…` : `正在 OCR 识别 ${file.name}…`,
     });
     return false; // 阻止 antd 默认上传
   };
@@ -679,6 +711,7 @@ const AgentAssistant = () => {
         label: '正在识别语音…',
         resultType: 'text-detect',
         recognitionMode: 'voice',
+        rawText: mockTranscript,
       });
       return;
     }
@@ -707,6 +740,14 @@ const AgentAssistant = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording]);
 
+  useEffect(() => {
+    const onRefreshNeedMatch = () => {
+      message.success('已刷新智能化匹配结果');
+    };
+    window.addEventListener('agent-needs-refresh-match', onRefreshNeedMatch);
+    return () => window.removeEventListener('agent-needs-refresh-match', onRefreshNeedMatch);
+  }, []);
+
   // ─── 批量采纳: file-detect / image-detect / link-detect 气泡的「确认采纳 (N)」入口
   // - 取代旧的「全部采纳」: 取消高置信度自动采纳, 改为用户逐项勾选后批量采纳
   // - 与 PRD §3.2.1 智能预审 / 智能审查「勾选 + 确认采纳」交互同构
@@ -715,6 +756,13 @@ const AgentAssistant = () => {
     fieldKeys.forEach((k) => acknowledgePrefill(k));
     if (n > 0) {
       message.success(`已采纳 ${n} 个 AI 预填字段到表单，可继续核对修改`);
+      if (/^\/app\/agent-needs\/(?:create|edit\/[^/]+)$/.test(location.pathname)) {
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('agent-needs-prefill-acknowledged', {
+            detail: { fieldKeys },
+          }));
+        }, 0);
+      }
     }
     addMessage({
       role: 'agent',
@@ -727,6 +775,13 @@ const AgentAssistant = () => {
 
   const ackField = (k: string) => {
     acknowledgePrefill(k);
+    if (/^\/app\/agent-needs\/(?:create|edit\/[^/]+)$/.test(location.pathname)) {
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('agent-needs-prefill-acknowledged', {
+          detail: { fieldKeys: [k] },
+        }));
+      }, 0);
+    }
   };
 
   // 当前 mood 注入 hover 变体
@@ -766,7 +821,7 @@ const AgentAssistant = () => {
       <input
         ref={hiddenUploadRef}
         type="file"
-        accept=".pdf,.png,.jpg,.jpeg"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg"
         style={{ display: 'none' }}
         onChange={(e) => {
           const f = e.target.files?.[0];
@@ -1098,21 +1153,24 @@ const AgentAssistant = () => {
               ))}
             </div>
           )}
-          {/* §3.1.1 指向性规则（列表页多记录）：气泡按钮不直接操作单条，
-              而是展开「迷你清单」— 每条自带记录级按钮 + 底部「查看全部」回到对应 Tab */}
+          {/* §3.1.1 指向性规则（列表页多记录）：气泡按钮打开智能体窗口，
+              窗口内展示记录清单与对应操作。 */}
           {activeWelcome.miniList && activeWelcome.miniList.rows.length > 0 && (
             <div
               style={{ marginTop: 8 }}
               onClick={(e) => e.stopPropagation()}
             >
               {miniExpandedAt !== activeWelcome.at ? (
-                // 折叠态：单个引导按钮，点击展开清单
+                // 折叠态：单个引导按钮，点击打开完整智能体窗口
                 <Button
                   size="small"
                   type="primary"
                   ghost
                   data-testid="status-bubble-mini-toggle"
-                  onClick={() => setMiniExpandedAt(activeWelcome.at)}
+                  onClick={() => {
+                    setOpen(true);
+                    consumeWelcome();
+                  }}
                   style={{ padding: '0 10px' }}
                 >
                   {activeWelcome.miniList.toggleLabel} ›
