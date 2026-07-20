@@ -67,7 +67,9 @@ export type WelcomePageKey =
   | 'monitoring-business'      // 统一运行监控中心「业务监控」页
   | 'monitoring-status'        // 统一运行监控中心「状态监控」页
   | 'monitoring-cost'          // 统一运行监控中心「成本监控」页
+  | 'monitoring-alert-rules'   // 统一运行监控中心「告警规则管理」页
   | 'monitoring-alert-events'  // 统一运行监控中心「告警事件处置」页
+  | 'monitoring-alert-pending-assign' // 统一运行监控中心「待分派事件」Tab
   | 'monitoring-alert-detail'  // 统一运行监控中心「告警事件详情」页
   | 'monitoring-alert-review'  // 统一运行监控中心「告警事件处理审核」页
   | 'monitoring-alert-pending' // 统一运行监控中心「待处理事件」Tab
@@ -124,10 +126,20 @@ const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>
     provider: { bubble: '您好！我是医小管，有什么成本监控相关信息都可以问我', window: '您好！我是医小管，本科室智能体累计CPU使用量X核·时、GPU使用量X卡·时、内存使用量X GB·时、Token使用量X tokens，有什么成本监控相关信息都可以问我' },
     admin: { bubble: '您好！我是医小管，有什么成本监控相关信息都可以问我', window: '您好！我是医小管，全院智能体累计CPU使用量X核·时、GPU使用量X卡·时、内存使用量X GB·时、Token使用量X tokens，有什么成本监控相关信息都可以问我' },
   },
+  'monitoring-alert-rules': {
+    dept: { bubble: '您好！我是医小管，目前有X条告警规则，您想要了解什么告警规则，只需要文字或语音描述，我将直接告诉您', window: '您好！我是医小管，目前有X条告警规则，您想要了解什么告警规则，只需要文字或语音描述，我将直接告诉您' },
+    provider: { bubble: '您好！我是医小管，目前有X条告警规则，您想要了解什么告警规则，只需要文字或语音描述，我将直接告诉您', window: '您好！我是医小管，目前有X条告警规则，您想要了解什么告警规则，只需要文字或语音描述，我将直接告诉您' },
+    admin: { bubble: '您好！我是医小管，目前有X条告警规则，您想要了解什么告警规则，只需要文字或语音描述，我将直接告诉您', window: '您好！我是医小管，目前有X条告警规则，您想要了解什么告警规则，只需要文字或语音描述，我将直接告诉您' },
+  },
   'monitoring-alert-events': {
     dept: { bubble: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～', window: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～' },
     provider: { bubble: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～', window: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～' },
     admin: { bubble: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～', window: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～' },
+  },
+  'monitoring-alert-pending-assign': {
+    dept: { bubble: '您好！我是医小管，目前告警事件待处理X项，您可文字或语音直接告诉我分派对象，我将自动帮您分派~', window: '您好！我是医小管，目前告警事件待处理X项，您可文字或语音直接告诉我分派对象，我将自动帮您分派~' },
+    provider: { bubble: '您好！我是医小管，目前告警事件待处理X项，您可文字或语音直接告诉我分派对象，我将自动帮您分派~', window: '您好！我是医小管，目前告警事件待处理X项，您可文字或语音直接告诉我分派对象，我将自动帮您分派~' },
+    admin: { bubble: '您好！我是医小管，目前告警事件待处理X项，您可文字或语音直接告诉我分派对象，我将自动帮您分派~', window: '您好！我是医小管，目前告警事件待处理X项，您可文字或语音直接告诉我分派对象，我将自动帮您分派~' },
   },
   'monitoring-alert-detail': {
     dept: { bubble: '您好！我是医小管，这是【X】的详情信息，有什么告警事件相关信息都可以问我', window: '您好！我是医小管，这是【X】的详情信息，有什么告警事件相关信息都可以问我' },
@@ -883,7 +895,8 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
           pageKey === 'monitoring-overview' ||
           pageKey === 'monitoring-business' ||
           pageKey === 'monitoring-status' ||
-          pageKey === 'monitoring-alert-events' || pageKey === 'monitoring-alert-detail' || pageKey === 'monitoring-alert-review' || pageKey === 'monitoring-alert-pending' || pageKey === 'monitoring-alert-handling' || pageKey === 'monitoring-alert-pending-review' || pageKey === 'monitoring-alert-reviewing' || pageKey === 'monitoring-alert-closed' || pageKey === 'monitoring-alert-ignored' ||
+          pageKey === 'monitoring-alert-rules' ||
+          pageKey === 'monitoring-alert-events' || pageKey === 'monitoring-alert-pending-assign' || pageKey === 'monitoring-alert-detail' || pageKey === 'monitoring-alert-review' || pageKey === 'monitoring-alert-pending' || pageKey === 'monitoring-alert-handling' || pageKey === 'monitoring-alert-pending-review' || pageKey === 'monitoring-alert-reviewing' || pageKey === 'monitoring-alert-closed' || pageKey === 'monitoring-alert-ignored' ||
           pageKey === 'evaluation-report';
         const base = replaceCurrentPageWelcome
           ? prev.filter((m) => !m.id.startsWith(`__welcome__:${pageKey}:`))

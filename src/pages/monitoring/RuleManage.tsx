@@ -17,7 +17,7 @@
  * 「告警规则模板库」统一收敛至「新建规则 → 选择模板」抽屉内
  * 仅 IT 管理员可见与操作
  */
-import { useRef, useMemo, useState } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Space, Tag, Button, Typography, Modal, message, Input, Tooltip,
@@ -34,6 +34,7 @@ import {
   mockAlertRulesV18, mockAlertRuleLibrary, AlertRuleTypeLabels, type AlertRuleV18, type AlertRuleType,
 } from '../../mock/monitoringV18';
 import { useMonitoringGuard } from './useMonitoringGuard';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 
@@ -60,6 +61,7 @@ const RuleManage = () => {
   const navigate = useNavigate();
   const actionRef = useRef<ActionType | undefined>(undefined);
   const { isAdmin } = useMonitoringGuard();
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [rules] = useState<AlertRuleV18[]>(mockAlertRulesV18);
   const [keyword, setKeyword] = useState('');
   const [activeTab, setActiveTab] = useState<TabKey>('all');
@@ -85,6 +87,24 @@ const RuleManage = () => {
     rules.forEach((r) => { m[r.type] += 1; });
     return m;
   }, [rules]);
+
+  useEffect(() => {
+    pushWelcomeGreeting('monitoring-alert-rules', 'admin', () => [rules.length]);
+    (window as any).__alertRulesMonitoringContext = {
+      rules: rules.map((rule) => ({
+        name: rule.name,
+        type: rule.type,
+        typeLabel: AlertRuleTypeLabels[rule.type],
+        triggerCondition: rule.triggerCondition.description,
+        metric: rule.triggerCondition.metric,
+        content: mockAlertRuleLibrary.find((item) => item.id === rule.ruleContentId)?.name || '—',
+      })),
+    };
+    return () => {
+      consumeWelcome();
+      delete (window as any).__alertRulesMonitoringContext;
+    };
+  }, [consumeWelcome, pushWelcomeGreeting, rules]);
 
   // 删除规则（弹「确认是否删除」，【是】删除 / 【否】返回）
   const deleteRule = (rule: AlertRuleV18) => {

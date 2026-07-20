@@ -613,11 +613,15 @@ const AlertEventListV18 = () => {
   }, [isAdmin, setSearchParams]);
 
   useEffect(() => {
-    if (activeTab !== 'all' && activeTab !== 'pending_handle' && activeTab !== 'handling' && activeTab !== 'pending_review' && activeTab !== 'reviewing' && activeTab !== 'closed' && activeTab !== 'ignored') {
+    if (activeTab !== 'all' && activeTab !== 'pending_assign' && activeTab !== 'pending_handle' && activeTab !== 'handling' && activeTab !== 'pending_review' && activeTab !== 'reviewing' && activeTab !== 'closed' && activeTab !== 'ignored') {
       consumeWelcome();
       return undefined;
     }
-    if (activeTab === 'all') {
+    if (activeTab === 'pending_assign') {
+      pushWelcomeGreeting('monitoring-alert-pending-assign', 'admin', () => [tabCounts.pending_assign], {
+        windowReplacements: [tabCounts.pending_assign],
+      });
+    } else if (activeTab === 'all') {
       const replacements = [tabCounts.all, tabCounts.pending_handle, tabCounts.pending_review];
       pushWelcomeGreeting('monitoring-alert-events', isAdmin ? 'admin' : 'dept', () => replacements, {
         windowReplacements: replacements,
@@ -659,7 +663,7 @@ const AlertEventListV18 = () => {
       });
     }
     return () => consumeWelcome();
-  }, [activeTab, consumeWelcome, isAdmin, pushWelcomeGreeting, tabCounts.all, tabCounts.closed, tabCounts.handling, tabCounts.ignored, tabCounts.pending_handle, tabCounts.pending_review, tabCounts.reviewing]);
+  }, [activeTab, consumeWelcome, isAdmin, pushWelcomeGreeting, tabCounts.all, tabCounts.closed, tabCounts.handling, tabCounts.ignored, tabCounts.pending_assign, tabCounts.pending_handle, tabCounts.pending_review, tabCounts.reviewing]);
 
   // 医小管对话联动：筛选待处理事件、直达详情、将事件转入处理中。
   useEffect(() => {
@@ -667,6 +671,55 @@ const AlertEventListV18 = () => {
       const detail = (rawEvent as CustomEvent<{ text: string; respond?: (answer: string) => void }>).detail;
       const text = detail?.text?.trim();
       if (!text) return;
+
+      if (activeTab === 'pending_assign') {
+        if (!isAdmin) {
+          detail.respond?.('待分派事件仅支持信息科管理员操作。');
+          return;
+        }
+        const pendingAssignEvents = events.filter((e) => roleScopedFilter('pending_assign', e));
+        if (pendingAssignEvents.length === 0) {
+          detail.respond?.('当前没有待分派告警事件。');
+          return;
+        }
+        const assignee = mockUsers.find((user) => user.status === '在职' && text.includes(user.name));
+        if (!assignee) {
+          detail.respond?.('请告诉我分派对象的姓名，例如“全部分派给王建国”。');
+          return;
+        }
+        const explicitlyMatched = pendingAssignEvents.filter((event) =>
+          text.includes(event.agentName) || text.includes(event.id) ||
+          text.includes(event.triggerContent.rule_name) || text.includes(event.triggerContent.trigger_condition.metric),
+        );
+        const targets = explicitlyMatched.length > 0 ? explicitlyMatched : pendingAssignEvents;
+        const targetIds = new Set(targets.map((event) => event.id));
+        const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        const operator = currentUserName || '当前用户';
+        const assignEvent = (event: AlertEventV18): AlertEventV18 => ({
+          ...event,
+          status: 'pending_handle',
+          assignTime: now,
+          assigner: operator,
+          handler: assignee.name,
+          handlerContact: {
+            account: assignee.employeeId,
+            owner: assignee.name,
+            phone: assignee.phone,
+            email: assignee.email,
+          },
+          handleTimeline: [
+            ...(event.handleTimeline || []),
+            { time: now, action: '分派', operator, remark: `由医小管自动分派给 ${assignee.name}` },
+          ],
+        });
+        setEvents((current) => current.map((event) => targetIds.has(event.id) ? assignEvent(event) : event));
+        mockAlertEventsV18.forEach((event, index) => {
+          if (targetIds.has(event.id)) mockAlertEventsV18[index] = assignEvent(event);
+        });
+        detail.respond?.(`已将 ${targets.length} 项告警事件分派给${assignee.name}，事件已进入「待处理事件」。`);
+        message.success(`已自动分派 ${targets.length} 项事件给${assignee.name}`);
+        return;
+      }
 
       if (activeTab === 'closed') {
         const closedEvents = events.filter((e) => roleScopedFilter('closed', e));

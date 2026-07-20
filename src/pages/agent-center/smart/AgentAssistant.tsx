@@ -223,6 +223,41 @@ const answerCostMonitoringQuestion = (question: string, context: any): string =>
   return outOfScope;
 };
 
+const answerAlertRulesQuestion = (question: string, context: any): string => {
+  const outOfScope = '超出当前告警规则页信息范围，暂无法为您解答，我们将持续完善。';
+  const rules = context?.rules as Array<any> | undefined;
+  if (!rules) return outOfScope;
+  const typePatterns: Array<[RegExp, string]> = [
+    [/业务监控|业务告警|业务规则/, 'business'],
+    [/状态监控|状态告警|状态规则/, 'status'],
+    [/成本监控|成本告警|成本规则/, 'cost'],
+    [/安全监控|安全告警|安全规则/, 'security'],
+  ];
+  const selectedType = typePatterns.find(([pattern]) => pattern.test(question))?.[1];
+  const typeRules = selectedType ? rules.filter((rule) => rule.type === selectedType) : rules;
+  const namedRule = rules.find((rule) => question.includes(rule.name)) ||
+    rules.find((rule) => question.includes(rule.metric) || question.includes(rule.name.replace(/告警$/, '')));
+  if (namedRule) {
+    if (/触发|条件|阈值|指标|什么时候/.test(question)) return `【${namedRule.name}】的触发条件为：${namedRule.triggerCondition}。`;
+    if (/规则内容|内容|作用|说明/.test(question)) return `【${namedRule.name}】的规则内容为：${namedRule.content}。`;
+    if (/类型|分类/.test(question)) return `【${namedRule.name}】属于${namedRule.typeLabel}。`;
+    if (/什么|详情|介绍|信息|了解|查询|看看/.test(question)) return `【${namedRule.name}】属于${namedRule.typeLabel}，触发条件为“${namedRule.triggerCondition}”，规则内容为“${namedRule.content}”。`;
+  }
+  if (/多少|几条|数量|统计|概况/.test(question)) {
+    if (selectedType) return `当前共有 ${typeRules.length} 条${typeRules[0]?.typeLabel || '该类型告警规则'}。`;
+    const counts = typePatterns.map(([, type]) => {
+      const rows = rules.filter((rule) => rule.type === type);
+      return `${rows[0]?.typeLabel || type} ${rows.length} 条`;
+    });
+    return `当前共有 ${rules.length} 条告警规则：${counts.join('、')}。`;
+  }
+  if (/哪些|列表|名称|有什么|所有|全部/.test(question) && (selectedType || /告警规则|规则/.test(question))) {
+    if (!typeRules.length) return '当前页面没有该类型的告警规则。';
+    return `${selectedType ? typeRules[0].typeLabel : '当前告警规则'}共 ${typeRules.length} 条：${typeRules.map((rule) => rule.name).join('、')}。`;
+  }
+  return outOfScope;
+};
+
 const recognizeFile = async (fileName: string): Promise<RecognizeResult> => {
   // 模拟「正在识别」的延迟
   await new Promise((r) => setTimeout(r, 1500));
@@ -426,12 +461,19 @@ const AgentAssistant = () => {
     const stored = loadPos();
     return stored ? clampPos(stored, ENTRY_SIZE) : getDefaultPos();
   });
+  // 拖拽监听器必须保持稳定；用 ref 读取最新坐标，避免每次 mousemove 更新状态后
+  // effect 清理 window 监听器，造成在固定列表格区域上只能移动一小段就中断。
+  const posRef = useRef(pos);
   const [draggingFloat, setDraggingFloat] = useState(false);
   const dragMovedRef = useRef(false); // 区分「拖动」与「点击」, 拖动时屏蔽 click 唤起
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; posX: number; posY: number } | null>(
     null,
   );
   const entryRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    posRef.current = pos;
+  }, [pos]);
 
   // 台账中心智能化升级(PRD §3.1):进入台账总览 / 列表页时,重置浮窗位置到右下角默认位置
   //   避免用户之前在接入中心拖动到中部的位置残留到台账页面,遮挡表格
@@ -441,7 +483,9 @@ const AgentAssistant = () => {
     const path = location.pathname;
     const isLedgerPage = path === '/app/ledger' || path === '/app/ledger/list' || path.startsWith('/app/ledger/list?');
     if (isLedgerPage) {
-      setPos(getDefaultPos());
+      const next = getDefaultPos();
+      posRef.current = next;
+      setPos(next);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
@@ -515,11 +559,14 @@ const AgentAssistant = () => {
     const isMonitoringBusinessPage = location.pathname === '/app/monitoring/business';
     const isMonitoringStatusPage = location.pathname === '/app/monitoring/status';
     const isMonitoringCostPage = location.pathname === '/app/monitoring/cost';
+    const isMonitoringAlertRulesPage = location.pathname === '/app/monitoring/alert-rules';
     const isMonitoringAlertEventsPage = location.pathname === '/app/monitoring/alert-events';
     const isMonitoringAlertDetailPage = /^\/app\/monitoring\/alert-events\/[^/]+$/.test(location.pathname);
     const isMonitoringAlertReviewPage = /^\/app\/monitoring\/alert-events\/[^/]+\/review$/.test(location.pathname);
     const isMonitoringAlertHandlingTab = isMonitoringAlertEventsPage &&
       new URLSearchParams(location.search).get('tab') === 'handling';
+    const isMonitoringAlertPendingAssignTab = isMonitoringAlertEventsPage &&
+      new URLSearchParams(location.search).get('tab') === 'pending_assign';
     const isMonitoringAlertPendingTab = isMonitoringAlertEventsPage &&
       new URLSearchParams(location.search).get('tab') === 'pending_handle';
     const isMonitoringAlertPendingReviewTab = isMonitoringAlertEventsPage &&
@@ -602,8 +649,13 @@ const AgentAssistant = () => {
       if (isMonitoringCostPage && m.id.startsWith('__welcome__:')) {
         return m.id.startsWith('__welcome__:monitoring-cost:');
       }
+      if (isMonitoringAlertRulesPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:monitoring-alert-rules:');
+      }
       if (isMonitoringAlertEventsPage && m.id.startsWith('__welcome__:')) {
-        return isMonitoringAlertPendingTab
+        return isMonitoringAlertPendingAssignTab
+          ? m.id.startsWith('__welcome__:monitoring-alert-pending-assign:')
+          : isMonitoringAlertPendingTab
           ? m.id.startsWith('__welcome__:monitoring-alert-pending:')
           : isMonitoringAlertPendingReviewTab
           ? m.id.startsWith('__welcome__:monitoring-alert-pending-review:')
@@ -698,7 +750,7 @@ const AgentAssistant = () => {
     if (open) return; // 浮层已开, 机器人旁气泡不重复
     // 告警「待审核事件」是持续待办提醒，保留到用户点击机器人、气泡或关闭按钮，
     // 避免管理员查看列表数秒后气泡自动消失而错过审核入口提示。
-    if (activeWelcome.pageKey === 'monitoring-alert-events' || activeWelcome.pageKey === 'monitoring-alert-pending-review') return;
+    if (activeWelcome.pageKey === 'monitoring-alert-events' || activeWelcome.pageKey === 'monitoring-alert-pending-assign' || activeWelcome.pageKey === 'monitoring-alert-pending-review') return;
     welcomeTimerRef.current = setTimeout(() => {
       consumeWelcome();
     }, 8000);
@@ -757,6 +809,7 @@ const AgentAssistant = () => {
         if (next.left !== p.left || next.top !== p.top) {
           savePos(next);
         }
+        posRef.current = next;
         return next;
       });
     };
@@ -773,11 +826,12 @@ const AgentAssistant = () => {
 
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return; // 仅左键
+      e.preventDefault();
       dragStartRef.current = {
         mouseX: e.clientX,
         mouseY: e.clientY,
-        posX: pos.left,
-        posY: pos.top,
+        posX: posRef.current.left,
+        posY: posRef.current.top,
       };
       dragMovedRef.current = false;
       // 阻止后续 click 触发唤起: 拖动超过阈值才置 true, mouseup 据此 stopPropagation
@@ -804,6 +858,7 @@ const AgentAssistant = () => {
         { left: start.posX + dx, top: start.posY + dy },
         ENTRY_SIZE,
       );
+      posRef.current = next;
       setPos(next);
       setDraggingFloat(true);
     };
@@ -836,7 +891,7 @@ const AgentAssistant = () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [open, pos.left, pos.top]);
+  }, [open]);
 
   // ─── 输入发送 ───
   const sendText = () => {
@@ -870,6 +925,10 @@ const AgentAssistant = () => {
     }
     if (location.pathname === '/app/monitoring/cost') {
       addMessage({ role: 'agent', type: 'text', content: answerCostMonitoringQuestion(text, (window as any).__costMonitoringContext) });
+      return;
+    }
+    if (location.pathname === '/app/monitoring/alert-rules') {
+      addMessage({ role: 'agent', type: 'text', content: answerAlertRulesQuestion(text, (window as any).__alertRulesMonitoringContext) });
       return;
     }
     if (/^\/app\/monitoring\/alert-events(?:\/[^/]+)?$/.test(location.pathname)) {
@@ -1044,7 +1103,7 @@ const AgentAssistant = () => {
   };
 
   const handleSend = () => {
-    if (location.pathname === '/app/monitoring/business' || location.pathname === '/app/monitoring/status' || location.pathname === '/app/monitoring/cost' || /^\/app\/monitoring\/alert-events(?:\/[^/]+)?$/.test(location.pathname)) {
+    if (location.pathname === '/app/monitoring/business' || location.pathname === '/app/monitoring/status' || location.pathname === '/app/monitoring/cost' || location.pathname === '/app/monitoring/alert-rules' || /^\/app\/monitoring\/alert-events(?:\/[^/]+)?$/.test(location.pathname)) {
       sendText();
       return;
     }
@@ -1066,12 +1125,22 @@ const AgentAssistant = () => {
   const toggleVoice = () => {
     if (recording) {
       setRecording(false);
-      const mockTranscript = location.pathname === '/app/monitoring/alert-events'
-        ? (new URLSearchParams(location.search).get('tab') === 'reviewing'
+      const mockTranscript = location.pathname === '/app/monitoring/alert-rules'
+        ? '有哪些安全监控告警规则'
+        : location.pathname === '/app/monitoring/alert-events'
+        ? (new URLSearchParams(location.search).get('tab') === 'pending_assign'
+          ? '把全部待分派事件分派给王建国'
+          : new URLSearchParams(location.search).get('tab') === 'reviewing'
           ? '审核通过，处理方案有效，告警已恢复正常，可以关闭该告警事项'
           : '帮我查找待处理的业务监控告警')
         : '我需要接入一个智能导诊助手';
       addMessage({ role: 'user', type: 'text', content: `[语音转写] ${mockTranscript}` });
+      if (location.pathname === '/app/monitoring/alert-rules') {
+        addMessage({ role: 'agent', type: 'text', content: answerAlertRulesQuestion(mockTranscript, (window as any).__alertRulesMonitoringContext) });
+        setMood('happy');
+        setTimeout(() => setMood('idle'), 1200);
+        return;
+      }
       if (location.pathname === '/app/monitoring/alert-events') {
         let answer = '已根据语音描述完成筛选。';
         window.dispatchEvent(new CustomEvent('monitoring-alert-assistant-query', {
