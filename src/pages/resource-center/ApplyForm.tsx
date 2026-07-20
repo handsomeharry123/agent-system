@@ -35,6 +35,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
+import { useSmartDraft } from '../agent-center/smart/store';
 import {
   useResources,
   useApplies,
@@ -70,6 +71,34 @@ const ApplyForm = () => {
   const [testState, setTestState] = useState<'idle' | 'loading' | 'success' | 'fail'>('idle');
   const [testMsg, setTestMsg] = useState<{ code?: string; reason?: string }>({});
   const [submitting, setSubmitting] = useState(false);
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
+
+  useEffect(() => {
+    pushWelcomeGreeting('resource-apply-form', isAdmin ? 'admin' : 'dept');
+    return () => consumeWelcome();
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting]);
+
+  useEffect(() => {
+    const onAiFill = (event: Event) => {
+      const fields = (event as CustomEvent<{ fields?: Array<{ fieldKey: string; value: string }> }>).detail?.fields ?? [];
+      const values = Object.fromEntries(fields.map((field) => [field.fieldKey, field.value]));
+      if (values.agentId && mockAgents.some((agent) => agent.id === values.agentId)) {
+        form.setFieldValue('agentId', values.agentId);
+        setSelectedAgentId(values.agentId);
+      }
+      if (values.resourceIds) {
+        const ids = values.resourceIds.split(/[；;,，]/).filter((rid) => resources.some((resource) => resource.id === rid));
+        if (ids.length) {
+          form.setFieldValue('resourceIds', ids);
+          setSelectedResourceIds(ids);
+        }
+      }
+      if (values.reason) form.setFieldValue('reason', values.reason.slice(0, 200));
+      if (Object.keys(values).length) message.success('已识别并填充权限申请信息，请补充缺失字段后提交');
+    };
+    window.addEventListener('resource-apply-ai-fill', onAiFill);
+    return () => window.removeEventListener('resource-apply-ai-fill', onAiFill);
+  }, [form, resources]);
 
   // 编辑态
   const init = from ? applies.find((a) => a.id === from) : null;
@@ -85,6 +114,7 @@ const ApplyForm = () => {
       form.setFieldsValue({
         agentId: init.agentId,
         resourceIds: [init.resourceId],
+        reason: init.reason || '',
       });
     } else if (presetAgentFromName) {
       // 台账列表「申请资源」联动：自动选中匹配的智能体
@@ -170,6 +200,7 @@ const ApplyForm = () => {
       description: selectedAgent.description,
       resourceId: resource.id,
       resourceName: resource.resources.join('/'),
+      reason: form.getFieldValue('reason') || '',
       status,
       applicant: current.name,
       applicantAccount: current.account, // V1.1 §3.1 数据隔离:归属于当前演示账号

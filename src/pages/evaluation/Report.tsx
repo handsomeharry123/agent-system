@@ -7,7 +7,7 @@
 //   · 顶部操作：审核（仅管理员）/ 报告查看 / 报告下载（PDF）/ 返回
 //   · 报告 PDF：基于 docx 模板 V1 前端渲染（jspdf + html2canvas）
 // =============================================================================
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Card,
@@ -55,6 +55,7 @@ import {
 } from '../../mock/evaluation';
 import { useAuth } from '../../hooks/useAuth';
 import { generateReportPdf, downloadReportBlob, safeFilename, buildReportHtml } from './ReportPdf';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -74,6 +75,7 @@ const EvaluationReport = () => {
   const fromTab = searchParams.get('fromTab') || '';
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
+  const { pushWelcomeGreeting } = useSmartDraft();
 
   // 返回上一级：若来自某个 Tab（Tasks 列表传入 fromTab），返回时切回该 Tab；
   // 否则默认跳到「全部任务」。
@@ -89,6 +91,39 @@ const EvaluationReport = () => {
 
   const task: EvaluationTask | undefined = getTaskById(id || '');
   const report: ReportModel | undefined = task ? getReportByTaskId(task.id) : undefined;
+
+  useEffect(() => {
+    if (!task) return undefined;
+    const role = isAdmin ? 'admin' : 'dept';
+    pushWelcomeGreeting('evaluation-report', role, () => [task.agentName]);
+    (window as any).__evaluationReportContext = {
+      agentName: task.agentName,
+      agentCode: task.agentCode,
+      version: task.version,
+      department: task.department,
+      creator: task.creator,
+      taskNo: task.taskNo,
+      status: task.status,
+      riskLevel: task.riskLevel,
+      totalScore: task.totalScore,
+      submitTime: task.submitTime,
+      evalCompleteTime: task.evalCompleteTime,
+      reviewComment: task.reviewComment,
+      reportReady: !!report,
+      overallRisk: report?.overallRisk,
+      conclusion: report?.conclusion,
+      redLineTriggered: report?.redLineTriggered,
+      detailDesc: report?.detailDesc,
+      dimensions: report?.dimensionScores.map((item) => ({
+        ...item,
+        indicatorName: indicatorNameMap[item.indicator],
+      })) || [],
+      history: getHistoryByAgent(task.agentId, task.id),
+    };
+    return () => {
+      delete (window as any).__evaluationReportContext;
+    };
+  }, [isAdmin, pushWelcomeGreeting, report, task]);
 
   if (!task) {
     return (

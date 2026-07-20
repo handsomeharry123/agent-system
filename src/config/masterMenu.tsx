@@ -10,7 +10,7 @@ import {
   FundOutlined,
   UserOutlined,
   AuditOutlined,
-  BookOutlined,
+  SettingOutlined,
   DeploymentUnitOutlined,
   MedicineBoxOutlined,
 } from '@ant-design/icons';
@@ -45,7 +45,7 @@ export type ModuleKey =
   | 'environment'
   | 'user-center'
   | 'audit'
-  | 'dict';
+  | 'system-config';
 
 export interface SubPage {
   key: string;
@@ -72,9 +72,23 @@ export const masterMenu: MasterModule[] = [
     name: '首页',
     path: '/app/home/overview',
     icon: <HomeOutlined />,
-    // V1.0 PRD：首页为对话式统一入口(医小管落地页),信息科管理员 + 科室管理员都应可见
+    // 首页下设数据大屏与医小管两个二级入口；原首页作为医小管落地页保留。
     defaultVisible: true,
     defaultRoleVisible: 'both',
+    children: [
+      {
+        key: 'home:dashboard',
+        name: '数据大屏',
+        path: '/app/home/dashboard',
+        defaultVisible: true,
+      },
+      {
+        key: 'home:overview',
+        name: '医小管',
+        path: '/app/home/overview',
+        defaultVisible: true,
+      },
+    ],
   },
   {
     key: 'workbench',
@@ -243,15 +257,6 @@ export const masterMenu: MasterModule[] = [
     defaultVisible: true,
     defaultRoleVisible: 'both',
   },
-  // 数据字典（V1.0 需求说明书）：统一管理各模块下拉字典的来源；仅信息科管理员可配置
-  {
-    key: 'dict',
-    name: '数据字典',
-    path: '/app/dict',
-    icon: <BookOutlined />,
-    defaultVisible: true,
-    defaultRoleVisible: 'itAdmin',
-  },
   // 环境配置（V1.1）：沙盒/正式两套运行环境的参数配置 + 环境内智能体；仅平台管理员
   {
     key: 'environment',
@@ -263,6 +268,19 @@ export const masterMenu: MasterModule[] = [
     children: [
       { key: 'environment:sandbox', name: '沙盒环境', path: '/app/environment/sandbox', defaultVisible: true },
       { key: 'environment:production', name: '正式环境', path: '/app/environment/production', defaultVisible: true },
+    ],
+  },
+  // 系统配置（V1.0）：必须置于系统菜单末尾，仅信息科管理员可见
+  {
+    key: 'system-config',
+    name: '系统配置',
+    path: '/app/system-config/dictionaries',
+    icon: <SettingOutlined />,
+    defaultVisible: true,
+    defaultRoleVisible: 'itAdmin',
+    children: [
+      { key: 'system-config:dictionaries', name: '数据字典', path: '/app/system-config/dictionaries', defaultVisible: true },
+      { key: 'system-config:models', name: '模型配置', path: '/app/system-config/models', defaultVisible: true },
     ],
   },
 ];

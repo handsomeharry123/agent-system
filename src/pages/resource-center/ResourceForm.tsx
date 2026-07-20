@@ -53,11 +53,14 @@ import {
   useCurrentUser,
   addResource,
   addDraft,
+  updateResource,
+  removeDraft,
   nowAt,
   type ProtocolType,
   type ProtocolConfig,
   type ResourceItem,
 } from '../../mock/resource-center';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 
@@ -106,6 +109,78 @@ const ResourceForm = () => {
   const [resourceSearch, setResourceSearch] = useState('');
   const [testState, setTestState] = useState<'idle' | 'loading' | 'success' | 'fail'>('idle');
   const [testMsg, setTestMsg] = useState<{ code?: string; reason?: string }>({});
+  const [aiFilledFields, setAiFilledFields] = useState<Set<string>>(new Set());
+  const { pushWelcomeGreeting, consumeWelcome, addMessage } = useSmartDraft();
+  const autoTestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTestSignatureRef = useRef('');
+  const pendingRecognizedFieldsRef = useRef<Record<string, string>>({});
+  const pendingAiFieldsRef = useRef<Set<string>>(new Set());
+  const aiFieldClass = (fieldKey: string) =>
+    aiFilledFields.has(fieldKey) ? 'resource-ai-prefilled-field' : undefined;
+
+  useEffect(() => {
+    pushWelcomeGreeting('resource-center-register', 'provider', undefined, {
+      actions: [{
+        key: 'upload-resource-file',
+        label: '上传文件',
+        event: 'agent-register-trigger-upload',
+        enabled: true,
+      }],
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isEdit, pushWelcomeGreeting]);
+
+  useEffect(() => {
+    const onAiFill = (event: Event) => {
+      const fields = (event as CustomEvent<{
+        fields?: Array<{ fieldKey: string; value: string }>;
+      }>).detail?.fields ?? [];
+      if (!fields.length) return;
+      fields.forEach(({ fieldKey, value }) => {
+        pendingRecognizedFieldsRef.current[fieldKey] = value;
+      });
+      const values: Record<string, string | string[]> = {};
+      fields.forEach(({ fieldKey, value }) => {
+        values[fieldKey] = fieldKey === 'resources'
+          ? value.split(/[；;,，]/).map((item) => item.trim()).filter(Boolean)
+          : value;
+        pendingAiFieldsRef.current.add(fieldKey);
+      });
+      const nextProtocol = values.protocol as ProtocolType | undefined;
+      if (nextProtocol && nextProtocol !== protocol) {
+        PROTOCOL_FIELDS[protocol].forEach((field) => form.setFieldValue(field.name, undefined));
+        setProtocol(nextProtocol);
+        lastProtocolRef.current = nextProtocol;
+      }
+      form.setFieldsValue(values);
+      setAiFilledFields((previous) => new Set([...previous, ...Object.keys(values)]));
+      setTestState('idle');
+      setTestMsg({});
+      message.info(`已识别 ${fields.length} 个资源注册字段，请勾选后点击“确认采纳”`);
+    };
+
+    const onPrefillAcknowledged = (event: Event) => {
+      const fieldKeys = (event as CustomEvent<{ fieldKeys?: string[] }>).detail?.fieldKeys ?? [];
+      fieldKeys.forEach((fieldKey) => {
+        pendingAiFieldsRef.current.delete(fieldKey);
+        delete pendingRecognizedFieldsRef.current[fieldKey];
+      });
+      setAiFilledFields((previous) => {
+        const next = new Set(previous);
+        fieldKeys.forEach((fieldKey) => next.delete(fieldKey));
+        return next;
+      });
+      setTestState('idle');
+      setTestMsg({});
+      handleFieldsChange();
+    };
+    window.addEventListener('resource-center-ai-fill', onAiFill);
+    window.addEventListener('resource-center-prefill-acknowledged', onPrefillAcknowledged);
+    return () => {
+      window.removeEventListener('resource-center-ai-fill', onAiFill);
+      window.removeEventListener('resource-center-prefill-acknowledged', onPrefillAcknowledged);
+    };
+  }, [form, protocol]);
 
   /** 资源目录按 group 分组 */
   const groupedCatalog = useMemo(() => {
@@ -154,6 +229,8 @@ const ResourceForm = () => {
           });
         }
         form.setFieldsValue(vals);
+        lastProtocolRef.current = found.protocol;
+        window.setTimeout(() => handleFieldsChange(), 0);
       }
     }
   }, [isEdit, id, form, resources, drafts]);
@@ -195,15 +272,52 @@ const ResourceForm = () => {
   };
 
   /** 协议子字段变化时自动 reset 测试态 */
-  const handleFieldsChange = () => {
+  const handleFieldsChange = (changedValues?: Record<string, unknown>) => {
+    const changedKeys = Object.keys(changedValues ?? {});
+    if (changedKeys.length) {
+      changedKeys.forEach((key) => {
+        pendingAiFieldsRef.current.delete(key);
+        delete pendingRecognizedFieldsRef.current[key];
+      });
+      setAiFilledFields((previous) => {
+        const next = new Set(previous);
+        changedKeys.forEach((key) => next.delete(key));
+        if (changedKeys.includes('protocol')) {
+          Object.values(PROTOCOL_FIELDS).flat().forEach((field) => {
+            next.delete(field.name);
+            pendingAiFieldsRef.current.delete(field.name);
+            delete pendingRecognizedFieldsRef.current[field.name];
+          });
+        }
+        return next;
+      });
+    }
     if (testState !== 'idle') {
       setTestState('idle');
       setTestMsg({});
     }
+    if (autoTestTimerRef.current) clearTimeout(autoTestTimerRef.current);
+    autoTestTimerRef.current = setTimeout(async () => {
+      if (pendingAiFieldsRef.current.size > 0) return;
+      try {
+        await form.validateFields({ validateOnly: true });
+        const values = form.getFieldsValue(true);
+        const signature = JSON.stringify(values);
+        if (signature === lastTestSignatureRef.current) return;
+        lastTestSignatureRef.current = signature;
+        void runTest(true);
+      } catch {
+        // 字段仍缺失或格式错误时保持等待，用户可继续通过表单或医小管补充。
+      }
+    }, 600);
   };
 
+  useEffect(() => () => {
+    if (autoTestTimerRef.current) clearTimeout(autoTestTimerRef.current);
+  }, []);
+
   /** 访问测试模拟 */
-  const runTest = async () => {
+  const runTest = async (automatic = false) => {
     try {
       await form.validateFields();
     } catch {
@@ -213,13 +327,72 @@ const ResourceForm = () => {
     setTestState('loading');
     setTestMsg({});
     setTimeout(() => {
-      if (Math.random() > 0.1) {
+      const values = form.getFieldsValue(true) as Record<string, string>;
+      const endpoint = [values.ip, values.url, values.broker, values.port].filter(Boolean).join(' ');
+      const hasConnectionProblem = /(?:0\.0\.0\.0|127\.0\.0\.1|unreachable|invalid|0000)/i.test(endpoint);
+      if (!hasConnectionProblem) {
         setTestState('success');
-        message.success('访问测试通过');
+        message.success(automatic ? '字段已完整，自动连通测试通过' : '访问测试通过');
+        addMessage({
+          role: 'agent',
+          type: 'conn-test-result',
+          content: '连通测试成果：网络连接、协议握手与服务响应均正常。',
+          payload: { connTestResult: { ok: true, totalMs: 286 } },
+        });
+        addMessage({
+          role: 'agent',
+          type: 'text',
+          content: '字段填写完整且格式验证正确，连通测试已通过。是否确认提交本次资源注册？',
+          payload: {
+            welcomeActions: [{
+              key: 'confirm-resource-submit',
+              label: '确认提交',
+              event: 'resource-center-confirm-submit',
+              enabled: true,
+            }],
+          },
+        });
       } else {
         setTestState('fail');
         setTestMsg({ code: 'CONN_TIMEOUT_504', reason: '目标地址不可达(超时 5s),请检查 IP/端口与防火墙策略。' });
-        message.error('访问测试失败');
+        message.error(automatic ? '自动连通测试发现问题，医小管已给出修复建议' : '访问测试失败');
+        addMessage({
+          role: 'agent',
+          type: 'conn-test-result',
+          content: '连通测试发现异常，请修正连接配置后重试。',
+          payload: {
+            connTestResult: {
+              ok: false,
+              errorCode: 'CONN_TIMEOUT_504',
+              errorReason: '目标地址不可达，请检查 IP、端口、防火墙白名单及服务监听状态。',
+              failureStage: 'connect',
+              totalMs: 5000,
+            },
+          },
+        });
+        addMessage({
+          role: 'agent',
+          type: 'web-search-solution',
+          content: '我已联网检索与当前错误最匹配的解决方案，请按以下顺序修复：',
+          payload: {
+            webSearchSolutions: [
+              {
+                id: 'resource-connectivity-check',
+                title: '检查服务监听地址与端口',
+                summary: '确认目标服务已启动并监听正确网卡；不要使用 0.0.0.0、127.0.0.1 或未开放端口作为远端连接地址。修改后我会自动重新测试。',
+                source: '平台运维知识库 · 连通性排障指南',
+                score: 0.96,
+              },
+              {
+                id: 'resource-firewall-check',
+                title: '核对网络策略与防火墙白名单',
+                summary: '放通平台出口到目标 IP/端口的 TCP 访问，并检查安全组、ACL、NAT 与院内防火墙策略。',
+                source: '联网检索 · 医疗系统接口网络配置实践',
+                score: 0.91,
+              },
+            ],
+          },
+        });
       }
     }, 1200);
   };
@@ -256,16 +429,35 @@ const ResourceForm = () => {
 
   /** 提交 */
   const handleSubmit = async () => {
+    if (testState !== 'success') {
+      message.warning('请等待最新一次自动连通测试通过后再提交');
+      return;
+    }
     try {
       await form.validateFields();
       const r = buildResource(false);
-      addResource(r);
-      message.success(`资源已提交注册,资源 ID: ${r.id}`);
+      if (isEdit && id && drafts.some((draft) => draft.id === id)) {
+        addResource(r);
+        removeDraft(id);
+        message.success(`草稿已提交注册,资源 ID: ${r.id}`);
+      } else if (isEdit && id && resources.some((resource) => resource.id === id)) {
+        updateResource(id, { ...r, id });
+        message.success(`资源已更新,资源 ID: ${id}`);
+      } else {
+        addResource(r);
+        message.success(`资源已提交注册,资源 ID: ${r.id}`);
+      }
       setTimeout(() => navigate('/app/resource-center/resources'), 600);
     } catch {
       message.error('存在未填写的必填字段,请检查');
     }
   };
+
+  useEffect(() => {
+    const onConfirmSubmit = () => void handleSubmit();
+    window.addEventListener('resource-center-confirm-submit', onConfirmSubmit);
+    return () => window.removeEventListener('resource-center-confirm-submit', onConfirmSubmit);
+  });
 
   /** 暂存 */
   const handleDraft = async () => {
@@ -305,6 +497,7 @@ const ResourceForm = () => {
           <Form.Item
             name="resources"
             label="资源列表"
+            className={aiFieldClass('resources')}
             extra="支持多选,从医院业务系统分类中搜索;至少选择 1 项"
             rules={[{ required: true, message: '请至少选择 1 个资源' }]}
           >
@@ -337,6 +530,7 @@ const ResourceForm = () => {
               <Form.Item
                 name="owner"
                 label="资源负责人"
+                className={aiFieldClass('owner')}
                 extra="必填,可从已有用户选择或手动输入"
                 rules={[{ required: true, message: '请输入资源负责人' }]}
               >
@@ -347,6 +541,7 @@ const ResourceForm = () => {
               <Form.Item
                 name="contact"
                 label="联系方式"
+                className={aiFieldClass('contact')}
                 extra="手机号或座机号"
                 rules={[
                   { required: true, message: '请输入联系方式' },
@@ -361,6 +556,7 @@ const ResourceForm = () => {
           <Form.Item
             name="protocol"
             label="对接方式"
+            className={aiFieldClass('protocol')}
             extra="不同对接方式动态展示对应子字段(枚举字段已下拉化)"
             rules={[{ required: true, message: '请选择对接方式' }]}
           >
@@ -386,6 +582,7 @@ const ResourceForm = () => {
                   <Form.Item
                     name={f.name}
                     label={f.label}
+                    className={aiFieldClass(f.name)}
                     extra={f.extra}
                     rules={[{ required: f.required !== false, message: `请填写 ${f.label}` }]}
                   >
@@ -425,12 +622,17 @@ const ResourceForm = () => {
               <Button
                 type="default"
                 icon={testState === 'loading' ? <ReloadOutlined spin /> : <ApiOutlined />}
-                onClick={runTest}
+                onClick={() => void runTest(false)}
                 loading={testState === 'loading'}
               >
                 访问测试
               </Button>
-              <Button type="primary" icon={<SendOutlined />} onClick={handleSubmit}>
+              <Button
+                type="primary"
+                icon={<SendOutlined />}
+                onClick={handleSubmit}
+                disabled={testState !== 'success'}
+              >
                 提交
               </Button>
               <Button icon={<SaveOutlined />} onClick={handleDraft}>

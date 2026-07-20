@@ -126,6 +126,11 @@ import Audit from './pages/audit/LogList';
 // Pages - Data Dictionary (V1.0 需求说明书)
 import DictCategoryList from './pages/dict/CategoryList';
 import DictItemList from './pages/dict/ItemList';
+import SystemDictionaryList from './pages/system-config/DictionaryList';
+import SystemDictionaryItems from './pages/system-config/DictionaryItems';
+import SystemDictionaryForm from './pages/system-config/DictionaryForm';
+import SystemModelList from './pages/system-config/ModelList';
+import SystemModelForm from './pages/system-config/ModelForm';
 
 // Pages - Environment (V1.1 需求说明书：沙盒/正式两个独立页面)
 import SandboxPage from './pages/environment/SandboxPage';
@@ -383,6 +388,24 @@ const routes: RouteObject[] = [
           { index: true, element: <Navigate to="/app/environment/sandbox" replace /> },
           { path: 'sandbox', element: <SandboxPage /> },
           { path: 'production', element: <ProductionPage /> },
+        ],
+      },
+      // 系统配置（V1.0）：数据字典 + 模型配置，页面级子路由不挂侧栏
+      {
+        path: 'system-config',
+        children: [
+          { index: true, element: <Navigate to="/app/system-config/dictionaries" replace /> },
+          { path: 'dictionaries', element: <SystemDictionaryList /> },
+          { path: 'dictionaries/create', element: <SystemDictionaryForm /> },
+          { path: 'dictionaries/import', element: <SystemDictionaryForm /> },
+          { path: 'dictionaries/:code/edit', element: <SystemDictionaryForm /> },
+          { path: 'dictionaries/:code/items', element: <SystemDictionaryItems /> },
+          { path: 'dictionaries/:code/items/create', element: <SystemDictionaryForm /> },
+          { path: 'dictionaries/:code/items/import', element: <SystemDictionaryForm /> },
+          { path: 'dictionaries/:code/items/:id/edit', element: <SystemDictionaryForm /> },
+          { path: 'models', element: <SystemModelList /> },
+          { path: 'models/create', element: <SystemModelForm /> },
+          { path: 'models/:id/edit', element: <SystemModelForm /> },
         ],
       },
     ],

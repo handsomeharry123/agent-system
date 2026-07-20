@@ -28,8 +28,34 @@ import {
   NotifyChannelLabels, type AlertEventV18,
 } from '../../mock/monitoringV18';
 import { useMonitoringGuard } from './useMonitoringGuard';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
+const OUT_OF_SCOPE_REPLY = '超出当前告警事件信息范围，暂无法为您解答，我们将持续完善。';
+
+const answerAlertDetailQuestion = (question: string, event: AlertEventV18): string => {
+  const q = question.trim();
+  const eventType = event.eventType === 'business' ? '业务监控' : event.eventType === 'status' ? '状态监控' : event.eventType === 'cost' ? '成本监控' : '安全监控';
+  if (/事件编号|事件ID|编号/.test(q)) return `该告警事件编号为 ${event.id}。`;
+  if (/事件类型|什么类型/.test(q)) return `该告警属于${eventType}事件。`;
+  if (/关联智能体|哪个智能体|智能体名称/.test(q)) return `关联智能体为「${event.agentName}」，所属科室为${event.department}。`;
+  if (/当前状态|事件状态|状态是什么/.test(q)) return `当前状态为“${AlertEventStatusLabels[event.status]}”。`;
+  if (/规则名称|什么规则/.test(q)) return `触发规则为“${event.triggerContent.rule_name}”。`;
+  if (/触发时间|什么时候触发|告警时间/.test(q)) return `该告警触发时间为 ${event.triggerTime}。`;
+  if (/触发条件|为什么触发|阈值|指标/.test(q)) {
+    const c = event.triggerContent.trigger_condition;
+    return `触发条件：指标 ${c.metric}，运算符 ${c.operator}，阈值 ${c.threshold}${c.thresholdUnit}，持续时间 ${c.sustainDuration}。`;
+  }
+  if (/触发动作|动作是什么/.test(q)) return `触发动作为“${event.triggerContent.trigger_action}”。`;
+  if (/输出提示词|提示词/.test(q)) return `输出提示词为：${event.triggerContent.output_prompt}`;
+  if (/处理结果|如何处理|是否处理/.test(q)) return event.handleResult ? `处理结果为“${event.handleResult}”。` : '当前页面未记录处理结果。';
+  if (/处理方案|解决方案/.test(q)) return event.handlePlan ? `处理方案为：${event.handlePlan}` : '当前页面未记录处理方案。';
+  if (/审核意见|审核结果/.test(q)) return event.reviewOpinion ? `审核意见为“${event.reviewOpinion}”。` : '当前页面未记录审核意见。';
+  if (/审核说明/.test(q)) return event.reviewRemark ? `审核说明为：${event.reviewRemark}` : '当前页面未记录审核说明。';
+  if (/通知对象|通知谁|负责人/.test(q)) return `通知对象为 ${event.notifyTarget.owner}，通知方式为${event.notifyChannels.map((c) => NotifyChannelLabels[c]).join('、')}。`;
+  if (/所属科室|哪个科室/.test(q)) return `该智能体所属科室为${event.department}。`;
+  return OUT_OF_SCOPE_REPLY;
+};
 
 // V2.0 详情页必填字段空态：处理结果/处理方案在已走过处理流程的状态下必须非空
 //   · 用红色 ⚠ 提示比纯「—」更醒目,避免误以为有数据
@@ -44,6 +70,7 @@ const AlertEventDetail = () => {
   const navigate = useNavigate();
   const params = useParams<{ id?: string }>();
   const { isAdmin, currentUserName } = useMonitoringGuard();
+  const { pushWelcomeGreeting } = useSmartDraft();
   const [event, setEvent] = useState<AlertEventV18 | null>(null);
 
   useEffect(() => {
@@ -52,6 +79,29 @@ const AlertEventDetail = () => {
       setEvent(e || null);
     }
   }, [params.id]);
+
+  useEffect(() => {
+    if (!event) return;
+    const role = isAdmin ? 'admin' : 'dept';
+    const eventName = event.triggerContent.rule_name;
+    pushWelcomeGreeting(
+      'monitoring-alert-detail',
+      role,
+      () => [eventName],
+      { windowReplacements: [eventName] },
+    );
+  }, [event, isAdmin, pushWelcomeGreeting]);
+
+  useEffect(() => {
+    if (!event) return undefined;
+    const onAssistantQuery = (rawEvent: Event) => {
+      const detail = (rawEvent as CustomEvent<{ text: string; respond?: (answer: string) => void }>).detail;
+      if (!detail?.text?.trim()) return;
+      detail.respond?.(answerAlertDetailQuestion(detail.text, event));
+    };
+    window.addEventListener('monitoring-alert-assistant-query', onAssistantQuery);
+    return () => window.removeEventListener('monitoring-alert-assistant-query', onAssistantQuery);
+  }, [event]);
 
   // 访问条件：信息科管理员全开；科室管理员仅当本人是处理人时可查看详情
   if (event && !isAdmin && event.handler !== currentUserName) {

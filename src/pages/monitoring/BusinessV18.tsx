@@ -18,7 +18,7 @@
  *
  * 仅 IT 管理员可见；自动刷新 60s + 手动【刷新】
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Card, Row, Col, Typography, Space, Button, Spin, Tag,
@@ -29,6 +29,8 @@ import {
 import { Line, Column, Pie, Bar } from '@ant-design/charts';
 import PageHeader from '../../components/PageHeader';
 import MetricLabel from '../../components/MetricLabel';
+import { useAuth } from '../../hooks/useAuth';
+import { useSmartDraft } from '../agent-center/smart/store';
 import {
   businessKpiV18,
   responseTimeDistV18,
@@ -112,6 +114,9 @@ const throughputTrend = Array.from({ length: 24 }, (_, i) => ({
 }));
 
 const BusinessV18 = () => {
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [loading, setLoading] = useState(false);
   const [autoRefresh] = useState(true);
 
@@ -126,6 +131,30 @@ const BusinessV18 = () => {
   }, [autoRefresh]);
 
   const kpi = businessKpiV18;
+  const scopedKpi = useMemo(() => {
+    if (isAdmin) return kpi;
+    const departmentCalls = topCallAgentsV18
+      .filter((item) => item.department === currentUser?.department)
+      .reduce((sum, item) => sum + item.calls, 0);
+    const allRankedCalls = topCallAgentsV18.reduce((sum, item) => sum + item.calls, 0);
+    return { ...kpi, totalCalls: departmentCalls, todayCalls: Math.round(kpi.todayCalls * (departmentCalls / allRankedCalls || 0)) };
+  }, [currentUser?.department, isAdmin, kpi]);
+
+  useEffect(() => {
+    pushWelcomeGreeting('monitoring-business', isAdmin ? 'admin' : 'dept', undefined, {
+      windowReplacements: [scopedKpi.totalCalls, scopedKpi.todayCalls, scopedKpi.successRate],
+    });
+    (window as any).__businessMonitoringContext = {
+      scope: isAdmin ? '全院' : '本科室',
+      ...scopedKpi,
+      topAgents: isAdmin ? topCallAgentsV18 : topCallAgentsV18.filter((item) => item.department === currentUser?.department),
+      responseTimeDistribution: responseTimeDistV18.map((item) => `${item.range} ${item.count} 次`).join('、'),
+    };
+    return () => {
+      consumeWelcome();
+      delete (window as any).__businessMonitoringContext;
+    };
+  }, [consumeWelcome, currentUser?.department, isAdmin, pushWelcomeGreeting, scopedKpi]);
 
   return (
     <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100vh' }}>

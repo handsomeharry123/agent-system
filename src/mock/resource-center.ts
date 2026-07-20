@@ -403,6 +403,8 @@ export interface ApplyItem {
   description: string; // 功能描述
   resourceId: string; // 申请资源 ID
   resourceName: string; // 申请资源名称(15 字)
+  /** 权限申请理由（草稿清单与审核详情展示） */
+  reason?: string;
   status: ApplyStatus;
   /** 申请人姓名(显示) */
   applicant: string;

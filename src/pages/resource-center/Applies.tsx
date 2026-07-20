@@ -59,6 +59,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import type { MenuProps } from 'antd';
 import PageHeader from '../../components/PageHeader';
+import { useSmartDraft } from '../agent-center/smart/store';
 import {
   useApplies,
   useDemoRole,
@@ -119,6 +120,7 @@ const ApplyList = () => {
   //   角色切换走 DemoFloatButton → setDemoRole + switchRole 统一链路, 4 个 resource-center 页面自动响应。
   const isAdmin = useDemoRole() === 'admin';
   const current = useCurrentUser();
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
 
   // 台账列表「查看资源申请」联动：?tab=all&agentName=XXX → 自动切到「全部申请」并按名称预筛
   const presetAgentName = searchParams.get('agentName') || '';
@@ -154,6 +156,19 @@ const ApplyList = () => {
     return data.filter((it) => it.applicantAccount === current.account);
   }, [data, isAdmin, current.account]);
 
+  useEffect(() => {
+    if (tab === 'draft') return undefined;
+    if (tab !== 'all') {
+      consumeWelcome();
+      return undefined;
+    }
+    pushWelcomeGreeting('resource-apply-all', isAdmin ? 'admin' : 'dept', () => [scoped.length], {
+      windowReplacements: [],
+      actions: [{ key: 'resource-permission-apply', label: '权限申请', path: '/app/resource-center/apply-form', enabled: true }],
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, scoped.length, tab]);
+
   /** 当前 Tab 下的数据 */
   const tabData = useMemo(() => {
     return scoped.filter((it) => {
@@ -176,6 +191,190 @@ const ApplyList = () => {
       );
     });
   }, [tab, dept, keyword, scoped]);
+
+  useEffect(() => {
+    if (tab !== 'draft') return undefined;
+    const rows = tabData.map((item) => ({
+      recordId: item.id,
+      title: item.agentName,
+      subTitle: item.resourceName,
+      meta: item.reason || '未填写申请理由',
+      actions: [{
+        key: `edit-${item.id}`,
+        label: '编辑',
+        kind: 'navigate-edit' as const,
+        path: `/app/resource-center/apply-form?from=${item.id}`,
+      }],
+    }));
+    pushWelcomeGreeting('resource-apply-draft', isAdmin ? 'admin' : 'dept', () => [tabData.length], {
+      miniList: {
+        toggleLabel: '查看未完成的资源申请草稿',
+        targetTab: 'draft',
+        rows,
+        totalCount: tabData.length,
+      },
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, tab, tabData]);
+
+  useEffect(() => {
+    if (tab !== 'reviewing') return undefined;
+    const rows = tabData.map((item) => ({
+      recordId: item.id,
+      title: item.agentName,
+      subTitle: item.resourceName,
+      meta: item.applicant,
+      actions: isAdmin
+        ? [
+            { key: `detail-${item.id}`, label: '查看详情', kind: 'navigate-detail' as const, path: `/app/resource-center/applies/${item.id}` },
+            { key: `audit-${item.id}`, label: '审核', kind: 'navigate-audit' as const, path: `/app/resource-center/approval/${item.id}` },
+          ]
+        : [
+            { key: `detail-${item.id}`, label: '查看详情', kind: 'navigate-detail' as const, path: `/app/resource-center/applies/${item.id}` },
+            { key: `revoke-${item.id}`, label: '撤销', kind: 'confirm-revoke' as const },
+          ],
+    }));
+    pushWelcomeGreeting('resource-apply-reviewing', isAdmin ? 'admin' : 'dept', () => [tabData.length], {
+      windowReplacements: [tabData.length],
+      miniList: {
+        toggleLabel: `查看这 ${tabData.length} 条`,
+        targetTab: 'reviewing',
+        rows,
+        totalCount: tabData.length,
+      },
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, tab, tabData]);
+
+  useEffect(() => {
+    if (tab !== 'pending') return undefined;
+    const rows = tabData.map((item) => ({
+      recordId: item.id,
+      title: item.agentName,
+      subTitle: item.resourceName,
+      meta: item.reason || '未填写申请理由',
+      actions: isAdmin
+        ? [
+            { key: `detail-${item.id}`, label: '查看详情', kind: 'navigate-detail' as const, path: `/app/resource-center/applies/${item.id}` },
+            { key: `audit-${item.id}`, label: '审核', kind: 'navigate-audit' as const, path: `/app/resource-center/approval/${item.id}` },
+          ]
+        : [
+            { key: `detail-${item.id}`, label: '查看详情', kind: 'navigate-detail' as const, path: `/app/resource-center/applies/${item.id}` },
+            { key: `revoke-${item.id}`, label: '撤销', kind: 'confirm-revoke' as const },
+          ],
+    }));
+    pushWelcomeGreeting('resource-apply-pending', isAdmin ? 'admin' : 'dept', () => [tabData.length], {
+      windowReplacements: [tabData.length],
+      miniList: {
+        toggleLabel: `查看这 ${tabData.length} 条`,
+        targetTab: 'pending',
+        rows,
+        totalCount: tabData.length,
+      },
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, tab, tabData]);
+
+  useEffect(() => {
+    if (tab !== 'revoked') return undefined;
+    const rows = tabData.map((item) => ({
+      recordId: item.id,
+      title: item.agentName,
+      subTitle: item.resourceName,
+      meta: item.reason || '未填写申请理由',
+      actions: isAdmin
+        ? [{
+            key: `detail-${item.id}`,
+            label: '查看详情',
+            kind: 'navigate-detail' as const,
+            path: `/app/resource-center/applies/${item.id}`,
+          }]
+        : [{
+            key: `edit-${item.id}`,
+            label: '编辑',
+            kind: 'navigate-edit' as const,
+            path: `/app/resource-center/apply-form?from=${item.id}`,
+          }],
+    }));
+    pushWelcomeGreeting('resource-apply-revoked', isAdmin ? 'admin' : 'dept', () => [tabData.length], {
+      windowReplacements: [tabData.length],
+      miniList: {
+        toggleLabel: `查看撤销修改清单（${tabData.length}）`,
+        targetTab: 'revoked',
+        rows,
+        totalCount: tabData.length,
+      },
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, tab, tabData]);
+
+  useEffect(() => {
+    if (tab !== 'approved') return undefined;
+    const rows = tabData.map((item) => ({
+      recordId: item.id,
+      title: item.agentName,
+      subTitle: item.resourceName,
+      meta: item.approvedAt || '已审核通过',
+      actions: [{
+        key: `detail-${item.id}`,
+        label: '查看详情',
+        kind: 'navigate-detail' as const,
+        path: `/app/resource-center/applies/${item.id}`,
+      }],
+    }));
+    pushWelcomeGreeting('resource-apply-approved', isAdmin ? 'admin' : 'dept', () => [tabData.length], {
+      windowReplacements: [tabData.length],
+      miniList: {
+        toggleLabel: '查看详情',
+        targetTab: 'approved',
+        rows,
+        totalCount: tabData.length,
+      },
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, tab, tabData]);
+
+  useEffect(() => {
+    if (tab !== 'rejected') return undefined;
+    const rows = tabData.map((item) => ({
+      recordId: item.id,
+      title: item.agentName,
+      subTitle: item.resourceName,
+      meta: item.rejectReason || '请查看退回原因',
+      actions: [{
+        key: `detail-${item.id}`,
+        label: '查看详情',
+        kind: 'navigate-detail' as const,
+        path: `/app/resource-center/applies/${item.id}`,
+      }],
+    }));
+    pushWelcomeGreeting('resource-apply-rejected', isAdmin ? 'admin' : 'dept', () => [tabData.length], {
+      windowReplacements: [tabData.length],
+      miniList: {
+        toggleLabel: '查看详情',
+        targetTab: 'rejected',
+        rows,
+        totalCount: tabData.length,
+      },
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, tab, tabData]);
+
+  useEffect(() => {
+    const onRowAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind?: string; recordId?: string; path?: string }>).detail;
+      if (detail?.path && ['navigate-edit', 'navigate-detail', 'navigate-audit'].includes(detail.kind || '')) {
+        navigate(detail.path);
+        return;
+      }
+      if (detail?.kind === 'confirm-revoke' && detail.recordId) {
+        const item = data.find((record) => record.id === detail.recordId);
+        if (item) handleRevoke(item);
+      }
+    };
+    window.addEventListener('agent-bubble-row-action', onRowAction);
+    return () => window.removeEventListener('agent-bubble-row-action', onRowAction);
+  }, [data, navigate]);
 
   /** 各 Tab 计数(按当前角色数据范围) */
   const tabCounts = useMemo(() => {

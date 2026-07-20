@@ -7,7 +7,7 @@
  * 按钮：处理完成 → 已关闭；退回重新处理 → 待处理
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Card, Space, Typography, Button, Tag, Form, Input, Radio, message, Modal,
   Descriptions,
@@ -22,18 +22,21 @@ import {
   type AlertEventV18, type AlertEventStatus,
 } from '../../mock/monitoringV18';
 import { useMonitoringGuard } from './useMonitoringGuard';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 const { TextArea } = Input;
 
 const AlertEventReview = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const params = useParams<{ id?: string }>();
   const [searchParams] = useSearchParams();
   const { isAdmin } = useMonitoringGuard();
   const [event, setEvent] = useState<AlertEventV18 | null>(null);
   const [saving, setSaving] = useState(false);
   const [reviewForm] = Form.useForm();
+  const { pushWelcomeGreeting } = useSmartDraft();
 
   useEffect(() => {
     if (params.id) {
@@ -41,6 +44,67 @@ const AlertEventReview = () => {
       setEvent(e || null);
     }
   }, [params.id]);
+
+  const preReview = useMemo(() => {
+    if (!event) return null;
+    const recovered = event.handleResult === '已处理' && /回升|恢复|正常|已处理/.test(
+      `${event.handlePlan || ''} ${event.handleTimeline?.map((item) => item.remark || '').join(' ') || ''}`,
+    );
+    if (recovered) {
+      return {
+        reviewOpinion: '处理完成，关闭该告警事项',
+        verdict: '处理完成，关闭该告警事项',
+        reviewRemark: `经智能预审，处理人已完成“${event.triggerContent.rule_name}”相关排查与处置，处理方案包含原因排查、服务恢复及指标复核，且记录显示告警指标已恢复正常，建议审核通过并关闭该告警事项。`,
+      };
+    }
+    return {
+      reviewOpinion: '退回重新处理',
+      verdict: '退回重新处理',
+      reviewRemark: `经智能预审，当前处理记录尚不足以证明“${event.triggerContent.rule_name}”对应指标已恢复至正常范围，请补充根因、处置结果及恢复后的监控数据后重新提交。`,
+    };
+  }, [event]);
+
+  useEffect(() => {
+    if (!event || !preReview || !isAdmin) return;
+    pushWelcomeGreeting(
+      'monitoring-alert-review',
+      'admin',
+      () => [preReview.verdict, preReview.reviewRemark],
+      {
+        windowReplacements: [preReview.verdict, preReview.reviewRemark],
+        actions: [
+          { key: 'adopt-alert-review', label: '采用预审建议', event: 'monitoring-alert-adopt-review', enabled: true },
+        ],
+      },
+    );
+  }, [event, isAdmin, preReview, pushWelcomeGreeting]);
+
+  useEffect(() => {
+    if (!preReview) return undefined;
+    const adoptReview = () => {
+      reviewForm.setFieldsValue({
+        reviewOpinion: preReview.reviewOpinion,
+        reviewRemark: preReview.reviewRemark,
+      });
+      message.success('已采用医小管预审建议，请确认后提交审核');
+      document.querySelector('[data-testid="alert-review-form"]')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    };
+    window.addEventListener('monitoring-alert-adopt-review', adoptReview);
+    return () => window.removeEventListener('monitoring-alert-adopt-review', adoptReview);
+  }, [preReview, reviewForm]);
+
+  useEffect(() => {
+    const draft = (location.state as {
+      assistantReviewDraft?: { reviewOpinion?: string; reviewRemark?: string };
+    } | null)?.assistantReviewDraft;
+    if (!draft) return;
+    reviewForm.setFieldsValue(draft);
+    message.success('医小管已根据您的描述自动填充审核结论与说明');
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location.pathname, location.search, location.state, navigate, reviewForm]);
 
   // 右上角状态标签：从 URL ?tab= 读取当前所属 Tab，与列表 Tab 状态保持一致；
   // 未传 tab 时回落至事件本身的 status
@@ -160,7 +224,7 @@ const AlertEventReview = () => {
         </Descriptions>
       </Card>
 
-      <Card bordered={false} style={{ marginTop: 16 }} title="审核意见与审核说明">
+      <Card bordered={false} style={{ marginTop: 16 }} title="审核意见与审核说明" data-testid="alert-review-form">
         <Form form={reviewForm} layout="vertical">
           <Form.Item name="reviewOpinion" label="审核意见" rules={[{ required: true, message: '请选择' }]}>
             <Radio.Group>

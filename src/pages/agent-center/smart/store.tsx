@@ -36,6 +36,20 @@ export type WelcomePageKey =
   | 'agent-needs-create'       // 建设需求管理「生成需求」页
   | 'agent-needs-complete'     // 需求字段完整后的提交确认
   | 'agent-needs-match-result' // 需求提交后的 TOP3 匹配结果
+  | 'agent-needs-detail'       // 建设需求管理「需求详情」页
+  | 'resource-center-all'      // 医院资源管理中心「所有资源」Tab
+  | 'resource-center-draft'    // 医院资源管理中心「草稿」Tab
+  | 'resource-center-register' // 医院资源管理中心「注册资源」页
+  | 'resource-apply-all'       // 医院资源管理中心「全部申请」Tab
+  | 'resource-apply-form'      // 医院资源管理中心「权限申请」页
+  | 'resource-apply-draft'     // 医院资源管理中心「申请草稿」Tab
+  | 'resource-apply-reviewing' // 医院资源管理中心「审核中」Tab
+  | 'resource-apply-pending'   // 医院资源管理中心「待审核」Tab
+  | 'resource-apply-revoked'   // 医院资源管理中心「撤销修改」Tab
+  | 'resource-apply-approved'  // 医院资源管理中心「审核通过」Tab
+  | 'resource-apply-rejected'  // 医院资源管理中心「退回修改」Tab
+  | 'resource-apply-detail'    // 医院资源管理中心「资源申请详情」页
+  | 'resource-approval'        // 医院资源管理中心「资源审核」页
   // 提供方侧列表 (各 Tab)
   | 'agent-center-all'          // 「全部」Tab — 提供方/管理方 文案不同
   | 'agent-center-draft'       // 「草稿」Tab
@@ -47,6 +61,21 @@ export type WelcomePageKey =
   // 提供方侧单页
   | 'smart-register'           // 新建注册页
   | 'agent-center-detail'      // 注册信息详情页
+  | 'evaluation-tasks'         // 准入评测「评测任务管理」页
+  | 'evaluation-report'        // 准入评测「评测结果详情」页
+  | 'monitoring-overview'      // 统一运行监控中心「监控总览」页
+  | 'monitoring-business'      // 统一运行监控中心「业务监控」页
+  | 'monitoring-status'        // 统一运行监控中心「状态监控」页
+  | 'monitoring-cost'          // 统一运行监控中心「成本监控」页
+  | 'monitoring-alert-events'  // 统一运行监控中心「告警事件处置」页
+  | 'monitoring-alert-detail'  // 统一运行监控中心「告警事件详情」页
+  | 'monitoring-alert-review'  // 统一运行监控中心「告警事件处理审核」页
+  | 'monitoring-alert-pending' // 统一运行监控中心「待处理事件」Tab
+  | 'monitoring-alert-handling' // 统一运行监控中心「处理中事件」Tab
+  | 'monitoring-alert-pending-review' // 统一运行监控中心「待审核事件」Tab
+  | 'monitoring-alert-reviewing' // 统一运行监控中心「审核中事件」Tab
+  | 'monitoring-alert-closed' // 统一运行监控中心「已关闭事件」Tab
+  | 'monitoring-alert-ignored' // 统一运行监控中心「已忽略事件」Tab
   // 管理方侧单页
   | 'agent-center-audit';      // 审核注册页
 
@@ -75,6 +104,187 @@ const registerWindowCopy =
  *   其余页面两角色走同一句欢迎语。
  */
 const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>> = {
+  'monitoring-overview': {
+    dept: { bubble: '您好！我是医小管，有什么运行监控信息都可以问我', window: '您好！我是医小管，本科室智能体累计告警X次，今日告警X次，待处理X项，有什么运行监控信息都可以问我' },
+    provider: { bubble: '您好！我是医小管，有什么运行监控信息都可以问我', window: '您好！我是医小管，本科室智能体累计告警X次，今日告警X次，待处理X项，有什么运行监控信息都可以问我' },
+    admin: { bubble: '您好！我是医小管，有什么运行监控信息都可以问我', window: '您好！我是医小管，全院智能体累计告警X次，今日告警X次，待处理X项，有什么运行监控信息都可以问我' },
+  },
+  'monitoring-business': {
+    dept: { bubble: '您好！我是医小管，有什么业务监控相关信息都可以问我', window: '您好！我是医小管，本科室智能体累计调用X次、今日调用X次、调用成功率为X%，有什么业务监控相关信息都可以问我' },
+    provider: { bubble: '您好！我是医小管，有什么业务监控相关信息都可以问我', window: '您好！我是医小管，本科室智能体累计调用X次、今日调用X次、调用成功率为X%，有什么业务监控相关信息都可以问我' },
+    admin: { bubble: '您好！我是医小管，有什么业务监控相关信息都可以问我', window: '您好！我是医小管，全院智能体累计调用X次、今日调用X次、调用成功率为X%，有什么业务监控相关信息都可以问我' },
+  },
+  'monitoring-status': {
+    dept: { bubble: '您好！我是医小管，有什么状态监控相关信息都可以问我', window: '您好！我是医小管，目前在线本科室智能体X个、离线X个、异常X个，有什么状态监控相关信息都可以问我' },
+    provider: { bubble: '您好！我是医小管，有什么状态监控相关信息都可以问我', window: '您好！我是医小管，目前在线本科室智能体X个、离线X个、异常X个，有什么状态监控相关信息都可以问我' },
+    admin: { bubble: '您好！我是医小管，有什么状态监控相关信息都可以问我', window: '您好！我是医小管，目前在线全院智能体X个、离线X个、异常X个，有什么状态监控相关信息都可以问我' },
+  },
+  'monitoring-cost': {
+    dept: { bubble: '您好！我是医小管，有什么成本监控相关信息都可以问我', window: '您好！我是医小管，本科室智能体累计CPU使用量X核·时、GPU使用量X卡·时、内存使用量X GB·时、Token使用量X tokens，有什么成本监控相关信息都可以问我' },
+    provider: { bubble: '您好！我是医小管，有什么成本监控相关信息都可以问我', window: '您好！我是医小管，本科室智能体累计CPU使用量X核·时、GPU使用量X卡·时、内存使用量X GB·时、Token使用量X tokens，有什么成本监控相关信息都可以问我' },
+    admin: { bubble: '您好！我是医小管，有什么成本监控相关信息都可以问我', window: '您好！我是医小管，全院智能体累计CPU使用量X核·时、GPU使用量X卡·时、内存使用量X GB·时、Token使用量X tokens，有什么成本监控相关信息都可以问我' },
+  },
+  'monitoring-alert-events': {
+    dept: { bubble: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～', window: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～' },
+    provider: { bubble: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～', window: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～' },
+    admin: { bubble: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～', window: '您好！我是医小管，目前告警事件X项、待处理X项、待审核X项，在气泡里点对应状态即可直接进入处理～' },
+  },
+  'monitoring-alert-detail': {
+    dept: { bubble: '您好！我是医小管，这是【X】的详情信息，有什么告警事件相关信息都可以问我', window: '您好！我是医小管，这是【X】的详情信息，有什么告警事件相关信息都可以问我' },
+    provider: { bubble: '您好！我是医小管，这是【X】的详情信息，有什么告警事件相关信息都可以问我', window: '您好！我是医小管，这是【X】的详情信息，有什么告警事件相关信息都可以问我' },
+    admin: { bubble: '您好！我是医小管，这是【X】的详情信息，有什么告警事件相关信息都可以问我', window: '您好！我是医小管，这是【X】的详情信息，有什么告警事件相关信息都可以问我' },
+  },
+  'monitoring-alert-review': {
+    dept: { bubble: '智能预审完成：建议【X】。审核说明：X。请确认是否采用。', window: '智能预审完成：建议【X】。审核说明：X。请确认预审结论，采用后我会自动填入审核意见与审核说明。' },
+    provider: { bubble: '智能预审完成：建议【X】。审核说明：X。请确认是否采用。', window: '智能预审完成：建议【X】。审核说明：X。请确认预审结论，采用后我会自动填入审核意见与审核说明。' },
+    admin: { bubble: '智能预审完成：建议【X】。审核说明：X。请确认是否采用。', window: '智能预审完成：建议【X】。审核说明：X。请确认预审结论，采用后我会自动填入审核意见与审核说明。' },
+  },
+  'monitoring-alert-pending': {
+    dept: { bubble: '您好！我是医小管，目前告警事件待处理X项～', window: '您好！我是医小管，目前告警事件待处理X项，您需要处理哪项告警事件，文字、语音告诉我，我直接帮您找到~' },
+    provider: { bubble: '您好！我是医小管，目前告警事件待处理X项～', window: '您好！我是医小管，目前告警事件待处理X项，您需要处理哪项告警事件，文字、语音告诉我，我直接帮您找到~' },
+    admin: { bubble: '您好！我是医小管，目前告警事件待处理X项～', window: '您好！我是医小管，目前告警事件待处理X项，您需要处理哪项告警事件，文字、语音告诉我，我直接帮您找到~' },
+  },
+  'monitoring-alert-handling': {
+    dept: { bubble: '您好！我是医小管，目前告警事件待处理X项～', window: '您好！我是医小管，目前告警事件处理中X项～' },
+    provider: { bubble: '您好！我是医小管，目前告警事件待处理X项～', window: '您好！我是医小管，目前告警事件处理中X项～' },
+    admin: { bubble: '您好！我是医小管，目前告警事件待处理X项～', window: '您好！我是医小管，目前告警事件处理中X项～' },
+  },
+  'monitoring-alert-pending-review': {
+    dept: { bubble: '您好！我是医小管，目前告警事件待审核X项～', window: '您好！我是医小管，目前告警事件待审核X项，您需要审核哪项已处理告警事件，文字、语音告诉我，我直接帮您找到~' },
+    provider: { bubble: '您好！我是医小管，目前告警事件待审核X项～', window: '您好！我是医小管，目前告警事件待审核X项，您需要审核哪项已处理告警事件，文字、语音告诉我，我直接帮您找到~' },
+    admin: { bubble: '您好！我是医小管，目前告警事件待审核X项～', window: '您好！我是医小管，目前告警事件待审核X项，您需要审核哪项已处理告警事件，文字、语音告诉我，我直接帮您找到~' },
+  },
+  'monitoring-alert-reviewing': {
+    dept: { bubble: '您好！我是医小管，目前告警事件审核中X项～', window: '您好！我是医小管，目前告警事件审核中X项，您可以通过文字或语音告诉我要查看哪项事件，我将直接为您打开详情页。' },
+    provider: { bubble: '您好！我是医小管，目前告警事件审核中X项～', window: '您好！我是医小管，目前告警事件审核中X项，您可以通过文字或语音告诉我要查看哪项事件，我将直接为您打开详情页。' },
+    admin: { bubble: '您好！我是医小管，目前告警事件审核中X项～', window: '您好！我是医小管，目前告警事件审核中X项，您语音或文字将审核结论和原因说明告诉我，我将直接为您完成审核操作' },
+  },
+  'monitoring-alert-closed': {
+    dept: { bubble: '您好！我是医小管，目前已关闭告警事件X项～', window: '您好！我是医小管，目前已关闭告警事件X项，是否需要查看详情？' },
+    provider: { bubble: '您好！我是医小管，目前已关闭告警事件X项～', window: '您好！我是医小管，目前已关闭告警事件X项，是否需要查看详情？' },
+    admin: { bubble: '您好！我是医小管，目前已关闭告警事件X项～', window: '您好！我是医小管，目前已关闭告警事件X项，是否需要查看详情？' },
+  },
+  'monitoring-alert-ignored': {
+    dept: { bubble: '您好！我是医小管，目前已忽略告警事件X项～', window: '您好！我是医小管，目前已忽略告警事件X项，是否需要查看详情？' },
+    provider: { bubble: '您好！我是医小管，目前已忽略告警事件X项～', window: '您好！我是医小管，目前已忽略告警事件X项，是否需要查看详情？' },
+    admin: { bubble: '您好！我是医小管，目前已忽略告警事件X项～', window: '您好！我是医小管，目前已忽略告警事件X项，是否需要查看详情？' },
+  },
+  'evaluation-tasks': {
+    dept: { bubble: '您好，我是医小管。本科室已接入X个智能体，\n待评测X个、评测中X个、评测完成X个\n审核中X个、审核通过X个、退回修改X个\n在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。本科室已接入X个智能体，\n待评测X个、评测中X个、评测完成X个\n审核中X个、审核通过X个、退回修改X个\n在气泡里点对应状态即可直接分类查看详情' },
+    provider: { bubble: '您好，我是医小管。本科室已接入X个智能体，\n待评测X个、评测中X个、评测完成X个\n审核中X个、审核通过X个、退回修改X个\n在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。本科室已接入X个智能体，\n待评测X个、评测中X个、评测完成X个\n审核中X个、审核通过X个、退回修改X个\n在气泡里点对应状态即可直接分类查看详情' },
+    admin: { bubble: '您好，我是医小管。全院已接入X个智能体，\n待评测X个、评测中X个、评测完成X个\n审核中X个、审核通过X个、退回修改X个\n在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。全院已接入X个智能体，\n待评测X个、评测中X个、评测完成X个\n审核中X个、审核通过X个、退回修改X个\n在气泡里点对应状态即可直接分类查看详情' },
+  },
+  'evaluation-report': {
+    dept: { bubble: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~' },
+    provider: { bubble: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~' },
+    admin: { bubble: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~' },
+  },
+  'resource-approval': {
+    dept: { bubble: '您好，我是医小管。我已完成预审：标注了X个疑似问题并跑了访问测试，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。', window: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~' },
+    provider: { bubble: '您好，我是医小管。我已完成预审：标注了X个疑似问题并跑了访问测试，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。', window: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~' },
+    admin: { bubble: '您好，我是医小管。我已完成预审：标注了X个疑似问题并跑了访问测试，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。', window: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~' },
+  },
+  'resource-apply-detail': {
+    dept: { bubble: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~' },
+    provider: { bubble: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~' },
+    admin: { bubble: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~' },
+  },
+  'resource-apply-rejected': {
+    dept: { bubble: '您好，我是医小管。目前资源申请退回修改X项，需要查看相关详情信息吗？', window: '您好，我是医小管。目前资源申请退回修改X项，需要查看相关详情信息吗？' },
+    provider: { bubble: '您好，我是医小管。目前资源申请退回修改X项，需要查看相关详情信息吗？', window: '您好，我是医小管。目前资源申请退回修改X项，需要查看相关详情信息吗？' },
+    admin: { bubble: '您好，我是医小管。目前资源申请退回修改X项，需要查看相关详情信息吗？', window: '您好，我是医小管。目前资源申请退回修改X项，需要查看相关详情信息吗？' },
+  },
+  'resource-apply-approved': {
+    dept: { bubble: '您好，我是医小管。目前资源申请审核通过X项，需要查看相关详情信息吗？', window: '您好，我是医小管。目前资源申请审核通过X项，需要查看相关详情信息吗？' },
+    provider: { bubble: '您好，我是医小管。目前资源申请审核通过X项，需要查看相关详情信息吗？', window: '您好，我是医小管。目前资源申请审核通过X项，需要查看相关详情信息吗？' },
+    admin: { bubble: '您好，我是医小管。目前资源申请审核通过X项，需要查看相关详情信息吗？', window: '您好，我是医小管。目前资源申请审核通过X项，需要查看相关详情信息吗？' },
+  },
+  'resource-apply-revoked': {
+    dept: { bubble: '您好，我是医小管。目前资源申请撤销修改X项，需要我帮你快速修改后重新提交吗？', window: '您好，我是医小管。目前资源申请撤销修改X项，需要我帮你快速修改后重新提交吗？点开任意撤销修改列表项，我帮您快速修改。' },
+    provider: { bubble: '您好，我是医小管。目前资源申请撤销修改X项，需要我帮你快速修改后重新提交吗？', window: '您好，我是医小管。目前资源申请撤销修改X项，需要我帮你快速修改后重新提交吗？点开任意撤销修改列表项，我帮您快速修改。' },
+    admin: { bubble: '您好，我是医小管。目前资源申请撤销修改X项，需要我帮你快速修改后重新提交吗？', window: '您好，我是医小管。目前资源申请撤销修改X项，需要我帮你快速修改后重新提交吗？点开任意撤销修改列表项，我帮您快速修改。' },
+  },
+  'resource-apply-pending': {
+    dept: { bubble: '您好，我是医小管。目前资源申请待审核X项，要进行资源申请审核吗？', window: '您好，我是医小管。目前资源申请待审核X项，要进行资源申请审核吗？' },
+    provider: { bubble: '您好，我是医小管。目前资源申请待审核X项，要进行资源申请审核吗？', window: '您好，我是医小管。目前资源申请待审核X项，要进行资源申请审核吗？' },
+    admin: { bubble: '您好，我是医小管。目前资源申请待审核X项，要进行资源申请审核吗？', window: '您好，我是医小管。目前资源申请待审核X项，要进行资源申请审核吗？' },
+  },
+  'resource-apply-reviewing': {
+    dept: { bubble: '您好，我是医小管。目前资源申请审核中X项，我会帮你盯进度，有审核结果第一时间提醒你。', window: '您好，我是医小管。目前资源申请审核中X项，我会帮你盯进度，有审核结果第一时间提醒你。' },
+    provider: { bubble: '您好，我是医小管。目前资源申请审核中X项，我会帮你盯进度，有审核结果第一时间提醒你。', window: '您好，我是医小管。目前资源申请审核中X项，我会帮你盯进度，有审核结果第一时间提醒你。' },
+    admin: { bubble: '您好，我是医小管。目前资源申请审核中X项，我会帮你盯进度，有审核结果第一时间提醒你。', window: '您好，我是医小管。目前资源申请审核中X项，我会帮你盯进度，有审核结果第一时间提醒你。' },
+  },
+  'resource-apply-draft': {
+    dept: { bubble: '您好，我是医小管。您还有X条未完成的资源申请草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。', window: '您好，我是医小管。您还有X条未完成的资源申请草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。' },
+    provider: { bubble: '您好，我是医小管。您还有X条未完成的资源申请草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。', window: '您好，我是医小管。您还有X条未完成的资源申请草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。' },
+    admin: { bubble: '您好，我是医小管。您还有X条未完成的资源申请草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。', window: '您好，我是医小管。您还有X条未完成的资源申请草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。' },
+  },
+  'resource-apply-all': {
+    dept: { bubble: '您好，我是医小管。目前已申请X项资源，您需要申请什么资源？', window: '您好，我是医小管。您需要申请什么资源？点击【权限申请】，文字、语音描述，我来帮您申请~' },
+    provider: { bubble: '您好，我是医小管。目前已申请X项资源，您需要申请什么资源？', window: '您好，我是医小管。您需要申请什么资源？点击【权限申请】，文字、语音描述，我来帮您申请~' },
+    admin: { bubble: '您好，我是医小管。目前已申请X项资源，您需要申请什么资源？', window: '您好，我是医小管。您需要申请什么资源？点击【权限申请】，文字、语音描述，我来帮您申请~' },
+  },
+  'resource-apply-form': {
+    dept: { bubble: '您好，我是医小管。请通过文字或语音描述要为哪个智能体申请什么资源，我来帮您填写权限申请。', window: '您好，我是医小管。请告诉我要为哪个智能体申请什么资源，您也可以继续补充申请理由，我来帮您填写~' },
+    provider: { bubble: '您好，我是医小管。请通过文字或语音描述要为哪个智能体申请什么资源，我来帮您填写权限申请。', window: '您好，我是医小管。请告诉我要为哪个智能体申请什么资源，您也可以继续补充申请理由，我来帮您填写~' },
+    admin: { bubble: '您好，我是医小管。请通过文字或语音描述要为哪个智能体申请什么资源，我来帮您填写权限申请。', window: '您好，我是医小管。请告诉我要为哪个智能体申请什么资源，您也可以继续补充申请理由，我来帮您填写~' },
+  },
+  'resource-center-register': {
+    dept: {
+      bubble: '您好！我是医小管。您需要注册什么资源？点击【上传文件】，把资源信息文档发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您注册~',
+      window: '您好！我是医小管。您需要注册什么资源？点击【上传文件】，把资源信息文档发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您注册~',
+    },
+    provider: {
+      bubble: '您好！我是医小管。您需要注册什么资源？点击【上传文件】，把资源信息文档发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您注册~',
+      window: '您好！我是医小管。您需要注册什么资源？点击【上传文件】，把资源信息文档发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您注册~',
+    },
+    admin: {
+      bubble: '您好！我是医小管。您需要注册什么资源？点击【上传文件】，把资源信息文档发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您注册~',
+      window: '您好！我是医小管。您需要注册什么资源？点击【上传文件】，把资源信息文档发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您注册~',
+    },
+  },
+  'resource-center-draft': {
+    dept: {
+      bubble: '您好！我是医小管，您还有X条未完成的资源注册草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有X条未完成的资源注册草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+    provider: {
+      bubble: '您好！我是医小管，您还有X条未完成的资源注册草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有X条未完成的资源注册草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+    admin: {
+      bubble: '您好！我是医小管，您还有X条未完成的资源注册草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有X条未完成的资源注册草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+  },
+  'resource-center-all': {
+    dept: {
+      bubble: '您好，我是医小管。当前已注册X项资源，您需要注册什么资源吗？',
+      window: '您您好！我是医小管。您需要注册什么资源？点击【注册资源】，把资源信息文档发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您注册~',
+    },
+    provider: {
+      bubble: '您好，我是医小管。当前已注册X项资源，您需要注册什么资源吗？',
+      window: '您您好！我是医小管。您需要注册什么资源？点击【注册资源】，把资源信息文档发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您注册~',
+    },
+    admin: {
+      bubble: '您好，我是医小管。当前已注册X项资源，您需要注册什么资源吗？',
+      window: '您您好！我是医小管。您需要注册什么资源？点击【注册资源】，把资源信息文档发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您注册~',
+    },
+  },
+  'agent-needs-detail': {
+    dept: {
+      bubble: '您好，我是医小管。当前为您展示【X】的建设需求详情，由【X】提出，需求紧急程度为【X】。平台已完成智能体匹配，最高匹配度为X%。',
+      window: '您好，我是医小管。当前为您展示【X】的建设需求详情，由【X】提出，需求紧急程度为【X】。平台已完成智能体匹配，最高匹配度为X%。',
+    },
+    provider: {
+      bubble: '您好，我是医小管。当前为您展示【X】的建设需求详情，由【X】提出，需求紧急程度为【X】。平台已完成智能体匹配，最高匹配度为X%。',
+      window: '您好，我是医小管。当前为您展示【X】的建设需求详情，由【X】提出，需求紧急程度为【X】。平台已完成智能体匹配，最高匹配度为X%。',
+    },
+    admin: {
+      bubble: '您好，我是医小管。当前为您展示【X】的建设需求详情，由【X】提出，需求紧急程度为【X】。平台已完成智能体匹配，最高匹配度为X%。',
+      window: '您好，我是医小管。当前为您展示【X】的建设需求详情，由【X】提出，需求紧急程度为【X】。平台已完成智能体匹配，最高匹配度为X%。',
+    },
+  },
   'agent-needs-draft': {
     dept: {
       bubble: '您好！我是医小管，您还有 X 条未完成的需求登记草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
@@ -308,6 +518,7 @@ export type WelcomeMiniRowActionKind =
   | 'navigate-audit'
   | 'confirm-delete'
   | 'confirm-cancel'
+  | 'confirm-revoke'
   | 'navigate-eval'
   | 'navigate-ledger';
 
@@ -662,9 +873,24 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
       // 同一页（按 pageKey + role）首次进入：往对话窗口也推一条（带 tag 便于合并去重）
       setMessages((prev) => {
         const tag = `__welcome__:${pageKey}:${role}`;
-        if (prev.some((m) => m.content === windowContent && m.id.startsWith(tag))) return prev;
+        const replaceCurrentPageWelcome =
+          pageKey === 'agent-needs-detail' || pageKey === 'resource-center-draft' ||
+          pageKey === 'resource-apply-draft' || pageKey === 'resource-apply-reviewing' ||
+          pageKey === 'resource-apply-pending' || pageKey === 'resource-apply-revoked' ||
+          pageKey === 'resource-apply-approved' || pageKey === 'resource-apply-rejected' ||
+          pageKey === 'resource-apply-detail' || pageKey === 'resource-approval' ||
+          pageKey === 'evaluation-tasks' ||
+          pageKey === 'monitoring-overview' ||
+          pageKey === 'monitoring-business' ||
+          pageKey === 'monitoring-status' ||
+          pageKey === 'monitoring-alert-events' || pageKey === 'monitoring-alert-detail' || pageKey === 'monitoring-alert-review' || pageKey === 'monitoring-alert-pending' || pageKey === 'monitoring-alert-handling' || pageKey === 'monitoring-alert-pending-review' || pageKey === 'monitoring-alert-reviewing' || pageKey === 'monitoring-alert-closed' || pageKey === 'monitoring-alert-ignored' ||
+          pageKey === 'evaluation-report';
+        const base = replaceCurrentPageWelcome
+          ? prev.filter((m) => !m.id.startsWith(`__welcome__:${pageKey}:`))
+          : prev;
+        if (base.some((m) => m.content === windowContent && m.id.startsWith(tag))) return base;
         return [
-          ...prev,
+          ...base,
           {
             id: `${tag}-${Date.now()}`,
             role: 'agent',

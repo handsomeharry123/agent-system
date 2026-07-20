@@ -18,7 +18,7 @@
  *     科室管理员仅展示分派给自己的事件，且仅展示「查看详情」。
  *   - 其余 Tab（已关闭 / 已忽略）两个角色均仅展示「查看详情」。
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Card, Tabs, Space, Typography, Input, Select, Button, Row, Col, Tag, Empty,
@@ -37,6 +37,7 @@ import {
 } from '../../mock/monitoringV18';
 import { useMonitoringGuard } from './useMonitoringGuard';
 import { mockUsers } from '../../mock/users';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -71,10 +72,11 @@ const assigneeOptions = mockUsers
 const AlertEventListV18 = () => {
   const navigate = useNavigate();
   const { isAdmin, currentUserName } = useMonitoringGuard();
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const actionRef = useRef<ActionType | undefined>(undefined);
   const [searchParams, setSearchParams] = useSearchParams();
   const [events, setEvents] = useState<AlertEventV18[]>(mockAlertEventsV18);
-  const [activeTab, setActiveTab] = useState<TabKey>((searchParams.get('tab') as TabKey) || 'all');
+  const [activeTab, setActiveTab] = useState<TabKey>((searchParams.get('tab') as TabKey) || 'pending_handle');
   const [keyword, setKeyword] = useState(searchParams.get('search') || searchParams.get('agentName') || '');
   const [typeFilter, setTypeFilter] = useState<string | undefined>(
     searchParams.get('type') || undefined,
@@ -184,6 +186,20 @@ const AlertEventListV18 = () => {
   const isSelfHandler = (e: AlertEventV18) =>
     !!currentUserName && e.handler === currentUserName;
 
+  // 信息科管理员点击「审核」即接手事件：先转入审核中，再进入审核页。
+  const beginReview = useCallback((event: AlertEventV18) => {
+    const reviewingEvent: AlertEventV18 = event.status === 'pending_review'
+      ? { ...event, status: 'reviewing' }
+      : event;
+    if (event.status === 'pending_review') {
+      setEvents((current) => current.map((item) => item.id === event.id ? reviewingEvent : item));
+      const mockIndex = mockAlertEventsV18.findIndex((item) => item.id === event.id);
+      if (mockIndex >= 0) mockAlertEventsV18[mockIndex] = reviewingEvent;
+      message.success('事件已转入「审核中事件」');
+    }
+    navigate(`/app/monitoring/alert-events/${event.id}/review?tab=reviewing`);
+  }, [navigate]);
+
   // 列定义
   const baseColumns: ProColumns<AlertEventV18>[] = [
     { title: '序号', key: 'index', width: 56, render: renderIndex },
@@ -274,7 +290,7 @@ const AlertEventListV18 = () => {
             moreItems.push({
               key: 'review',
               label: <><AuditOutlined /> 审核</>,
-              onClick: () => navigate(`/app/monitoring/alert-events/${r.id}/review`),
+              onClick: () => beginReview(r),
             });
           }
           return (
@@ -331,7 +347,7 @@ const AlertEventListV18 = () => {
               {viewBtn}
               {isAdmin && (
                 <Button key="review" type="link" size="small" icon={<AuditOutlined />}
-                  onClick={() => navigate(`/app/monitoring/alert-events/${r.id}/review`)}>审核</Button>
+                  onClick={() => beginReview(r)}>审核</Button>
               )}
             </Space>
           );
@@ -343,7 +359,7 @@ const AlertEventListV18 = () => {
               {viewBtn}
               {isAdmin && (
                 <Button key="review" type="link" size="small" icon={<AuditOutlined />}
-                  onClick={() => navigate(`/app/monitoring/alert-events/${r.id}/review`)}>审核</Button>
+                  onClick={() => beginReview(r)}>审核</Button>
               )}
             </Space>
           );
@@ -590,6 +606,244 @@ const AlertEventListV18 = () => {
     return out;
   }, [events, roleScopedFilter]);
 
+  const switchToTab = useCallback((tab: TabKey) => {
+    if (!tabMeta[tab] || (tabMeta[tab].adminOnly && !isAdmin)) return;
+    setActiveTab(tab);
+    setSearchParams({ tab }, { replace: true });
+  }, [isAdmin, setSearchParams]);
+
+  useEffect(() => {
+    if (activeTab !== 'all' && activeTab !== 'pending_handle' && activeTab !== 'handling' && activeTab !== 'pending_review' && activeTab !== 'reviewing' && activeTab !== 'closed' && activeTab !== 'ignored') {
+      consumeWelcome();
+      return undefined;
+    }
+    if (activeTab === 'all') {
+      const replacements = [tabCounts.all, tabCounts.pending_handle, tabCounts.pending_review];
+      pushWelcomeGreeting('monitoring-alert-events', isAdmin ? 'admin' : 'dept', () => replacements, {
+        windowReplacements: replacements,
+        chips: [
+          { key: 'all-alert-events', label: `告警事件 ${tabCounts.all} 项`, targetTab: 'all' },
+          { key: 'pending-alert-events', label: `待处理 ${tabCounts.pending_handle} 项`, targetTab: 'pending_handle', tone: 'error' },
+          { key: 'review-alert-events', label: `待审核 ${tabCounts.pending_review} 项`, targetTab: 'pending_review', tone: 'warning' },
+        ],
+      });
+    } else if (activeTab === 'closed') {
+      pushWelcomeGreeting('monitoring-alert-closed', isAdmin ? 'admin' : 'dept', () => [tabCounts.closed], {
+        windowReplacements: [tabCounts.closed],
+        actions: [{ key: 'view-closed-detail', label: '查看详情', event: 'monitoring-view-closed-detail', enabled: tabCounts.closed > 0, reason: tabCounts.closed > 0 ? undefined : '当前暂无已关闭事件' }],
+      });
+    } else if (activeTab === 'ignored') {
+      pushWelcomeGreeting('monitoring-alert-ignored', isAdmin ? 'admin' : 'dept', () => [tabCounts.ignored], {
+        windowReplacements: [tabCounts.ignored],
+        actions: [{ key: 'view-ignored-detail', label: '查看详情', event: 'monitoring-view-ignored-detail', enabled: tabCounts.ignored > 0, reason: tabCounts.ignored > 0 ? undefined : '当前暂无已忽略事件' }],
+      });
+    } else if (activeTab === 'pending_review') {
+      pushWelcomeGreeting('monitoring-alert-pending-review', isAdmin ? 'admin' : 'dept', () => [tabCounts.pending_review], {
+        windowReplacements: [tabCounts.pending_review],
+      });
+    } else if (activeTab === 'reviewing') {
+      pushWelcomeGreeting('monitoring-alert-reviewing', isAdmin ? 'admin' : 'dept', () => [tabCounts.reviewing], {
+        windowReplacements: [tabCounts.reviewing],
+      });
+    } else if (activeTab === 'handling') {
+      pushWelcomeGreeting('monitoring-alert-handling', isAdmin ? 'admin' : 'dept', () => [tabCounts.pending_handle], {
+        windowReplacements: [tabCounts.handling],
+      });
+    } else {
+      pushWelcomeGreeting('monitoring-alert-pending', isAdmin ? 'admin' : 'dept', () => [tabCounts.pending_handle], {
+        windowReplacements: [tabCounts.pending_handle],
+        chips: [
+          { key: 'pending-alert-events', label: `待处理 ${tabCounts.pending_handle} 项`, targetTab: 'pending_handle', tone: 'error' },
+          { key: 'handling-alert-events', label: `处理中 ${tabCounts.handling} 项`, targetTab: 'handling' },
+        ],
+      });
+    }
+    return () => consumeWelcome();
+  }, [activeTab, consumeWelcome, isAdmin, pushWelcomeGreeting, tabCounts.all, tabCounts.closed, tabCounts.handling, tabCounts.ignored, tabCounts.pending_handle, tabCounts.pending_review, tabCounts.reviewing]);
+
+  // 医小管对话联动：筛选待处理事件、直达详情、将事件转入处理中。
+  useEffect(() => {
+    const onAssistantQuery = (rawEvent: Event) => {
+      const detail = (rawEvent as CustomEvent<{ text: string; respond?: (answer: string) => void }>).detail;
+      const text = detail?.text?.trim();
+      if (!text) return;
+
+      if (activeTab === 'closed') {
+        const closedEvents = events.filter((e) => roleScopedFilter('closed', e));
+        const target = closedEvents.find((e) =>
+          text.includes(e.agentName) || text.includes(e.id) ||
+          text.includes(e.triggerContent.rule_name) || text.includes(e.triggerContent.trigger_condition.metric)
+        ) || closedEvents[0];
+        if (/查看详情|打开详情|进入详情|详情/.test(text)) {
+          if (!target) detail.respond?.('当前暂无已关闭告警事件。');
+          else {
+            detail.respond?.(`已为您打开「${target.agentName}」的已关闭告警事件详情。`);
+            navigate(`/app/monitoring/alert-events/${target.id}`);
+          }
+          return;
+        }
+        detail.respond?.('请先点击【查看详情】进入具体告警事件，再向我询问该事件的页面信息。');
+        return;
+      }
+
+      if (activeTab === 'ignored') {
+        const ignoredEvents = events.filter((e) => roleScopedFilter('ignored', e));
+        const target = ignoredEvents.find((e) =>
+          text.includes(e.agentName) || text.includes(e.id) ||
+          text.includes(e.triggerContent.rule_name) || text.includes(e.triggerContent.trigger_condition.metric)
+        ) || ignoredEvents[0];
+        if (/查看详情|打开详情|进入详情|详情/.test(text)) {
+          if (!target) {
+            detail.respond?.('当前没有可查看的已忽略告警事件。');
+            return;
+          }
+          detail.respond?.(`已为您打开「${target.agentName}」的已忽略告警事件详情。`);
+          navigate(`/app/monitoring/alert-events/${target.id}`);
+          return;
+        }
+        detail.respond?.(ignoredEvents.length > 0
+          ? `当前共有 ${ignoredEvents.length} 项已忽略告警事件，您可以说“查看详情”。`
+          : '当前没有已忽略告警事件。');
+        return;
+      }
+
+      if (activeTab === 'pending_review') {
+        const pendingReviewEvents = events.filter((e) => roleScopedFilter('pending_review', e));
+        const target = pendingReviewEvents.find((e) =>
+          text.includes(e.agentName) || text.includes(e.id) ||
+          text.includes(e.triggerContent.rule_name) || text.includes(e.triggerContent.trigger_condition.metric)
+        ) || pendingReviewEvents[0];
+        if (!target) {
+          detail.respond?.('当前没有可查看的待审核告警事件。');
+          return;
+        }
+        if (isAdmin && /审核/.test(text)) {
+          detail.respond?.(`已为您找到「${target.agentName}」的待审核告警事件，正在进入审核。`);
+          beginReview(target);
+        } else {
+          detail.respond?.(`已为您打开「${target.agentName}」的告警事件详情。`);
+          navigate(`/app/monitoring/alert-events/${target.id}`);
+        }
+        return;
+      }
+
+      if (activeTab === 'reviewing') {
+        const reviewingEvents = events.filter((e) => roleScopedFilter('reviewing', e));
+        const target = reviewingEvents.find((e) =>
+          text.includes(e.agentName) || text.includes(e.id) ||
+          text.includes(e.triggerContent.rule_name) || text.includes(e.triggerContent.trigger_condition.metric)
+        ) || reviewingEvents[0];
+        if (!target) {
+          detail.respond?.('当前没有可操作的审核中告警事件。');
+          return;
+        }
+        if (!isAdmin) {
+          detail.respond?.(`已为您打开「${target.agentName}」的告警事件详情。`);
+          navigate(`/app/monitoring/alert-events/${target.id}`);
+          return;
+        }
+        const isReturn = /退回|不通过|未解决|仍然|异常/.test(text);
+        const cleanedRemark = text
+          .replace(/^(审核)?(通过|不通过|退回(重新处理)?)\s*[，,：:]?\s*/, '')
+          .trim();
+        navigate(`/app/monitoring/alert-events/${target.id}/review?tab=reviewing`, {
+          state: {
+            assistantReviewDraft: {
+              reviewOpinion: isReturn ? '退回重新处理' : '处理完成，关闭该告警事项',
+              reviewRemark: cleanedRemark || (isReturn ? '告警问题尚未完全解决，请重新处理。' : '处理方案有效，告警已恢复正常，同意关闭该告警事项。'),
+            },
+          },
+        });
+        detail.respond?.(`已进入「${target.agentName}」审核页，并根据您的描述填入审核结论与说明。`);
+        return;
+      }
+
+      const typeAliases: Array<[RegExp, AlertEventV18['eventType']]> = [
+        [/业务/, 'business'], [/状态|运行/, 'status'], [/成本|资源|Token|CPU|GPU/i, 'cost'], [/安全|越权|注入|敏感/, 'security'],
+      ];
+      const requestedType = typeAliases.find(([pattern]) => pattern.test(text))?.[1];
+      const pendingEvents = events.filter((e) => roleScopedFilter('pending_handle', e));
+      const matchedNames = pendingEvents.filter((e) =>
+        text.includes(e.agentName) || text.includes(e.id) ||
+        text.includes(e.triggerContent.rule_name) || text.includes(e.triggerContent.trigger_condition.metric),
+      );
+      const freeKeyword = matchedNames.length > 0
+        ? (matchedNames[0].agentName || matchedNames[0].id)
+        : undefined;
+
+      setActiveTab('pending_handle');
+      setSearchParams({ tab: 'pending_handle' }, { replace: true });
+      setTypeFilter(requestedType);
+      setKeyword(freeKeyword || '');
+
+      const results = pendingEvents.filter((e) => {
+        if (requestedType && e.eventType !== requestedType) return false;
+        if (matchedNames.length > 0 && !matchedNames.some((m) => m.id === e.id)) return false;
+        return true;
+      });
+      if (/查看详情|打开详情|进入详情/.test(text)) {
+        if (results[0]) {
+          detail.respond?.(`已为您打开「${results[0].agentName}」的告警事件详情。`);
+          navigate(`/app/monitoring/alert-events/${results[0].id}`);
+        } else {
+          detail.respond?.('没有找到符合条件的待处理告警事件。');
+        }
+        return;
+      }
+      if (/开始处理|帮我处理|处理(?:第|这|该|当前|一下)/.test(text)) {
+        const target = results[0];
+        if (!target) {
+          detail.respond?.('没有找到符合条件的待处理告警事件。');
+          return;
+        }
+        const now = new Date().toLocaleString('zh-CN', { hour12: false });
+        setEvents((current) => current.map((item) => item.id === target.id ? {
+          ...item, status: 'handling', handleStartTime: now,
+          handleTimeline: [...(item.handleTimeline || []), {
+            time: now, action: '开始处理', operator: currentUserName || '当前用户', remark: '由医小管根据对话指令发起',
+          }],
+        } : item));
+        setActiveTab('handling');
+        setSearchParams({ tab: 'handling' }, { replace: true });
+        setKeyword('');
+        detail.respond?.(`已将「${target.agentName}」告警转入处理中事件。`);
+        return;
+      }
+      detail.respond?.(results.length > 0
+        ? `已为您筛选出 ${results.length} 项待处理告警事件。您可以继续说“查看详情”或“处理”。`
+        : '没有找到符合条件的待处理告警事件，请换个关键词试试。');
+    };
+    window.addEventListener('monitoring-alert-assistant-query', onAssistantQuery);
+    return () => window.removeEventListener('monitoring-alert-assistant-query', onAssistantQuery);
+  }, [activeTab, beginReview, currentUserName, events, isAdmin, navigate, roleScopedFilter, setSearchParams]);
+
+  useEffect(() => {
+    const onViewClosedDetail = () => {
+      const target = events.find((e) => roleScopedFilter('closed', e));
+      if (target) navigate(`/app/monitoring/alert-events/${target.id}`);
+    };
+    const onViewIgnoredDetail = () => {
+      const target = events.find((e) => roleScopedFilter('ignored', e));
+      if (target) navigate(`/app/monitoring/alert-events/${target.id}`);
+    };
+    window.addEventListener('monitoring-view-closed-detail', onViewClosedDetail);
+    window.addEventListener('monitoring-view-ignored-detail', onViewIgnoredDetail);
+    return () => {
+      window.removeEventListener('monitoring-view-closed-detail', onViewClosedDetail);
+      window.removeEventListener('monitoring-view-ignored-detail', onViewIgnoredDetail);
+    };
+  }, [events, navigate, roleScopedFilter]);
+
+  useEffect(() => {
+    const onJump = (event: Event) => {
+      const nextTab = (event as CustomEvent<string>).detail as TabKey;
+      if (!nextTab || !tabMeta[nextTab]) return;
+      switchToTab(nextTab);
+    };
+    window.addEventListener('agent-jump-tab', onJump);
+    return () => window.removeEventListener('agent-jump-tab', onJump);
+  }, [switchToTab]);
+
   return (
     <div style={{ padding: '16px 24px', background: '#F5F5F5', minHeight: '100vh' }}>
       <PageHeader
@@ -604,7 +858,7 @@ const AlertEventListV18 = () => {
       <Card bordered={false} styles={{ body: { paddingTop: 0 } }} style={{ marginTop: 16 }}>
         <Tabs
           activeKey={activeTab}
-          onChange={(k) => setActiveTab(k as TabKey)}
+          onChange={(k) => switchToTab(k as TabKey)}
           type="line"
           items={Object.entries(tabMeta).map(([key, m]) => {
             // 「待分派」仅管理员可见

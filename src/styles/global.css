@@ -284,6 +284,30 @@ html, body {
   background: #f6ffed;
   border-radius: 6px;
 }
+
+/* 资源注册页：待确认采纳的 AI 预填字段使用绿色标注；确认后由页面移除 class。 */
+.resource-ai-prefilled-field .ant-form-item-label > label::after {
+  content: 'AI填充';
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  margin-inline-start: 8px;
+  padding: 0 6px;
+  color: #389e0d;
+  font-size: 11px;
+  line-height: 18px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 9px;
+}
+
+.resource-ai-prefilled-field .ant-input,
+.resource-ai-prefilled-field .ant-input-affix-wrapper,
+.resource-ai-prefilled-field .ant-select-selector {
+  background: linear-gradient(180deg, #f6ffed 0%, #d9f7be 100%) !important;
+  border-color: #95de64 !important;
+  box-shadow: 0 0 0 2px rgba(82, 196, 26, 0.08);
+}
 /* 采纳瞬间闪烁高亮 (1.2s 后自动停止) */
 .ai-prefill-ack-flash {
   animation: aiPrefillAckFlash 1.2s ease-out;

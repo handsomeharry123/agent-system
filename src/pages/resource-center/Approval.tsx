@@ -56,6 +56,7 @@ import {
   type ApplyItem,
   type ProtocolType,
 } from '../../mock/resource-center';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -69,9 +70,29 @@ const Approval = () => {
   const current = useCurrentUser();
   // V1.2:resource-center mock 内置 demoRole 为英文枚举 'admin' | 'user'(与 useDemoSettings 的中文枚举是两套独立 store)
   const isAdmin = useDemoRole() === 'admin';
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
 
   const it: ApplyItem | undefined = applies.find((a) => a.id === id);
+  const resource = resources.find((item) => item.id === it?.resourceId);
   const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin || !it) return undefined;
+    const missingTechnicalFields = resource
+      ? resource.protocolConfig.fields.filter((field) => !field.value?.trim()).length
+      : 1;
+    const problemCount = missingTechnicalFields + (it.reason?.trim() ? 0 : 1);
+    const verdict = problemCount === 0 ? '建议通过' : '建议退回修改';
+    const resourceName = it.resourceName || resource?.resources.join('/') || it.resourceId;
+    pushWelcomeGreeting('resource-approval', 'admin', () => [problemCount, verdict], {
+      windowReplacements: [resourceName],
+      actions: [
+        { key: 'approve-resource-apply', label: '审核通过', event: 'resource-approval-approve', enabled: true },
+        { key: 'reject-resource-apply', label: '退回修改', event: 'resource-approval-reject', enabled: true },
+      ],
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isAdmin, it, pushWelcomeGreeting, resource]);
 
   /**
    * PRD §2.1.3 → §2.1.4 状态推进:
@@ -200,6 +221,24 @@ const Approval = () => {
       message.error('请检查表单');
     }
   };
+
+  useEffect(() => {
+    if (!isAdmin || !it) return undefined;
+    const onApprove = () => {
+      form.setFieldsValue({ conclusion: 'approved', comment: '医小管预审：资源信息与技术配置完整，访问测试通过；最终结论由审核人确认。' });
+      window.setTimeout(() => void handleSubmit(), 0);
+    };
+    const onReject = () => {
+      form.setFieldsValue({ conclusion: 'rejected', comment: '医小管预审发现资源申请信息或技术配置存在疑似问题，请申请人核对并补充后重新提交。' });
+      window.setTimeout(() => void handleSubmit(), 0);
+    };
+    window.addEventListener('resource-approval-approve', onApprove);
+    window.addEventListener('resource-approval-reject', onReject);
+    return () => {
+      window.removeEventListener('resource-approval-approve', onApprove);
+      window.removeEventListener('resource-approval-reject', onReject);
+    };
+  });
 
   // 状态标签
   const reviewer = getReviewer(it, it.status === 'archived' ? 'rejected' : (it.status as 'approved' | 'rejected' | 'reviewing'));

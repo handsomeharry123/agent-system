@@ -1,815 +1,120 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { Line, Pie } from '@ant-design/charts';
+import { Button, Card, Col, Flex, Row, Select, Space, Tag, Tooltip, Typography, message } from 'antd';
 import {
-  Card,
-  Row,
-  Col,
-  Select,
-  Button,
-  Space,
-  Switch,
-  Typography,
-  Badge,
-  Tooltip,
-  DatePicker,
-  message,
-} from 'antd';
-import {
-  FullscreenOutlined,
-  FullscreenExitOutlined,
-  ReloadOutlined,
-  RobotOutlined,
-  AlertOutlined,
-  LineChartOutlined,
-  DollarOutlined,
-  ExperimentOutlined,
-  FundOutlined,
-  ClockCircleOutlined,
+  ApartmentOutlined, ApiOutlined, CheckCircleFilled, ClockCircleOutlined, CloudServerOutlined,
+  ExclamationCircleFilled, FullscreenExitOutlined, FullscreenOutlined, ReloadOutlined,
+  RiseOutlined, RobotOutlined, SafetyCertificateOutlined, ThunderboltOutlined,
 } from '@ant-design/icons';
-import {
-  Line,
-  Pie,
-  Radar,
-  Bar,
-  Column,
-} from '@ant-design/charts';
-import dayjs, { Dayjs } from 'dayjs';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Config = any;
-import PageHeader from '../../components/PageHeader';
-import { departmentOptions } from '../../mock/departments';
-import { mockAgents } from '../../mock';
+import { useNavigate } from 'react-router-dom';
+import { useDemoSettings } from '../../hooks/useDemoSettings';
 
 const { Text, Title } = Typography;
-const { RangePicker } = DatePicker;
+const panelStyle = { border: '1px solid #dce8f7', boxShadow: '0 5px 18px rgba(22,119,255,.055)' };
+const colors = ['#1677ff', '#13c2c2', '#722ed1', '#fa8c16', '#eb2f96'];
 
-// 筛选 - 时间范围（需求 2-2：今日 / 近 7 天 / 近 30 天 / 自定义）
-const timeRangeOptions = [
-  { label: '今日', value: 'today' },
-  { label: '近 7 天', value: 'week' },
-  { label: '近 30 天', value: 'month' },
-  { label: '自定义', value: 'custom' },
+const month = ['02月', '03月', '04月', '05月', '06月', '07月'];
+const spark = (values: number[]) => month.map((label, index) => ({ label, value: values[index] }));
+const adminMetrics = [
+  ['智能体数量', '128', '个', '较昨日 +3', [88, 96, 104, 110, 119, 128], '/app/ledger/list', '#1677ff'],
+  ['异常智能体数量', '6', '个', '较昨日 -2', [9, 7, 8, 11, 8, 6], '/app/ledger/list?status=abnormal', '#fa541c'],
+  ['智能体总调用量', '286.4万', '次', '较昨日 +12.6%', [152, 177, 196, 228, 252, 286], '/app/monitoring/business', '#13c2c2'],
+  ['智能体成功调用率', '98.72', '%', '本月提升 0.31%', [97.8, 98.1, 98.2, 98.3, 98.4, 98.72], '/app/monitoring/business', '#52c41a'],
+  ['智能体告警次数', '37', '次', '较昨日 -5', [52, 45, 61, 48, 42, 37], '/app/monitoring/alert-events', '#722ed1'],
+  ['Token累计使用成本', '¥46.8万', '', '较昨日 +¥1.2万', [22, 27, 32, 36, 41, 46.8], '/app/monitoring/cost', '#fa8c16'],
+] as const;
+const deptMetrics = [
+  ['智能体总调用量', '32.6万', '次', '较昨日 +8.2%', [18, 21, 23, 26, 29, 32.6], '/app/monitoring/business', '#1677ff'],
+  ['智能体成功调用率', '99.12', '%', '本月提升 0.24%', [98.2, 98.5, 98.6, 98.8, 98.9, 99.12], '/app/monitoring/business', '#52c41a'],
+  ['响应时间 P95', '1.28', 's', '较上月 -0.16s', [1.72, 1.61, 1.55, 1.48, 1.44, 1.28], '/app/monitoring/business', '#13c2c2'],
+  ['智能体告警次数', '8', '次', '较昨日 -2', [16, 13, 11, 14, 10, 8], '/app/monitoring/alert-events', '#722ed1'],
+  ['Token累计使用成本', '¥5.82万', '', '较昨日 +¥0.18万', [2.6, 3.2, 3.8, 4.5, 5.1, 5.82], '/app/monitoring/cost', '#fa8c16'],
+] as const;
+
+const departments = [
+  { name: '影像科', value: 24 }, { name: '心内科', value: 21 }, { name: '检验科', value: 18 },
+  { name: '急诊科', value: 16 }, { name: '超声科', value: 14 }, { name: '药学部', value: 11 },
 ];
-
-// ====================== Mock 数据 ======================
-
-// 调用量趋势（近 7 天）
-const mockCallVolumeData = [
-  { date: '05-28', value: 9420 },
-  { date: '05-29', value: 10210 },
-  { date: '05-30', value: 11680 },
-  { date: '05-31', value: 12100 },
-  { date: '06-01', value: 11960 },
-  { date: '06-02', value: 12640 },
-  { date: '06-03', value: 12856 },
+const topAgents = [
+  { name: '影像报告助手', value: 46820 }, { name: '病历质控助手', value: 41650 }, { name: '检验解读助手', value: 35860 },
+  { name: '急诊分诊助手', value: 28310 }, { name: '用药审核助手', value: 24680 },
 ];
-
-// 评测通过率趋势（近 30 天）
-const mockEvalTrendData = (() => {
-  const out: { date: string; passRate: number }[] = [];
-  for (let i = 29; i >= 0; i -= 1) {
-    const d = dayjs().subtract(i, 'day');
-    out.push({
-      date: d.format('MM-DD'),
-      passRate: Math.round((90 + Math.sin(i / 3) * 3 + (i % 5)) * 10) / 10,
-    });
-  }
-  return out;
-})();
-
-// 科室使用排行 Top 10
-const mockDeptRankingData = [
-  { dept: '心内科', calls: 2350 },
-  { dept: '急诊科', calls: 2180 },
-  { dept: '影像科', calls: 1920 },
-  { dept: '药剂科', calls: 1650 },
-  { dept: '呼吸科', calls: 1480 },
-  { dept: '消化科', calls: 1320 },
-  { dept: '神经内科', calls: 1100 },
-  { dept: '内分泌科', calls: 980 },
-  { dept: '肾内科', calls: 850 },
-  { dept: '血液科', calls: 720 },
+const stages = [{ name: '诊断', value: 42 }, { name: '治疗', value: 31 }, { name: '检查', value: 24 }, { name: '随访', value: 18 }, { name: '预防', value: 13 }];
+const risks = [{ name: '高风险', value: 12 }, { name: '中风险', value: 35 }, { name: '低风险', value: 81 }];
+const alertTypes = [{ name: '业务监控', value: 14 }, { name: '状态监控', value: 10 }, { name: '成本监控', value: 7 }, { name: '安全监控', value: 6 }];
+const alertLevels = [{ name: '高级', value: 5 }, { name: '中级', value: 12 }, { name: '低级', value: 20 }];
+const alertRank = [{ name: '影像报告助手', value: 9 }, { name: '病历质控助手', value: 7 }, { name: '急诊分诊助手', value: 6 }, { name: '检验解读助手', value: 4 }, { name: '随访助手', value: 3 }];
+const alerts = [
+  ['影像报告助手响应超时', 'P95 > 2s', '高级'], ['病历质控助手成功率下降', '< 97%', '中级'],
+  ['急诊分诊助手实例离线', '离线 > 3min', '高级'], ['检验解读助手成本超限', '> ¥800/日', '中级'],
+  ['随访助手调用量突增', '环比 > 80%', '低级'],
 ];
+const resources = [
+  ['HIS', '医院信息系统', 38, true], ['EMR', '电子病历系统', 31, true], ['LIS', '实验室信息系统', 16, true], ['PACS', '医学影像系统', 22, true],
+  ['RIS', '放射信息系统', 12, true], ['UIS', '超声信息系统', 9, true], ['EIS', '内镜信息系统', 6, false], ['PIS', '病理信息系统', 8, true],
+] as const;
 
-// 智能体类型分布（<5% 已合并到"其他"）
-const mockAgentTypeData = [
-  { type: '辅助诊断', value: 14 },
-  { type: '影像分析', value: 10 },
-  { type: '用药审核', value: 7 },
-  { type: '病历生成', value: 5 },
-  { type: '导诊分诊', value: 4 },
-  { type: '其他', value: 3 },
-];
-
-// 安全风险 6 维：数据 / 模型 / 接口 / 合规 / 权限 / 审计
-const mockRiskRadarData = [
-  { dimension: '数据安全', value: 92 },
-  { dimension: '模型安全', value: 86 },
-  { dimension: '接口安全', value: 88 },
-  { dimension: '合规', value: 95 },
-  { dimension: '权限', value: 90 },
-  { dimension: '审计', value: 87 },
-];
-
-// 响应时长分布（<1s / 1-3s / 3-5s / >5s）
-const mockResponseTimeData = [
-  { range: '<1s', count: 8650 },
-  { range: '1-3s', count: 3120 },
-  { range: '3-5s', count: 820 },
-  { range: '>5s', count: 266 },
-];
-
-// ====================== 通用：图表卡 ======================
-
-const ChartCard = ({
-  title,
-  extra,
-  children,
-  height = 360,
-}: {
-  title: string;
-  extra?: React.ReactNode;
-  children: React.ReactNode;
-  height?: number;
-}) => (
-  <Card
-    bordered={false}
-    title={
-      <Text strong style={{ fontSize: 14 }}>
-        {title}
-      </Text>
-    }
-    extra={extra}
-    style={{ height, overflow: 'hidden' }}
-    styles={{ body: { height: height - 56, padding: 12 } }}
-  >
-    <div style={{ height: '100%', overflow: 'hidden' }}>{children}</div>
-  </Card>
-);
-
-// ====================== 通用：统计卡 ======================
-
-interface StatCardProps {
-  title: string;
-  value: number | string;
-  suffix?: string;
-  icon: React.ReactNode;
-  color: string;
-  trend?: number;
-  subText?: React.ReactNode;
-  onClick?: () => void;
-  innerChart?: React.ReactNode;
+function KpiCard({ metric }: { metric: typeof adminMetrics[number] | typeof deptMetrics[number] }) {
+  const navigate = useNavigate();
+  const [title, value, suffix, compare, values, path, color] = metric;
+  return <Card hoverable onClick={() => navigate(path)} style={{ ...panelStyle, height: 128, cursor: 'pointer', overflow: 'hidden', position: 'relative' }} styles={{ body: { padding: '15px 16px 10px', position: 'relative', height: '100%' } }}>
+    <div style={{ position: 'relative', zIndex: 2, maxWidth: '68%' }}><Text type="secondary" ellipsis style={{ display: 'block', fontSize: 13, whiteSpace: 'nowrap' }}>{title}</Text><div style={{ marginTop: 4, whiteSpace: 'nowrap' }}><Text strong style={{ color, fontSize: 25, lineHeight: 1.25 }}>{value}</Text><Text style={{ color, marginLeft: 3 }}>{suffix}</Text></div><Text style={{ display: 'block', marginTop: 7, color: compare.includes('-') ? '#52c41a' : '#8c8c8c', fontSize: 11, whiteSpace: 'nowrap' }}><RiseOutlined /> {compare}</Text></div>
+    <div style={{ position: 'absolute', width: '39%', right: 10, bottom: 15, opacity: .9 }}><Line data={spark([...values])} xField="label" yField="value" height={52} axis={false} tooltip={false} color={color} padding={0} point={false} /></div>
+  </Card>;
 }
 
-const StatCard = ({
-  title,
-  value,
-  suffix,
-  icon,
-  color,
-  trend,
-  subText,
-  onClick,
-  innerChart,
-}: StatCardProps) => (
-  <Card
-    hoverable={!!onClick}
-    onClick={onClick}
-    bordered={false}
-    style={{ height: 110, overflow: 'hidden' }}
-    styles={{ body: { height: '100%', padding: 12 } }}
-  >
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        height: '100%',
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 6,
-          background: `${color}15`,
-          color,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 18,
-          flexShrink: 0,
-        }}
-      >
-        {icon}
-      </div>
-      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-        <Tooltip title={title}>
-          <Text
-            type="secondary"
-            style={{
-              fontSize: 12,
-              display: 'block',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {title}
-          </Text>
-        </Tooltip>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginTop: 2 }}>
-          <span style={{ color, fontSize: 24, fontWeight: 600, lineHeight: 1.2 }}>
-            {value}
-            {suffix && <span style={{ fontSize: 14, marginLeft: 2 }}>{suffix}</span>}
-          </span>
-          {trend !== undefined && (
-            <Text style={{ fontSize: 11, color: trend >= 0 ? '#52C41A' : '#FF4D4F', flexShrink: 0 }}>
-              {trend >= 0 ? '↑' : '↓'} {Math.abs(trend)}%
-            </Text>
-          )}
-        </div>
-        {subText && (
-          <Text style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)' }} ellipsis>
-            {subText}
-          </Text>
-        )}
-      </div>
-      {innerChart && <div style={{ width: 64, height: 64, flexShrink: 0 }}>{innerChart}</div>}
-    </div>
-  </Card>
-);
+function ChartCard({ title, children, extra }: { title: string; children: React.ReactNode; extra?: React.ReactNode }) {
+  return <Card size="small" title={<Text strong>{title}</Text>} extra={extra} style={{ ...panelStyle, marginBottom: 12 }} styles={{ header: { minHeight: 42 }, body: { padding: '10px 12px' } }}>{children}</Card>;
+}
 
-// ====================== 状态分布环形微图 ======================
-const StatusDonut = ({
-  online,
-  offline,
-  abnormal,
-}: {
-  online: number;
-  offline: number;
-  abnormal: number;
-}) => {
-  const data = [
-    { type: '在线', value: online },
-    { type: '离线', value: offline },
-    { type: '异常', value: abnormal },
-  ];
-  const config: Config = {
-    data,
-    angleField: 'value',
-    colorField: 'type',
-    radius: 0.9,
-    innerRadius: 0.65,
-    legend: false,
-    label: false,
-    color: ['#52C41A', '#D9D9D9', '#FF4D4F'],
-    height: 64,
-    width: 64,
-    animation: false,
-  };
-  return <Pie {...config} />;
-};
+function SimpleBars({ data, color = '#1677ff', onClick }: { data: { name: string; value: number }[]; color?: string; onClick?: (name: string) => void }) {
+  const max = Math.max(...data.map((item) => item.value));
+  return <Space direction="vertical" size={10} style={{ width: '100%', padding: '4px 2px 2px' }}>{data.map((item) => <div key={item.name} onClick={() => onClick?.(item.name)} style={{ cursor: onClick ? 'pointer' : 'default' }}><Flex justify="space-between" style={{ marginBottom: 4 }}><Text style={{ fontSize: 12 }}>{item.name}</Text><Text strong style={{ fontSize: 12 }}>{item.value.toLocaleString()}</Text></Flex><div style={{ height: 9, overflow: 'hidden', borderRadius: 6, background: '#edf2f8' }}><div style={{ width: `${Math.max(8, item.value / max * 100)}%`, height: '100%', borderRadius: 6, background: `linear-gradient(90deg,${color},${color}aa)` }} /></div></div>)}</Space>;
+}
 
-// ====================== 主组件 ======================
-
-const Dashboard = () => {
+function ResourceTopology({ isAdmin }: { isAdmin: boolean }) {
   const navigate = useNavigate();
+  const shown = isAdmin ? resources : resources.map((r) => [r[0], r[1], Math.max(2, Math.round(r[2] * .22)), r[3]] as const);
+  return <div style={{ minHeight: isAdmin ? 970 : 570, position: 'relative', padding: '26px 10px', borderRadius: 12, overflow: 'hidden', background: 'radial-gradient(circle at 50% 49%,#dceeff 0,#f7fbff 35%,#fff 68%)' }}>
+    <div style={{ position: 'absolute', left: '50%', top: '49%', transform: 'translate(-50%,-50%)', textAlign: 'center', width: 168, padding: '25px 8px', color: '#fff', borderRadius: 18, background: 'linear-gradient(135deg,#1677ff,#13c2c2)', boxShadow: '0 10px 28px #1677ff55' }}><CloudServerOutlined style={{ fontSize: 30 }} /><div style={{ fontWeight: 700, marginTop: 6 }}>{isAdmin ? '全院智能体中心' : '影像科智能体中心'}</div><small>{isAdmin ? '128 个智能体' : '18 个智能体'}</small></div>
+    {shown.map(([code, name, count, online], i) => { const angle = (Math.PI * 2 * i / shown.length) - Math.PI / 2; const x = 50 + Math.cos(angle) * 38; const y = 49 + Math.sin(angle) * 39; return <Tooltip key={code} title={`${name} · ${count} 个智能体 · ${online ? '连接正常' : '连接异常'}`}><button onClick={() => navigate(`/app/resource-center/resources?keyword=${code}`)} style={{ position: 'absolute', left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)', width: 120, padding: '10px 5px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${online ? '#91caff' : '#ffbb96'}`, color: '#1f2d3d', background: '#fff', boxShadow: '0 4px 12px #94a9c733' }}><ApiOutlined style={{ color: online ? '#1677ff' : '#fa541c' }} /> <b>{code}</b><div style={{ fontSize: 10, color: '#8c8c8c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{count} 个智能体 · {online ? '正常' : '异常'}</div></button></Tooltip>; })}
+  </div>;
+}
 
-  const [timeRange, setTimeRange] = useState('today');
-  const [customRange, setCustomRange] = useState<[Dayjs, Dayjs] | null>(null);
-  const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
-  const [autoRefresh, setAutoRefresh] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [carouselIndex, setCarouselIndex] = useState(0);
+export default function Dashboard() {
+  const { demoRole } = useDemoSettings();
+  const isAdmin = demoRole === '信息科管理员';
+  const metrics = isAdmin ? adminMetrics : deptMetrics;
+  const [range, setRange] = useState('30d');
+  const [sortAsc, setSortAsc] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const navigate = useNavigate();
+  const sortedDepartments = useMemo(() => [...departments].sort((a, b) => sortAsc ? a.value - b.value : b.value - a.value), [sortAsc]);
+  const pieBase = { angleField: 'value', colorField: 'name', innerRadius: .58, height: 190, legend: { position: 'bottom' }, label: { text: 'value', position: 'outside' } } as any;
+  return <div style={{ padding: 16, minHeight: 'calc(100vh - 64px)', background: '#f2f7fd', ...(fullscreen ? { position: 'fixed', inset: 0, zIndex: 1200, overflow: 'auto' } : {}) }}>
+    <Card style={{ ...panelStyle, marginBottom: 12, background: 'linear-gradient(110deg,#edf6ff,#fff 55%,#eafafa)' }} styles={{ body: { padding: '16px 20px' } }}><Flex justify="space-between" align="center" wrap gap={12}><Space size={13}><Flex align="center" justify="center" style={{ width: 46, height: 46, borderRadius: 13, color: '#fff', fontSize: 23, background: 'linear-gradient(135deg,#1677ff,#13c2c2)' }}><RobotOutlined /></Flex><div><Title level={3} style={{ margin: 0 }}>{isAdmin ? '全院智能体运行态势大屏' : '影像科智能体运行态势大屏'}</Title><Text type="secondary">{isAdmin ? '全院纳管智能体运行、资源连接与告警态势总览' : '本科室智能体运行、资源连接与待处理告警总览'}</Text></div></Space><Space wrap><Select value={range} onChange={setRange} style={{ width: 110 }} options={[{ value: 'today', label: '今日' }, { value: '7d', label: '近7天' }, { value: '30d', label: '近30天' }]} /><Tag color={isAdmin ? 'blue' : 'cyan'} style={{ padding: '5px 10px' }}>{isAdmin ? '信息科管理员 · 全院口径' : '科室管理员 · 本科室口径'}</Tag><Button icon={<ReloadOutlined />} onClick={() => message.success('大屏数据已刷新')}>刷新</Button><Button icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />} onClick={() => setFullscreen(!fullscreen)}>{fullscreen ? '退出全屏' : '全屏投屏'}</Button></Space></Flex></Card>
 
-  // ESC 退出全屏
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullscreen) {
-        setIsFullscreen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreen]);
+    <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>{metrics.map((m) => <Col key={m[0]} xs={24} sm={12} lg={isAdmin ? 8 : undefined} xl={isAdmin ? 4 : undefined} flex={isAdmin ? undefined : '1 1 200px'}><KpiCard metric={m} /></Col>)}</Row>
 
-  // 自动刷新 5 分钟（需求 2-2：Toggle 开启后每 5 分钟自动刷新；全屏强制开启）
-  useEffect(() => {
-    if (autoRefresh) {
-      const interval = setInterval(() => message.info('数据已自动刷新'), 5 * 60 * 1000);
-      return () => clearInterval(interval);
-    }
-  }, [autoRefresh]);
-
-  // 进入全屏：强制开启自动刷新 + 隐藏侧边/顶部 + body 不可滚动
-  useEffect(() => {
-    if (isFullscreen) {
-      setAutoRefresh(true);
-      setCarouselIndex(0);
-      document.body.style.overflow = 'hidden';
-      document.body.setAttribute('data-dashboard-fullscreen', 'true');
-    } else {
-      document.body.style.overflow = '';
-      document.body.removeAttribute('data-dashboard-fullscreen');
-    }
-    return () => {
-      document.body.style.overflow = '';
-      document.body.removeAttribute('data-dashboard-fullscreen');
-    };
-  }, [isFullscreen]);
-
-  // 全屏 10 秒自动轮播（需求 2-2）
-  useEffect(() => {
-    if (isFullscreen) {
-      const t = setInterval(() => setCarouselIndex((p) => (p + 1) % 3), 10 * 1000);
-      return () => clearInterval(t);
-    }
-  }, [isFullscreen]);
-
-  // 统计
-  const stats = useMemo(() => {
-    const total = mockAgents.length;
-    const online = mockAgents.filter((a) => a.runStatus === '在线').length;
-    const abnormal = mockAgents.filter((a) => a.runStatus === '异常').length;
-    const offline = Math.max(total - online - abnormal, 0);
-    return {
-      total,
-      online,
-      offline,
-      abnormal,
-      pendingAlerts: 3,
-      todayCalls: 12856,
-      todayCallsTrend: 12.5,
-      newThisMonth: 4,
-      passRate: 94.2,
-      passRateTrend: 2.5,
-      monthCost: 89500,
-      monthCostTrend: -5.3,
-    };
-  }, []);
-
-  // ====================== 图表配置 ======================
-
-  const callVolumeConfig: Config = {
-    data: mockCallVolumeData,
-    xField: 'date',
-    yField: 'value',
-    smooth: true,
-    color: '#1677FF',
-    point: { size: 4, shape: 'circle' },
-    area: { style: { fill: 'l(270) 0:#1677FF00 1:#1677FF33' } },
-    yAxis: { label: { formatter: (v: number) => `${(v / 1000).toFixed(0)}k` } },
-    height: 300,
-  };
-
-  const evalTrendConfig: Config = {
-    data: mockEvalTrendData,
-    xField: 'date',
-    yField: 'passRate',
-    smooth: true,
-    color: '#722ED1',
-    point: { size: 3 },
-    yAxis: { min: 80, max: 100, label: { formatter: (v: number) => `${v}%` } },
-    height: 300,
-  };
-
-  // 科室 Top10 横向柱状图：Y 轴科室；右侧显示 `12,856 (18.5%)`；按调用量降序；渐变色
-  const deptBarConfig: Config = {
-    data: mockDeptRankingData,
-    xField: 'calls',
-    yField: 'dept',
-    colorField: 'dept',
-    color: ({ calls }: { calls: number }) => {
-      const max = Math.max(...mockDeptRankingData.map((d) => d.calls));
-      const ratio = calls / max;
-      const r = Math.round(22 + (145 - 22) * (1 - ratio));
-      const g = Math.round(119 + (213 - 119) * (1 - ratio));
-      const b = 255;
-      return `rgb(${r}, ${g}, ${b})`;
-    },
-    label: {
-      position: 'right',
-      formatter: (datum: { calls: number }) => {
-        const total = mockDeptRankingData.reduce((s, d) => s + d.calls, 0);
-        const pct = ((datum.calls / total) * 100).toFixed(1);
-        return `${datum.calls.toLocaleString()} (${pct}%)`;
-      },
-      style: { fontSize: 12, fill: 'rgba(0,0,0,0.65)' },
-    },
-    xAxis: false,
-    legend: false,
-    height: 360,
-    barWidthRatio: 0.7,
-  };
-
-  // 饼图：外侧标签 + 引导线
-  const typePieConfig: Config = {
-    data: mockAgentTypeData,
-    angleField: 'value',
-    colorField: 'type',
-    radius: 0.9,
-    label: {
-      type: 'spider',
-      style: { fontSize: 12 },
-      formatter: (datum: { type: string; value: number }) => {
-        const total = mockAgentTypeData.reduce((s, d) => s + d.value, 0);
-        const pct = ((datum.value / total) * 100).toFixed(0);
-        return `${datum.type} ${datum.value} 个 (${pct}%)`;
-      },
-    },
-    legend: { position: 'right' as const },
-    color: ['#1677FF', '#52C41A', '#FA8C16', '#722ED1', '#13C2C2', '#A0D911'],
-    height: 300,
-  };
-
-  const radarConfig: Config = {
-    data: mockRiskRadarData,
-    xField: 'dimension',
-    yField: 'value',
-    color: '#1677FF',
-    area: { style: { fill: '#1677FF33' } },
-    yAxis: { min: 0, max: 100 },
-    height: 300,
-  };
-
-  const responseTimeConfig: Config = {
-    data: mockResponseTimeData,
-    xField: 'range',
-    yField: 'count',
-    color: '#1677FF',
-    label: { position: 'top' as const, style: { fontSize: 12 } },
-    columnWidthRatio: 0.5,
-    height: 300,
-  };
-
-  // ====================== 6 卡 1 行 6 列（响应式 3+3 / 2） ======================
-  // 需求 2-2：6 卡片 1 行 6 列（>=1280 span=4）；视口 <1280 → 1 行 3 列 ×2；<768 → 1 行 2 列
-  const statCardColProps = { xs: 12, sm: 12, md: 8, lg: 8, xl: 4, xxl: 4 };
-
-  const renderStatCards = () => (
-    <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-      <Col {...statCardColProps}>
-        <StatCard
-          title="待处理告警"
-          value={stats.pendingAlerts}
-          suffix="条"
-          icon={<AlertOutlined />}
-          color="#FF4D4F"
-          subText="需立即处理"
-          onClick={() => navigate('/app/monitoring')}
-        />
+    <Row gutter={[12, 12]} align="stretch">
+      <Col xs={24} xl={6}>
+        {isAdmin ? <>
+          <ChartCard title="智能体科室分布" extra={<Button type="link" size="small" onClick={() => setSortAsc(!sortAsc)}>{sortAsc ? '从少到多' : '从多到少'}</Button>}><SimpleBars data={sortedDepartments} onClick={(name) => navigate(`/app/ledger/list?department=${name}`)} /></ChartCard>
+          <ChartCard title="高频调用智能体 TOP5"><SimpleBars data={topAgents} color="#13c2c2" /></ChartCard>
+          <ChartCard title="智能体诊疗环节分布"><Pie {...pieBase} data={stages} onReady={(p: any) => p.on('element:click', (e: any) => navigate(`/app/ledger/list?stage=${e.data.data.name}`))} /></ChartCard>
+          <ChartCard title="智能体风险分级"><Pie {...pieBase} data={risks} color={['#ff4d4f', '#faad14', '#52c41a']} onReady={(p: any) => p.on('element:click', (e: any) => navigate(`/app/ledger/list?risk=${e.data.data.name}`))} /></ChartCard>
+        </> : <>
+          <ChartCard title="智能体实时状态"><Row gutter={[10, 10]}>{[["实时在线", 16, '#52c41a', <CheckCircleFilled />], ["实时离线", 2, '#ff4d4f', <ExclamationCircleFilled />], ["平均异常持续时长", '18m', '#fa8c16', <ClockCircleOutlined />], ["累计禁用", 3, '#8c8c8c', <SafetyCertificateOutlined />]].map(([label, value, color, icon]) => <Col span={12} key={String(label)}><Card hoverable onClick={() => navigate('/app/ledger/list')} styles={{ body: { padding: 14 } }}><Text type="secondary" style={{ fontSize: 12 }}>{label}</Text><div style={{ color: String(color), fontSize: 25, fontWeight: 700 }}>{icon} {value}</div><Text type="secondary" style={{ fontSize: 10 }}>{label === '累计禁用' ? '较昨日 +1 · 月趋势平稳' : '点击查看明细'}</Text></Card></Col>)}</Row></ChartCard>
+          <ChartCard title="禁用智能体月趋势"><Line data={spark([1, 1, 2, 2, 2, 3])} xField="label" yField="value" height={200} smooth color="#8c8c8c" point={{ size: 4 }} /></ChartCard>
+        </>}
       </Col>
-      <Col {...statCardColProps}>
-        <StatCard
-          title="在线 / 离线 / 异常"
-          value={`${stats.online} / ${stats.offline} / ${stats.abnormal}`}
-          icon={<RobotOutlined />}
-          color="#1677FF"
-          subText="运行状态分布"
-          onClick={() => navigate('/app/monitoring')}
-          innerChart={
-            <StatusDonut
-              online={stats.online}
-              offline={stats.offline}
-              abnormal={stats.abnormal}
-            />
-          }
-        />
-      </Col>
-      <Col {...statCardColProps}>
-        <StatCard
-          title="今日调用量"
-          value={stats.todayCalls.toLocaleString()}
-          suffix="次"
-          icon={<LineChartOutlined />}
-          color="#52C41A"
-          trend={stats.todayCallsTrend}
-          subText="较昨日"
-          onClick={() => navigate('/app/monitoring')}
-        />
-      </Col>
-      <Col {...statCardColProps}>
-        <StatCard
-          title="智能体总数"
-          value={stats.total}
-          suffix="个"
-          icon={<RobotOutlined />}
-          color="#1677FF"
-          subText={`本月新增 ${stats.newThisMonth} 个`}
-          onClick={() => navigate('/app/ledger')}
-        />
-      </Col>
-      <Col {...statCardColProps}>
-        <StatCard
-          title="评测通过率（近 30 天）"
-          value={stats.passRate}
-          suffix="%"
-          icon={<ExperimentOutlined />}
-          color="#722ED1"
-          trend={stats.passRateTrend}
-          subText="较上月"
-          onClick={() => navigate('/app/evaluation')}
-        />
-      </Col>
-      <Col {...statCardColProps}>
-        <StatCard
-          title="本月成本"
-          value={(stats.monthCost / 10000).toFixed(2)}
-          suffix="万元"
-          icon={<DollarOutlined />}
-          color="#FA8C16"
-          trend={stats.monthCostTrend}
-          subText="较上月"
-          onClick={() => navigate('/app/monitoring')}
-        />
+      <Col xs={24} xl={12}><ChartCard title="已关联资源情况" extra={<Text type="secondary"><ApartmentOutlined /> 点击资源查看详情</Text>}><ResourceTopology isAdmin={isAdmin} /></ChartCard><Card style={{ ...panelStyle, background: '#f8fbff' }}><Flex justify="space-around" wrap>{[['资源连接数', isAdmin ? 142 : 28], ['连接正常率', '98.6%'], ['今日调用链路', isAdmin ? '286.4万' : '32.6万']].map(([k, v]) => <div key={String(k)} style={{ textAlign: 'center', padding: 5 }}><Text type="secondary">{k}</Text><div style={{ color: '#1677ff', fontSize: 22, fontWeight: 700 }}>{v}</div></div>)}</Flex></Card></Col>
+      <Col xs={24} xl={6}>
+        <ChartCard title={isAdmin ? '实时告警情况' : '待处理告警'} extra={<Button type="link" size="small" onClick={() => navigate('/app/monitoring/alert-events')}>全部告警</Button>}><div style={{ maxHeight: 225, overflowY: 'auto' }}>{alerts.map(([name, threshold, level], i) => <div key={name} onClick={() => navigate('/app/monitoring/alert-events')} style={{ padding: '9px 3px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }}><Flex justify="space-between"><Text ellipsis style={{ maxWidth: '72%' }}><ThunderboltOutlined style={{ color: i < 3 ? '#fa541c' : '#faad14' }} /> {name}</Text><Tag color={level === '高级' ? 'red' : level === '中级' ? 'orange' : 'blue'}>{level}</Tag></Flex><Text type="secondary" style={{ fontSize: 11 }}>触发阈值：{threshold}</Text></div>)}</div></ChartCard>
+        <ChartCard title="告警类型分布"><Pie {...pieBase} data={alertTypes} /></ChartCard>
+        <ChartCard title="告警级别分布"><Pie {...pieBase} data={alertLevels} color={['#ff4d4f', '#faad14', '#69b1ff']} /></ChartCard>
+        <ChartCard title="智能体告警次数排行"><SimpleBars data={alertRank} color="#722ed1" /></ChartCard>
       </Col>
     </Row>
-  );
-
-  // ====================== 图表区 ======================
-  const renderChartRow1 = () => (
-    <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-      <Col xs={24} lg={12}>
-        <ChartCard title="调用量趋势">
-          <Line {...callVolumeConfig} />
-        </ChartCard>
-      </Col>
-      <Col xs={24} lg={12}>
-        <ChartCard
-          title="科室使用排行 Top 10"
-          extra={
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              <ClockCircleOutlined /> {dayjs().format('MM-DD HH:mm')}
-            </Text>
-          }
-        >
-          <Bar {...deptBarConfig} />
-        </ChartCard>
-      </Col>
-    </Row>
-  );
-
-  const renderChartRow2 = () => (
-    <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-      <Col xs={24} lg={8}>
-        <ChartCard title="智能体类型分布">
-          <Pie {...typePieConfig} />
-        </ChartCard>
-      </Col>
-      <Col xs={24} lg={8}>
-        <ChartCard
-          title="安全风险概览"
-          extra={<Text type="secondary" style={{ fontSize: 12 }}>六维指数</Text>}
-        >
-          <Radar {...radarConfig} />
-        </ChartCard>
-      </Col>
-      <Col xs={24} lg={8}>
-        <ChartCard
-          title="响应时长分布"
-          extra={<Text type="secondary" style={{ fontSize: 12 }}>今日</Text>}
-        >
-          <Column {...responseTimeConfig} />
-        </ChartCard>
-      </Col>
-    </Row>
-  );
-
-  const renderChartRow3 = () => (
-    <Row gutter={[12, 12]}>
-      <Col span={24}>
-        <ChartCard
-          title="评测趋势（近 30 天）"
-          extra={<Text type="secondary" style={{ fontSize: 12 }}>通过率</Text>}
-        >
-          <Line {...evalTrendConfig} />
-        </ChartCard>
-      </Col>
-    </Row>
-  );
-
-  // ====================== 全屏 3 页轮播（每 10 秒切换） ======================
-  const fullscreenPages: { key: string; title: string; render: () => React.ReactNode }[] = [
-    {
-      key: 'overview',
-      title: '态势总览',
-      render: () => (
-        <>
-          {renderStatCards()}
-          {renderChartRow1()}
-        </>
-      ),
-    },
-    {
-      key: 'analysis',
-      title: '运营分析',
-      render: () => (
-        <>
-          {renderStatCards()}
-          {renderChartRow2()}
-        </>
-      ),
-    },
-    {
-      key: 'eval',
-      title: '安全与评测',
-      render: () => (
-        <>
-          {renderStatCards()}
-          {renderChartRow3()}
-        </>
-      ),
-    },
-  ];
-
-  const renderCurrentPage = () => {
-    if (!isFullscreen) {
-      return (
-        <>
-          {renderStatCards()}
-          {renderChartRow1()}
-          {renderChartRow2()}
-          {renderChartRow3()}
-        </>
-      );
-    }
-    return fullscreenPages[carouselIndex].render();
-  };
-
-  const bgColor = isFullscreen ? '#0a1628' : '#F5F5F5';
-
-  return (
-    <div
-      style={{
-        background: bgColor,
-        padding: isFullscreen ? '16px 24px' : 16,
-        transition: 'background 0.3s',
-        // 全屏模式：用 fixed 覆盖整个视口，不隐藏 ProLayout 内部节点（避免 HMR / 嵌入资源跨域重连错误）
-        ...(isFullscreen
-          ? {
-              position: 'fixed' as const,
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 9999,
-              overflow: 'auto',
-            }
-          : { minHeight: 'auto' }),
-      }}
-    >
-      {!isFullscreen && (
-        <PageHeader title="数据大屏" subTitle="智能体运营数据可视化" />
-      )}
-
-      {/* ====================== 筛选栏（含唯一全屏按钮） ====================== */}
-      <Card
-        bordered={false}
-        style={{
-          marginBottom: 12,
-          background: isFullscreen ? '#0f2245' : '#fff',
-        }}
-        styles={{ body: { padding: isFullscreen ? '10px 16px' : '12px 16px' } }}
-      >
-        <Space
-          wrap
-          size={[12, 8]}
-          style={{ width: '100%', justifyContent: 'space-between' }}
-        >
-          <Space wrap size={[12, 8]}>
-            <Text strong style={{ color: isFullscreen ? '#fff' : undefined }}>
-              筛选条件
-            </Text>
-            <Space size={4}>
-              <Text
-                type="secondary"
-                style={{ color: isFullscreen ? 'rgba(255,255,255,0.65)' : undefined }}
-              >
-                时间范围：
-              </Text>
-              <Select
-                value={timeRange}
-                onChange={setTimeRange}
-                options={timeRangeOptions}
-                style={{ width: 110 }}
-              />
-            </Space>
-            {timeRange === 'custom' && (
-              <RangePicker
-                value={customRange as any}
-                onChange={(v) => setCustomRange(v as [Dayjs, Dayjs] | null)}
-                style={{ width: 240 }}
-              />
-            )}
-            <Space size={4}>
-              <Text
-                type="secondary"
-                style={{ color: isFullscreen ? 'rgba(255,255,255,0.65)' : undefined }}
-              >
-                科室：
-              </Text>
-              <Select
-                mode="multiple"
-                placeholder="选择科室"
-                value={selectedDepts}
-                onChange={setSelectedDepts}
-                options={departmentOptions}
-                style={{ minWidth: 200 }}
-                maxTagCount="responsive"
-                allowClear
-                showSearch
-              />
-            </Space>
-            <Button
-              icon={<ReloadOutlined />}
-              size="small"
-              onClick={() => message.info('数据已刷新')}
-            >
-              刷新
-            </Button>
-            <Space size={4}>
-              <Text
-                style={{ fontSize: 12, color: isFullscreen ? 'rgba(255,255,255,0.85)' : undefined }}
-              >
-                自动刷新（5 分钟）
-              </Text>
-              <Switch
-                checked={autoRefresh}
-                onChange={setAutoRefresh}
-                size="small"
-                disabled={isFullscreen}
-              />
-            </Space>
-          </Space>
-
-          {/* ★ 全屏按钮（页面内唯一） */}
-          <Button
-            type="primary"
-            ghost={!isFullscreen}
-            icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
-            onClick={() => setIsFullscreen(!isFullscreen)}
-          >
-            {isFullscreen ? '退出全屏' : '全屏投屏'}
-          </Button>
-        </Space>
-      </Card>
-
-      {/* ====================== 全屏顶部信息条 ====================== */}
-      {isFullscreen && (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 12,
-            padding: '8px 16px',
-            background: '#0f2245',
-            borderRadius: 6,
-          }}
-        >
-          <Title level={4} style={{ color: '#fff', margin: 0 }}>
-            <FundOutlined style={{ marginRight: 8 }} />
-            医疗智能体管理平台 · {fullscreenPages[carouselIndex].title}
-          </Title>
-          <Space>
-            <Text style={{ color: '#fff' }}>{dayjs().format('YYYY-MM-DD HH:mm:ss')}</Text>
-            <Badge status="processing" text={<Text style={{ color: '#52C41A' }}>实时</Text>} />
-            <Text style={{ color: 'rgba(255,255,255,0.65)' }}>10 秒后自动切换</Text>
-          </Space>
-        </div>
-      )}
-
-      {/* ====================== 主内容 ====================== */}
-      {renderCurrentPage()}
-
-      {/* ====================== 全屏分页指示器 ====================== */}
-      {isFullscreen && (
-        <div style={{ textAlign: 'center', marginTop: 12 }}>
-          <Space>
-            {fullscreenPages.map((p, idx) => (
-              <div
-                key={p.key}
-                onClick={() => setCarouselIndex(idx)}
-                style={{
-                  padding: '4px 16px',
-                  borderRadius: 4,
-                  background: carouselIndex === idx ? '#1677FF' : 'rgba(255,255,255,0.15)',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  userSelect: 'none',
-                }}
-              >
-                {p.title}
-              </div>
-            ))}
-          </Space>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default Dashboard;
+  </div>;
+}

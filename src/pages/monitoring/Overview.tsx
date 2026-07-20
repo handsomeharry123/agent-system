@@ -13,7 +13,7 @@
  * - 新增 智能体告警次数排行 TOP5 条形图 — 下方明细列表可点击进入按关联智能体筛选的事件管理页
  * - 科室管理员 / IT 管理员均可访问；不再使用 PermissionDenied 拦截
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Card, Row, Col, Typography, Space, Button, Spin, Divider,
@@ -32,7 +32,10 @@ import {
   alertTrendMonthlyV18,
   alertTypeDistributionV18,
   alertAgentRankingV18,
+  mockAlertEventsV18,
 } from '../../mock/monitoringV18';
+import { useAuth } from '../../hooks/useAuth';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 
@@ -54,9 +57,45 @@ const typeColorMap: Record<string, string> = {
 };
 
 const Overview = () => {
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+
+  const welcomeMetrics = useMemo(() => {
+    if (isAdmin) {
+      return {
+        total: alertOverviewKpiV18.totalAll,
+        today: alertOverviewKpiV18.totalToday,
+        pending: alertOverviewKpiV18.unhandled,
+      };
+    }
+    const scoped = mockAlertEventsV18.filter((event) => event.department === currentUser?.department);
+    // 演示数据使用固定业务日期；取数据集中最新日期作为“今日”口径。
+    const latestDate = scoped.reduce((latest, event) => {
+      const date = event.triggerTime.slice(0, 10);
+      return date > latest ? date : latest;
+    }, '');
+    return {
+      total: scoped.length,
+      today: scoped.filter((event) => event.triggerTime.startsWith(latestDate)).length,
+      pending: scoped.filter((event) => event.status === 'pending_handle').length,
+    };
+  }, [currentUser?.department, isAdmin]);
+
+  useEffect(() => {
+    pushWelcomeGreeting('monitoring-overview', isAdmin ? 'admin' : 'dept', undefined, {
+      windowReplacements: [welcomeMetrics.total, welcomeMetrics.today, welcomeMetrics.pending],
+      actions: [
+        { key: 'generate-monitoring-report', label: '生成报告', path: '/app/monitoring/report', enabled: true },
+        { key: 'view-pending-alerts', label: '查看待处理告警情况', path: '/app/monitoring/alert-events?tab=pending_handle', enabled: true },
+        { key: 'view-pending-reviews', label: '查看待审核告警事件处置情况', path: '/app/monitoring/alert-events?tab=pending_review', enabled: true },
+      ],
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, welcomeMetrics]);
 
   // 自动刷新 60s
   useEffect(() => {

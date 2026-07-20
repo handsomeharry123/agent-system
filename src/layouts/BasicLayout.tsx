@@ -68,6 +68,26 @@ const BasicLayout = () => {
     [visibleModules, visibleSubPages, demoRole],
   );
 
+  // ProLayout 默认使用前缀匹配菜单路径。模块首页与「监控告警总览」共用
+  // /app/monitoring 时，访问任意更深的监控页面也会误选中总览。
+  // 显式选择当前路径下最长（最具体）的菜单路径，模块首页只在精确命中时选中。
+  const selectedMenuPath = useMemo(() => {
+    const pathname = location.pathname;
+    const candidates = filteredMenuItems.flatMap((module) => [
+      ...(module.path ? [module.path] : []),
+      ...(module.children?.flatMap((child) => (child.path ? [child.path] : [])) ?? []),
+    ]);
+
+    return candidates
+      .filter((path) => pathname === path || pathname.startsWith(`${path}/`))
+      .sort((a, b) => b.length - a.length)[0];
+  }, [filteredMenuItems, location.pathname]);
+
+  // 全局只挂载一个悬浮助手：台账路由使用台账专属助手，其余页面（含事件审核页）
+  // 使用原有医小管。避免两个宿主同时存在时出现重复机器人，同时保留原助手的欢迎提示。
+  const isLedgerRoute =
+    location.pathname === '/app/ledger' || location.pathname.startsWith('/app/ledger/');
+
   // 当前所在模块若被关闭 / 角色无权，自动跳转到一个安全的落地页
   // 安全的落地页 = 当前角色基线可见的页面：信息科管理员 → 首页；科室管理员 → 工作台
   // V2.0：用 ref 记录"已提示过的拦截目标"，避免 React 18 StrictMode 下 effect 双跑 / 同一次访问重弹 message
@@ -292,6 +312,7 @@ const BasicLayout = () => {
           : undefined
       }
       menuDataRender={() => filteredMenuItems as any}
+      menuProps={selectedMenuPath ? { selectedKeys: [selectedMenuPath] } : undefined}
       collapsed={collapsed}
       onCollapse={(next) => {
         setCollapsedState(next);
@@ -322,12 +343,12 @@ const BasicLayout = () => {
               也能 useSmartDraft() 拿到 store */}
         <SmartDraftProvider>
           <Outlet />
-          <AgentAssistant />
+          {!isLedgerRoute && <AgentAssistant />}
           {/* 台账中心智能化升级(PRD §3.1.1 + §3.1.2):
               进入台账总览 / 台账列表页时,自动弹出非打断态势汇报气泡欢迎语;
               点击机器人可唤起 Agent 对话窗口(自然语言问答 + 推荐问句)。
               AgentFloatHost 内部根据 pathname 判断是否渲染与弹气泡。 */}
-          <AgentFloatHost />
+          {isLedgerRoute && <AgentFloatHost />}
           {/* 演示设置抽屉: 由右上角头像下拉菜单的「演示功能」项触发,
               仅在 VITE_DEMO_MODE 开启时挂载, 生产环境不渲染 */}
           {demoMode && (

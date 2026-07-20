@@ -51,6 +51,7 @@ import {
   type ResourceItem,
   type ProtocolType,
 } from '../../mock/resource-center';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 
@@ -103,6 +104,66 @@ const ResourceList = () => {
   const [protocol, setProtocol] = useState<ProtocolType | 'all'>(() => loadFilters().protocol);
   const [tab, setTab] = useState<ResourceTabKey>(() => searchParams.get('tab') as ResourceTabKey || loadTab());
   const [detail, setDetail] = useState<ResourceItem | null>(null);
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
+
+  const visibleResources = useMemo(() => data, [data]);
+  const visibleDrafts = useMemo(() => {
+    if (!isAdmin) return [];
+    return draftData.filter((draft) => draft.creator === current.account);
+  }, [draftData, isAdmin, current.account]);
+
+  useEffect(() => {
+    if (tab === 'all') {
+      pushWelcomeGreeting(
+        'resource-center-all',
+        isAdmin ? 'admin' : 'dept',
+        (_pageKey, _role, target) => target === 'bubble' ? [data.length] : [],
+        {
+          actions: [{
+            key: 'register-resource',
+            label: '注册资源',
+            path: '/app/resource-center/resources/new',
+            enabled: true,
+          }],
+        },
+      );
+    } else {
+      const rows = visibleDrafts.map((draft) => ({
+        recordId: draft.id,
+        title: draft.resources.map(resourceName).join('、') || '未命名资源',
+        subTitle: PROTOCOL_LABEL[draft.protocol],
+        actions: [{
+          key: `edit-${draft.id}`,
+          label: '编辑',
+          kind: 'navigate-edit' as const,
+          path: `/app/resource-center/resources/edit/${draft.id}`,
+        }],
+      }));
+      pushWelcomeGreeting(
+        'resource-center-draft',
+        isAdmin ? 'admin' : 'dept',
+        () => [visibleDrafts.length],
+        {
+          miniList: {
+            toggleLabel: '查看未完成的注册资源操作',
+            targetTab: 'draft',
+            rows,
+            totalCount: visibleDrafts.length,
+          },
+        },
+      );
+    }
+    return () => consumeWelcome();
+  }, [consumeWelcome, data.length, isAdmin, pushWelcomeGreeting, tab, visibleDrafts]);
+
+  useEffect(() => {
+    const onBubbleRowAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind?: string; path?: string }>).detail;
+      if (detail?.kind === 'navigate-edit' && detail.path) navigate(detail.path);
+    };
+    window.addEventListener('agent-bubble-row-action', onBubbleRowAction);
+    return () => window.removeEventListener('agent-bubble-row-action', onBubbleRowAction);
+  }, [navigate]);
 
   // 持久化 tab / 筛选
   useEffect(() => {
@@ -114,23 +175,6 @@ const ResourceList = () => {
   useEffect(() => {
     sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify({ keyword, protocol }));
   }, [keyword, protocol]);
-
-  /**
-   * §2.1.1 全部资源:信息科所有管理员注册的资源(管理员之间数据不隔离)
-   *  科室管理员视角下数据范围保持可见,但操作按钮隐藏(申请权限页选择来源)
-   */
-  const visibleResources = useMemo(() => {
-    return isAdmin ? data : data;
-  }, [data, isAdmin]);
-
-  /**
-   * §2.1.2 草稿:展示当前信息科管理员注册的草稿(管理员之间隔离)
-   *  科室管理员视角下不展示任何草稿
-   */
-  const visibleDrafts = useMemo(() => {
-    if (!isAdmin) return [];
-    return draftData.filter((d) => d.creator === current.account);
-  }, [draftData, isAdmin, current.account]);
 
   // 按 Tab 取数 + 筛选
   const sourceData = tab === 'all' ? visibleResources : visibleDrafts;

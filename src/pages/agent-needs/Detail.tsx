@@ -6,7 +6,7 @@
  *   - 匹配结果内点击某智能体 → 跳该智能体 360 画像视图
  *     （复用台账列表 ?search=&openDetail=1，命中后自动打开详情）
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Card, Descriptions, Dropdown, Empty, Space, Table, Tag, Typography, message } from 'antd';
 import { DownloadOutlined, EditOutlined, FileTextOutlined, ThunderboltOutlined } from '@ant-design/icons';
@@ -14,6 +14,7 @@ import PageHeader from '../../components/PageHeader';
 import { urgencyColorMap, matchAgents, buildMatchResult, type MatchItem } from './types';
 import { useNeeds, patchNeed, nowStr } from './store';
 import { exportNeedPdf, exportNeedWord, buildNeedDocHtml } from './docExport';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text, Paragraph } = Typography;
 
@@ -22,6 +23,58 @@ const NeedDetail = () => {
   const { id } = useParams();
   const needs = useNeeds();
   const need = useMemo(() => needs.find((n) => n.id === id), [needs, id]);
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
+
+  useEffect(() => {
+    if (!need) return undefined;
+    const replacements = [
+      need.title || '未命名需求',
+      need.department || '--',
+      need.urgency || '--',
+      need.matchResult?.topScore ?? 0,
+    ];
+    pushWelcomeGreeting(
+      'agent-needs-detail',
+      'provider',
+      () => replacements,
+      {
+        windowReplacements: replacements,
+        actions: [
+          {
+            key: 'need-preview',
+            label: '需求文档预览',
+            path: `/app/agent-needs/doc/${need.id}`,
+            enabled: true,
+          },
+          {
+            key: 'need-download',
+            label: '需求文档下载',
+            event: 'agent-needs-download-pdf',
+            enabled: true,
+          },
+        ],
+      },
+    );
+    const onDownloadPdf = async () => {
+      const host = document.createElement('div');
+      host.style.cssText = 'position:fixed;left:-9999px;top:0;background:#fff;';
+      host.innerHTML = buildNeedDocHtml(need);
+      document.body.appendChild(host);
+      try {
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+        const target = host.querySelector<HTMLElement>('.need-doc') || host;
+        await exportNeedPdf(target, `需求文档-${need.title}`);
+        message.success('已导出 PDF 文档');
+      } finally {
+        document.body.removeChild(host);
+      }
+    };
+    window.addEventListener('agent-needs-download-pdf', onDownloadPdf);
+    return () => {
+      window.removeEventListener('agent-needs-download-pdf', onDownloadPdf);
+      consumeWelcome();
+    };
+  }, [consumeWelcome, need, pushWelcomeGreeting]);
 
   if (!need) {
     return (

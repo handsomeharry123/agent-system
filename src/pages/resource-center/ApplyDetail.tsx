@@ -7,6 +7,7 @@
  *   - 含审批轨迹时间轴 + 审核人 + 审核意见 + 生效资源权限明细(若审核通过)
  *   - V1.1 §3:所有角色可见;但数据范围按 §3.1 隔离(本页面打开的 ID 一定在当前演示账号可见范围内)
  */
+import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Card,
@@ -41,6 +42,7 @@ import {
   type ApplyItem,
   type ProtocolType,
 } from '../../mock/resource-center';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 
@@ -50,6 +52,37 @@ const ApplyDetail = () => {
   const applies = useApplies();
   const resources = useResources();
   const it: ApplyItem | undefined = applies.find((a) => a.id === id);
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
+  const resource = resources.find((r) => r.id === it?.resourceId);
+
+  useEffect(() => {
+    if (!it) return undefined;
+    const resourceDisplayName = it.resourceName || resource?.resources.join('/') || it.resourceId;
+    const replacements = [resourceDisplayName];
+    pushWelcomeGreeting('resource-apply-detail', 'provider', () => replacements, {
+      windowReplacements: replacements,
+    });
+    (window as any).__resourceApplyDetailContext = {
+      applicationId: it.id,
+      applicationStatus: APPLY_STATUS_LABEL[it.status],
+      resourceId: it.resourceId,
+      resourceName: resourceDisplayName,
+      owner: resource?.owner || '',
+      contact: resource?.contact || '',
+      protocol: resource ? PROTOCOL_LABEL[resource.protocol as ProtocolType] : '',
+      technicalFields: resource?.protocolConfig.fields.map((field) => `${field.label}：${field.value}`).join('；') || '',
+      agentId: it.agentId,
+      agentName: it.agentName,
+      department: it.department,
+      applicant: it.applicant,
+      reason: it.reason || '',
+      reviewComment: it.approveComment || it.rejectReason || '',
+    };
+    return () => {
+      delete (window as any).__resourceApplyDetailContext;
+      consumeWelcome();
+    };
+  }, [consumeWelcome, it, pushWelcomeGreeting, resource]);
 
   // 按当前申请状态返回对应 Tab（撤销 → 「撤销修改」/草稿 → 「草稿」/退回 → 「退回修改」等）
   const backToList = (item?: ApplyItem) => {
@@ -71,7 +104,6 @@ const ApplyDetail = () => {
     );
   }
 
-  const resource = resources.find((r) => r.id === it.resourceId);
   const isApproved = it.status === 'approved';
 
   // 审核人/时间(按目标状态精确匹配;archived 状态回退到 rejected)

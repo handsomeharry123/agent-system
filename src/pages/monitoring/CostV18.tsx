@@ -12,7 +12,7 @@
  *
  * 仅 IT 管理员可见；手动【刷新】；累计类按「自上线以来」累计，当日类按「当天 00:00 至当前」
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Card, Row, Col, Typography, Space, Button, Spin,
 } from 'antd';
@@ -21,6 +21,8 @@ import {
 } from '@ant-design/icons';
 import { Bar } from '@ant-design/charts';
 import PageHeader from '../../components/PageHeader';
+import { useAuth } from '../../hooks/useAuth';
+import { useSmartDraft } from '../agent-center/smart/store';
 import {
   costKpiV18, costTop5V18,
 } from '../../mock/monitoringV18';
@@ -142,6 +144,9 @@ const buildTop5BarConfig = (
 };
 
 const CostV18 = () => {
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -153,52 +158,69 @@ const CostV18 = () => {
   }, []);
 
   // 4 类资源 KPI 卡片配置（白底 + 左侧色条强调）
-  const resources = [
+  const resources = useMemo(() => [
     {
       key: 'cpu',
       title: 'CPU',
-      total: costKpiV18.cpu.total,
+      total: isAdmin ? costKpiV18.cpu.total : costTop5V18.cpu.filter((row) => row.department === currentUser?.department).reduce((sum, row) => sum + row.value, 0),
       totalUnit: costKpiV18.cpu.unit,
-      today: costKpiV18.cpu.today,
+      today: isAdmin ? costKpiV18.cpu.today : Math.round(costTop5V18.cpu.filter((row) => row.department === currentUser?.department).reduce((sum, row) => sum + row.value, 0) * 0.08),
       color: '#1677FF',
       icon: '⚙️',
-      top5: costTop5V18.cpu,
+      top5: isAdmin ? costTop5V18.cpu : costTop5V18.cpu.filter((row) => row.department === currentUser?.department),
       topUnit: '核·时',
     },
     {
       key: 'gpu',
       title: 'GPU',
-      total: costKpiV18.gpu.total,
+      total: isAdmin ? costKpiV18.gpu.total : costTop5V18.gpu.filter((row) => row.department === currentUser?.department).reduce((sum, row) => sum + row.value, 0),
       totalUnit: costKpiV18.gpu.unit,
-      today: costKpiV18.gpu.today,
+      today: isAdmin ? costKpiV18.gpu.today : Math.round(costTop5V18.gpu.filter((row) => row.department === currentUser?.department).reduce((sum, row) => sum + row.value, 0) * 0.08),
       color: '#722ED1',
       icon: '🎮',
-      top5: costTop5V18.gpu,
+      top5: isAdmin ? costTop5V18.gpu : costTop5V18.gpu.filter((row) => row.department === currentUser?.department),
       topUnit: '卡·时',
     },
     {
       key: 'memory',
       title: '内存',
-      total: costKpiV18.memory.total,
+      total: isAdmin ? costKpiV18.memory.total : costTop5V18.memory.filter((row) => row.department === currentUser?.department).reduce((sum, row) => sum + row.value, 0),
       totalUnit: costKpiV18.memory.unit,
-      today: costKpiV18.memory.today,
+      today: isAdmin ? costKpiV18.memory.today : Math.round(costTop5V18.memory.filter((row) => row.department === currentUser?.department).reduce((sum, row) => sum + row.value, 0) * 0.08),
       color: '#52C41A',
       icon: '🧠',
-      top5: costTop5V18.memory,
+      top5: isAdmin ? costTop5V18.memory : costTop5V18.memory.filter((row) => row.department === currentUser?.department),
       topUnit: 'GB·时',
     },
     {
       key: 'token',
       title: 'Token',
-      total: costKpiV18.token.total,
+      total: isAdmin ? costKpiV18.token.total : costTop5V18.token.filter((row) => row.department === currentUser?.department).reduce((sum, row) => sum + row.value, 0),
       totalUnit: costKpiV18.token.unit,
-      today: costKpiV18.token.today,
+      today: isAdmin ? costKpiV18.token.today : Math.round(costTop5V18.token.filter((row) => row.department === currentUser?.department).reduce((sum, row) => sum + row.value, 0) * 0.08),
       color: '#FA8C16',
       icon: '📝',
-      top5: costTop5V18.token,
+      top5: isAdmin ? costTop5V18.token : costTop5V18.token.filter((row) => row.department === currentUser?.department),
       topUnit: 'tokens',
     },
-  ];
+  ], [currentUser?.department, isAdmin]);
+
+  useEffect(() => {
+    pushWelcomeGreeting('monitoring-cost', isAdmin ? 'admin' : 'dept', undefined, {
+      windowReplacements: resources.map((item) => item.total),
+    });
+    (window as any).__costMonitoringContext = {
+      scope: isAdmin ? '全院' : '本科室',
+      resources: resources.map((item) => ({
+        key: item.key, title: item.title, total: item.total, today: item.today,
+        unit: item.totalUnit, top5: item.top5,
+      })),
+    };
+    return () => {
+      consumeWelcome();
+      delete (window as any).__costMonitoringContext;
+    };
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, resources]);
 
   return (
     <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100vh' }}>

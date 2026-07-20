@@ -22,6 +22,8 @@ import {
 } from '@ant-design/icons';
 import { Pie } from '@ant-design/charts';
 import PageHeader from '../../components/PageHeader';
+import { useAuth } from '../../hooks/useAuth';
+import { useSmartDraft } from '../agent-center/smart/store';
 import {
   statusKpiV18, deptDistributionV18, mockAgentsV18,
 } from '../../mock/monitoringV18';
@@ -84,6 +86,9 @@ const chartBase: any = {
 };
 
 const StatusV18 = () => {
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -95,6 +100,34 @@ const StatusV18 = () => {
   }, []);
 
   const kpi = statusKpiV18;
+  const scopedAgents = useMemo(
+    () => isAdmin ? mockAgentsV18 : mockAgentsV18.filter((agent) => agent.department === currentUser?.department),
+    [currentUser?.department, isAdmin],
+  );
+  const welcomeKpi = useMemo(() => ({
+    total: scopedAgents.length,
+    online: scopedAgents.filter((agent) => agent.status === '在线').length,
+    offline: scopedAgents.filter((agent) => agent.status === '离线').length,
+    disabled: scopedAgents.filter((agent) => agent.status === '禁用').length,
+    abnormal: scopedAgents.filter((agent) => agent.status === '异常').length,
+  }), [scopedAgents]);
+
+  useEffect(() => {
+    pushWelcomeGreeting('monitoring-status', isAdmin ? 'admin' : 'dept', undefined, {
+      windowReplacements: [welcomeKpi.online, welcomeKpi.offline, welcomeKpi.abnormal],
+    });
+    (window as any).__statusMonitoringContext = {
+      scope: isAdmin ? '全院' : '本科室',
+      ...welcomeKpi,
+      onlineRate: ((welcomeKpi.online / (welcomeKpi.total || 1)) * 100).toFixed(1),
+      offlineRate: ((welcomeKpi.offline / (welcomeKpi.total || 1)) * 100).toFixed(1),
+      agents: scopedAgents,
+    };
+    return () => {
+      consumeWelcome();
+      delete (window as any).__statusMonitoringContext;
+    };
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, scopedAgents, welcomeKpi]);
   const onlineRate = ((kpi.online / kpi.total) * 100).toFixed(1);
   const offlineRate = ((kpi.offline / kpi.total) * 100).toFixed(1);
 

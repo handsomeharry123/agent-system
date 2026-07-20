@@ -251,4 +251,4 @@ export const findCategoryByCode = (code: string): DictCategory | undefined =>
   mockDictCategories.find((c) => c.code === code);
 
 /** 仅在调试时使用：确认数据字典模块是否已被 masterMenu 识别（侧边栏会渲染） */
-export const dictModuleRegistered = masterMenu.some((m) => m.key === 'dict');
+export const dictModuleRegistered = masterMenu.some((m) => m.key === 'system-config');

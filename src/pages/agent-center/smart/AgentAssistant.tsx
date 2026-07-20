@@ -57,6 +57,172 @@ interface RecognizeResult {
   summary: string;
 }
 
+const recognizeResourceRegistration = (
+  input: string,
+  source: string,
+  fillDefaults: boolean,
+): RecognizeResult => {
+  const fields: RecognizeResult['fields'] = [];
+  const add = (fieldKey: string, value: string, confidence = 0.9) => {
+    fields.push({ fieldKey, value, confidence, source });
+  };
+  const resourceCodes = ['HIS', 'EMR', 'PACS', 'RIS', 'LIS', 'HISM', 'IDR', 'ODR', 'CDR', 'BI', 'PIVAS', 'PASS', 'PDS', 'ODS', 'ONW', 'OCS', 'IDS', 'INW', 'IHM', 'EMPI']
+    .filter((code) => new RegExp(`\\b${code}\\b`, 'i').test(input));
+  if (resourceCodes.length) add('resources', resourceCodes.join('；'), 0.96);
+  else if (fillDefaults) add('resources', 'HIS；EMR', 0.82);
+
+  const owner = input.match(/(?:资源)?负责人[：:\s]*([\u4e00-\u9fa5]{2,10})/i)?.[1];
+  if (owner) add('owner', owner, 0.94);
+  else if (fillDefaults) add('owner', '张志远', 0.84);
+  const contact = input.match(/(?:1\d{10}|0\d{2,3}-?\d{7,8})/)?.[0];
+  if (contact) add('contact', contact, 0.97);
+  else if (fillDefaults) add('contact', '13800001001', 0.84);
+
+  const protocol = /FHIR/i.test(input) ? 'FHIR'
+    : /DICOM/i.test(input) ? 'DICOM'
+      : /(?:数据库|MySQL|Oracle|PostgreSQL|\bDB\b)/i.test(input) ? 'DB'
+        : /(?:Kafka|RabbitMQ|消息队列|\bMQ\b)/i.test(input) ? 'MQ'
+          : /HL7|MLLP/i.test(input) || fillDefaults ? 'HL7' : '';
+  if (protocol) {
+    add('protocol', protocol, 0.95);
+    const defaults: Record<string, Record<string, string>> = {
+      HL7: { version: 'v2.x', transport: 'MLLP', ip: '10.20.30.41', port: '6661' },
+      FHIR: { transport: 'HTTPS', url: 'https://fhir.hospital.local/r4', key: 'fhir-demo-key' },
+      DICOM: { name: 'HOSPITAL_PACS', ip: '10.20.30.42', port: '11112' },
+      DB: { dbType: 'MySQL', ip: '10.20.30.43', port: '3306' },
+      MQ: { mqType: 'Kafka', broker: 'mq.hospital.local', port: '9092', auth: 'SASL' },
+    };
+    Object.entries(defaults[protocol]).forEach(([key, value]) => add(key, value, 0.8));
+  }
+  return {
+    fields,
+    summary: fields.length
+      ? `已识别 ${fields.length} 个资源注册字段并自动填充到表单，请核对后补充缺失信息。`
+      : '暂未识别到明确的资源注册字段，请补充资源名称、负责人、联系方式或对接方式。',
+  };
+};
+
+const recognizeResourcePermission = (input: string, fillDefaults = false): RecognizeResult => {
+  const agentMap: Array<[RegExp, string]> = [
+    [/XNK-0001|智能导诊/i, 'XNK-0001'], [/FNK-0001|肺结节/i, 'FNK-0001'],
+    [/PFK-0001|合理用药|审方/i, 'PFK-0001'], [/JZK-0001|急诊预检/i, 'JZK-0001'],
+    [/SJK-0001|麻醉/i, 'SJK-0001'], [/XNK-0002|随访/i, 'XNK-0002'],
+  ];
+  const agentId = agentMap.find(([pattern]) => pattern.test(input))?.[1] || (fillDefaults ? 'XNK-0001' : undefined);
+  const resourceIds = Array.from(input.matchAll(/R-\d{4}/gi)).map((match) => match[0].toUpperCase());
+  if (fillDefaults && resourceIds.length === 0) resourceIds.push('R-0001');
+  const fields: RecognizeResult['fields'] = [];
+  if (agentId) fields.push({ fieldKey: 'agentId', value: agentId, confidence: 0.95, source: '文字/语音描述' });
+  if (resourceIds.length) fields.push({ fieldKey: 'resourceIds', value: resourceIds.join('；'), confidence: 0.95, source: '文字/语音描述' });
+  if (input && !/^https?:\/\//i.test(input)) fields.push({ fieldKey: 'reason', value: input.slice(0, 200), confidence: 0.82, source: '文字/语音描述' });
+  return { fields, summary: fields.length ? `已识别 ${fields.length} 个权限申请字段并填充到表单。` : '请补充智能体名称或编号、资源编号和申请理由。' };
+};
+
+const answerResourceDetailQuestion = (question: string, context: any): string => {
+  const outOfScope = '超出当前资源信息范围，暂无法为您解答，我们将持续完善。';
+  if (!context) return outOfScope;
+  if (/负责人|联系人|联系方式|电话/.test(question)) {
+    return `当前资源负责人为${context.owner || '未登记'}，联系方式为${context.contact || '未登记'}。`;
+  }
+  if (/对接|协议|技术|接口|地址|端口|版本|鉴权|配置/.test(question)) {
+    return `当前资源采用${context.protocol || '未登记'}对接。${context.technicalFields ? `技术配置：${context.technicalFields}。` : '暂无更多技术配置信息。'}`;
+  }
+  if (/资源名称|什么资源|资源编号|资源ID|基本信息/.test(question)) {
+    return `当前资源为【${context.resourceName}】，资源 ID：${context.resourceId}，对接方式：${context.protocol || '未登记'}，负责人：${context.owner || '未登记'}。`;
+  }
+  if (/申请状态|审核|审批|申请信息|申请编号|申请人|申请理由/.test(question)) {
+    return `申请 ID：${context.applicationId}，当前状态：${context.applicationStatus}，申请人：${context.applicant || '未登记'}，申请理由：${context.reason || '未填写'}${context.reviewComment ? `，审核说明：${context.reviewComment}` : ''}。`;
+  }
+  if (/智能体|所属科室|诊疗环节/.test(question)) {
+    return `关联智能体为【${context.agentName}】（${context.agentId}），所属科室：${context.department || '未登记'}。`;
+  }
+  return outOfScope;
+};
+
+const answerEvaluationReportQuestion = (question: string, context: any): string => {
+  const outOfScope = '超出当前评测结果详情信息范围，暂无法为您解答，我们将持续完善。';
+  if (!context) return outOfScope;
+  if (/智能体|基本信息|编号|版本|科室|发起人/.test(question)) {
+    return `当前被评测智能体为【${context.agentName}】（${context.agentCode}），版本 ${context.version}，归属科室：${context.department}，发起人：${context.creator || '未展示'}。`;
+  }
+  if (/综合得分|总分|多少分|整体风险|风险等级|结论|红线|具体说明|为什么/.test(question)) {
+    return `本次评测综合得分为 ${context.totalScore ?? 0} 分，整体风险等级为${context.overallRisk || context.riskLevel}，核心结论为${context.conclusion || '暂无'}${context.redLineTriggered ? '，已触发评测红线' : '，未触发评测红线'}。具体说明：${context.detailDesc || '暂无'}。`;
+  }
+  if (/维度|指标|攻击成功率|生成合规率|拒绝率|隐私泄露率|原始值|最高|最低|得分/.test(question)) {
+    if (!context.dimensions?.length) return '当前评测结果详情页暂无维度得分数据。';
+    return `本次各维度评测结果：${context.dimensions.map((item: any) => `${item.dimension}（${item.indicatorName}，原始值 ${item.rawValue}%，得分 ${item.score}，风险${item.riskLevel}）`).join('；')}。`;
+  }
+  if (/历次|历史|趋势|以往|上次/.test(question)) {
+    if (!context.history?.length) return '该智能体当前没有历次评测记录。';
+    return `该智能体共有 ${context.history.length} 条历次评测记录：${context.history.map((item: any) => `${item.evalTime}，整体风险${item.overallRisk}，结论${item.conclusion}`).join('；')}。`;
+  }
+  if (/状态|时间|提交|完成|审核|退回原因|审核说明|任务编号/.test(question)) {
+    return `任务编号：${context.taskNo}，当前状态：${context.status}，提交评测时间：${context.submitTime || '未展示'}，评测完成时间：${context.evalCompleteTime || '未展示'}${context.reviewComment ? `，审核说明：${context.reviewComment}` : ''}。`;
+  }
+  if (/报告|查看|下载/.test(question)) {
+    return context.reportReady
+      ? '当前评测结果报告支持在页面顶部在线查看，也可以下载 PDF 文件。'
+      : '当前评测尚未生成可查看或下载的结果报告。';
+  }
+  return outOfScope;
+};
+
+const answerBusinessMonitoringQuestion = (question: string, context: any): string => {
+  const outOfScope = '超出当前业务监控信息范围，暂无法为您解答，我们将持续完善。';
+  if (!context) return outOfScope;
+  if (/累计调用|总调用|调用多少|今日调用|当天调用|成功率/.test(question)) return `${context.scope}智能体累计调用 ${Number(context.totalCalls).toLocaleString()} 次，今日调用 ${Number(context.todayCalls).toLocaleString()} 次，累计调用成功率为 ${context.successRate}%，今日调用成功率为 ${context.todaySuccessRate}%。`;
+  if (/并发|吞吐/.test(question)) return `当前并发数为 ${context.concurrency.current}，峰值为 ${context.concurrency.peak}；当前吞吐量为 ${context.throughput.current}${context.throughput.unit}，峰值为 ${context.throughput.peak}${context.throughput.unit}。`;
+  if (/响应时间|耗时|延迟|超时/.test(question)) return `当前平均响应时间为 ${context.avgResponseTime} 秒，响应超时率为 ${context.timeoutRate}%。页面响应时间分布为：${context.responseTimeDistribution}。`;
+  if (/采纳率|医生采纳/.test(question)) return `当前医生采纳率为 ${context.adoptionRate}%。`;
+  if (/反馈|满意|不满意/.test(question)) return `当前用户反馈分布为：满意 ${context.feedback.满意}%，一般 ${context.feedback.一般}%，不满意 ${context.feedback.不满意}%。`;
+  if (/排行|排名|TOP|最多|高频|哪个智能体/i.test(question)) return context.topAgents.length ? `${context.scope}高频调用智能体排行：${context.topAgents.map((item: any) => `${item.name} ${Number(item.calls).toLocaleString()} 次`).join('；')}。` : `${context.scope}当前没有可展示的高频调用智能体排行数据。`;
+  if (/趋势|日趋势|周趋势|月趋势|变化/.test(question)) return '当前业务监控页展示调用次数的近 15 日、近 15 周、近 12 月趋势，以及成功率和医生采纳率的近 15 日趋势。';
+  return outOfScope;
+};
+
+const answerStatusMonitoringQuestion = (question: string, context: any): string => {
+  const outOfScope = '超出当前状态监控信息范围，暂无法为您解答，我们将持续完善。';
+  if (!context) return outOfScope;
+  if (/在线|离线|禁用|异常|状态|多少个|数量|占比|在线率|离线率/.test(question)) return `${context.scope}共有 ${context.total} 个智能体：在线 ${context.online} 个（${context.onlineRate}%）、离线 ${context.offline} 个（${context.offlineRate}%）、禁用 ${context.disabled} 个、异常 ${context.abnormal} 个。`;
+  if (/心跳|最后心跳|实例/.test(question)) return context.agents.length ? `${context.scope}智能体心跳情况：${context.agents.map((item: any) => `${item.name}心跳率 ${(item.heartbeatRate * 100).toFixed(2)}%，实例 ${item.instances.online}/${item.instances.expected}，最后心跳 ${item.lastHeartbeatAt}`).join('；')}。` : `${context.scope}暂无智能体心跳数据。`;
+  if (/版本|运行版本|注册版本/.test(question)) return context.agents.length ? `${context.scope}智能体版本情况：${context.agents.map((item: any) => `${item.name}运行版本 ${item.runVersion}、注册版本 ${item.registryVersion}`).join('；')}。` : `${context.scope}暂无智能体版本数据。`;
+  if (/哪些|列表|明细|智能体/.test(question)) return context.agents.length ? `${context.scope}智能体状态明细：${context.agents.map((item: any) => `${item.name}（${item.status}）`).join('；')}。` : `${context.scope}暂无智能体状态明细。`;
+  return outOfScope;
+};
+
+const answerCostMonitoringQuestion = (question: string, context: any): string => {
+  const outOfScope = '超出当前成本监控信息范围，暂无法为您解答，我们将持续完善。';
+  if (!context) return outOfScope;
+  const resources = context.resources as Array<any>;
+  const requested = resources.filter((item) => {
+    if (/CPU|cpu|处理器/.test(question)) return item.key === 'cpu';
+    if (/GPU|gpu|显卡/.test(question)) return item.key === 'gpu';
+    if (/内存/.test(question)) return item.key === 'memory';
+    if (/Token|token|令牌/.test(question)) return item.key === 'token';
+    return false;
+  });
+  const targets = requested.length ? requested : resources;
+  if (/排行|排名|TOP|最多|最高|消耗大|哪个智能体/i.test(question)) {
+    return targets.map((item) => item.top5.length
+      ? `${item.title}使用量排行：${item.top5.map((row: any, index: number) => `${index + 1}. ${row.name}（${row.department}）${Number(row.value).toLocaleString()} ${item.unit}`).join('；')}`
+      : `${context.scope}${item.title}暂无排行数据`).join('。') + '。';
+  }
+  if (/累计|总量|总使用|使用量|消耗|成本|资源|多少|概况|汇总|当日|今日|当天/.test(question)) {
+    const includeToday = /当日|今日|当天/.test(question);
+    const includeTotal = /累计|总量|总使用|自上线/.test(question) || !includeToday;
+    return `${context.scope}智能体${targets.map((item) => {
+      const parts = [];
+      if (includeTotal) parts.push(`累计${Number(item.total).toLocaleString()} ${item.unit}`);
+      if (includeToday) parts.push(`当日${Number(item.today).toLocaleString()} ${item.unit}`);
+      return `${item.title}${parts.join('、')}`;
+    }).join('；')}。`;
+  }
+  if (/时间|口径|自上线|00:00|刷新/.test(question)) {
+    return '累计使用量统计自智能体上线以来的数据；当日使用量统计当天 00:00 至当前的数据，页面每 60 秒自动刷新，也支持手动刷新。';
+  }
+  return outOfScope;
+};
+
 const recognizeFile = async (fileName: string): Promise<RecognizeResult> => {
   // 模拟「正在识别」的延迟
   await new Promise((r) => setTimeout(r, 1500));
@@ -314,12 +480,144 @@ const AgentAssistant = () => {
     const isNeedDraftTab =
       location.pathname === '/app/agent-needs' &&
       new URLSearchParams(location.search).get('tab') === 'draft';
+    const isNeedFormPage =
+      /^\/app\/agent-needs\/(?:create|edit\/[^/]+)$/.test(location.pathname);
+    const isNeedDetailPage =
+      /^\/app\/agent-needs\/detail\/[^/]+$/.test(location.pathname);
+    const isResourceAllTab =
+      location.pathname === '/app/resource-center/resources' &&
+      (new URLSearchParams(location.search).get('tab') ?? 'all') === 'all';
+    const isResourceDraftTab =
+      location.pathname === '/app/resource-center/resources' &&
+      new URLSearchParams(location.search).get('tab') === 'draft';
+    const isResourceRegistrationPage =
+      /^\/app\/resource-center\/resources\/(?:new|edit\/[^/]+)$/.test(location.pathname);
+    const isResourceApplyAllTab = location.pathname === '/app/resource-center/applies' &&
+      (new URLSearchParams(location.search).get('tab') ?? 'all') === 'all';
+    const isResourceApplyForm = location.pathname === '/app/resource-center/apply-form';
+    const isResourceApplyDraftTab = location.pathname === '/app/resource-center/applies' &&
+      new URLSearchParams(location.search).get('tab') === 'draft';
+    const isResourceApplyReviewingTab = location.pathname === '/app/resource-center/applies' &&
+      new URLSearchParams(location.search).get('tab') === 'reviewing';
+    const isResourceApplyPendingTab = location.pathname === '/app/resource-center/applies' &&
+      new URLSearchParams(location.search).get('tab') === 'pending';
+    const isResourceApplyRevokedTab = location.pathname === '/app/resource-center/applies' &&
+      new URLSearchParams(location.search).get('tab') === 'revoked';
+    const isResourceApplyApprovedTab = location.pathname === '/app/resource-center/applies' &&
+      new URLSearchParams(location.search).get('tab') === 'approved';
+    const isResourceApplyRejectedTab = location.pathname === '/app/resource-center/applies' &&
+      new URLSearchParams(location.search).get('tab') === 'rejected';
+    const isResourceApplyDetailPage = /^\/app\/resource-center\/applies\/[^/]+$/.test(location.pathname);
+    const isResourceApprovalPage = /^\/app\/resource-center\/approval\/[^/]+$/.test(location.pathname);
+    const isEvaluationReportPage = /^\/app\/evaluation\/tasks\/[^/]+\/report$/.test(location.pathname);
+    const isEvaluationTasksPage = location.pathname === '/app/evaluation/tasks';
+    const isMonitoringOverviewPage = location.pathname === '/app/monitoring';
+    const isMonitoringBusinessPage = location.pathname === '/app/monitoring/business';
+    const isMonitoringStatusPage = location.pathname === '/app/monitoring/status';
+    const isMonitoringCostPage = location.pathname === '/app/monitoring/cost';
+    const isMonitoringAlertEventsPage = location.pathname === '/app/monitoring/alert-events';
+    const isMonitoringAlertDetailPage = /^\/app\/monitoring\/alert-events\/[^/]+$/.test(location.pathname);
+    const isMonitoringAlertReviewPage = /^\/app\/monitoring\/alert-events\/[^/]+\/review$/.test(location.pathname);
+    const isMonitoringAlertHandlingTab = isMonitoringAlertEventsPage &&
+      new URLSearchParams(location.search).get('tab') === 'handling';
+    const isMonitoringAlertPendingTab = isMonitoringAlertEventsPage &&
+      new URLSearchParams(location.search).get('tab') === 'pending_handle';
+    const isMonitoringAlertPendingReviewTab = isMonitoringAlertEventsPage &&
+      new URLSearchParams(location.search).get('tab') === 'pending_review';
+    const isMonitoringAlertReviewingTab = isMonitoringAlertEventsPage &&
+      new URLSearchParams(location.search).get('tab') === 'reviewing';
     return messages.filter((m) => {
       if (HIDDEN_CHAT_MESSAGE_TYPES.has(m.type)) return false;
       // 草稿入口只展示当前草稿场景的欢迎消息，避免接入中心、需求列表等
       // 历史页面欢迎气泡混入当前智能体窗口；用户后续对话消息仍正常保留。
       if (isNeedDraftTab && m.id.startsWith('__welcome__:')) {
         return m.id.startsWith('__welcome__:agent-needs-draft:');
+      }
+      // 生成需求与编辑需求草稿共用同一套智能体流程：上传材料 → 识别填充
+      // → 采纳 → 提交。进入表单后仅保留该流程的欢迎/节点消息，避免草稿
+      // 列表或「新建注册」等其他页面的历史欢迎气泡串入当前窗口。
+      if (isNeedFormPage && m.id.startsWith('__welcome__:')) {
+        return (
+          m.id.startsWith('__welcome__:agent-needs-create:') ||
+          m.id.startsWith('__welcome__:agent-needs-complete:')
+        );
+      }
+      if (isNeedDetailPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:agent-needs-detail:');
+      }
+      if (isResourceAllTab && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-center-all:');
+      }
+      if (isResourceDraftTab && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-center-draft:');
+      }
+      if (isResourceRegistrationPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-center-register:');
+      }
+      if (isResourceApplyAllTab && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-apply-all:');
+      }
+      if (isResourceApplyForm && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-apply-form:');
+      }
+      if (isResourceApplyDraftTab && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-apply-draft:');
+      }
+      if (isResourceApplyReviewingTab && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-apply-reviewing:');
+      }
+      if (isResourceApplyPendingTab && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-apply-pending:');
+      }
+      if (isResourceApplyRevokedTab && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-apply-revoked:');
+      }
+      if (isResourceApplyApprovedTab && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-apply-approved:');
+      }
+      if (isResourceApplyRejectedTab && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-apply-rejected:');
+      }
+      if (isResourceApplyDetailPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-apply-detail:');
+      }
+      if (isResourceApprovalPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:resource-approval:');
+      }
+      if (isEvaluationReportPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:evaluation-report:');
+      }
+      if (isEvaluationTasksPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:evaluation-tasks:');
+      }
+      if (isMonitoringOverviewPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:monitoring-overview:');
+      }
+      if (isMonitoringBusinessPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:monitoring-business:');
+      }
+      if (isMonitoringStatusPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:monitoring-status:');
+      }
+      if (isMonitoringCostPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:monitoring-cost:');
+      }
+      if (isMonitoringAlertEventsPage && m.id.startsWith('__welcome__:')) {
+        return isMonitoringAlertPendingTab
+          ? m.id.startsWith('__welcome__:monitoring-alert-pending:')
+          : isMonitoringAlertPendingReviewTab
+          ? m.id.startsWith('__welcome__:monitoring-alert-pending-review:')
+          : isMonitoringAlertHandlingTab
+          ? m.id.startsWith('__welcome__:monitoring-alert-handling:')
+          : isMonitoringAlertReviewingTab
+          ? m.id.startsWith('__welcome__:monitoring-alert-reviewing:')
+          : m.id.startsWith('__welcome__:monitoring-alert-events:');
+      }
+      if (isMonitoringAlertDetailPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:monitoring-alert-detail:');
+      }
+      if (isMonitoringAlertReviewPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:monitoring-alert-review:');
       }
       return true;
     });
@@ -398,6 +696,9 @@ const AgentAssistant = () => {
   useEffect(() => {
     if (!activeWelcome) return;
     if (open) return; // 浮层已开, 机器人旁气泡不重复
+    // 告警「待审核事件」是持续待办提醒，保留到用户点击机器人、气泡或关闭按钮，
+    // 避免管理员查看列表数秒后气泡自动消失而错过审核入口提示。
+    if (activeWelcome.pageKey === 'monitoring-alert-events' || activeWelcome.pageKey === 'monitoring-alert-pending-review') return;
     welcomeTimerRef.current = setTimeout(() => {
       consumeWelcome();
     }, 8000);
@@ -543,6 +844,42 @@ const AgentAssistant = () => {
     if (!text) return;
     addMessage({ role: 'user', type: 'text', content: text });
     setInput('');
+    if (/^\/app\/resource-center\/applies\/[^/]+$/.test(location.pathname)) {
+      addMessage({
+        role: 'agent',
+        type: 'text',
+        content: answerResourceDetailQuestion(text, (window as any).__resourceApplyDetailContext),
+      });
+      return;
+    }
+    if (/^\/app\/evaluation\/tasks\/[^/]+\/report$/.test(location.pathname)) {
+      addMessage({
+        role: 'agent',
+        type: 'text',
+        content: answerEvaluationReportQuestion(text, (window as any).__evaluationReportContext),
+      });
+      return;
+    }
+    if (location.pathname === '/app/monitoring/business') {
+      addMessage({ role: 'agent', type: 'text', content: answerBusinessMonitoringQuestion(text, (window as any).__businessMonitoringContext) });
+      return;
+    }
+    if (location.pathname === '/app/monitoring/status') {
+      addMessage({ role: 'agent', type: 'text', content: answerStatusMonitoringQuestion(text, (window as any).__statusMonitoringContext) });
+      return;
+    }
+    if (location.pathname === '/app/monitoring/cost') {
+      addMessage({ role: 'agent', type: 'text', content: answerCostMonitoringQuestion(text, (window as any).__costMonitoringContext) });
+      return;
+    }
+    if (/^\/app\/monitoring\/alert-events(?:\/[^/]+)?$/.test(location.pathname)) {
+      let answer = '已为您处理该筛选请求。';
+      window.dispatchEvent(new CustomEvent('monitoring-alert-assistant-query', {
+        detail: { text, respond: (next: string) => { answer = next; } },
+      }));
+      addMessage({ role: 'agent', type: 'text', content: answer });
+      return;
+    }
     runRecognitionFlow(() => recognizeText(text), {
       label: '正在识别文字描述…',
       resultType: 'text-detect',
@@ -612,7 +949,18 @@ const AgentAssistant = () => {
       payload: extra ? { fileName: extra.fileName, fileSize: extra.fileSize } : undefined,
     });
     try {
-      const result = await fetcher();
+      const recognized = await fetcher();
+      const isResourceRegistration = /^\/app\/resource-center\/resources\/(?:new|edit\/[^/]+)$/.test(location.pathname);
+      const isResourcePermission = location.pathname === '/app/resource-center/apply-form';
+      const result = isResourcePermission
+        ? recognizeResourcePermission(extra?.rawText || extra?.fileName || recognized.summary, Boolean(extra?.fileName))
+        : isResourceRegistration
+        ? recognizeResourceRegistration(
+            extra?.rawText || extra?.fileName || recognized.summary,
+            extra?.fileName || extra?.recognitionMode || '文字描述',
+            Boolean(extra?.fileName),
+          )
+        : recognized;
       // 替换上条「detecting」为「识别结果」
       appendToLastAgent({
         type: extra?.resultType ?? (extra?.fileName
@@ -634,6 +982,14 @@ const AgentAssistant = () => {
         window.dispatchEvent(new CustomEvent('agent-needs-ai-fill', {
           detail: { fields: result.fields, rawText: extra?.rawText, fileName: extra?.fileName },
         }));
+      }
+      if (isResourceRegistration) {
+        window.dispatchEvent(new CustomEvent('resource-center-ai-fill', {
+          detail: { fields: result.fields, rawText: extra?.rawText, fileName: extra?.fileName },
+        }));
+      }
+      if (isResourcePermission) {
+        window.dispatchEvent(new CustomEvent('resource-apply-ai-fill', { detail: { fields: result.fields } }));
       }
       setMood('happy');
       setTimeout(() => setMood('idle'), 1200);
@@ -688,6 +1044,10 @@ const AgentAssistant = () => {
   };
 
   const handleSend = () => {
+    if (location.pathname === '/app/monitoring/business' || location.pathname === '/app/monitoring/status' || location.pathname === '/app/monitoring/cost' || /^\/app\/monitoring\/alert-events(?:\/[^/]+)?$/.test(location.pathname)) {
+      sendText();
+      return;
+    }
     const link = detectLinkInText(input);
     if (link) {
       addMessage({ role: 'user', type: 'text', content: `发送链接：${link}` });
@@ -695,6 +1055,7 @@ const AgentAssistant = () => {
       runRecognitionFlow(() => recognizeLink(link), {
         label: '正在抓取链接内容…',
         resultType: 'link-detect',
+        rawText: link,
       });
       return;
     }
@@ -705,8 +1066,22 @@ const AgentAssistant = () => {
   const toggleVoice = () => {
     if (recording) {
       setRecording(false);
-      const mockTranscript = '我需要接入一个智能导诊助手';
+      const mockTranscript = location.pathname === '/app/monitoring/alert-events'
+        ? (new URLSearchParams(location.search).get('tab') === 'reviewing'
+          ? '审核通过，处理方案有效，告警已恢复正常，可以关闭该告警事项'
+          : '帮我查找待处理的业务监控告警')
+        : '我需要接入一个智能导诊助手';
       addMessage({ role: 'user', type: 'text', content: `[语音转写] ${mockTranscript}` });
+      if (location.pathname === '/app/monitoring/alert-events') {
+        let answer = '已根据语音描述完成筛选。';
+        window.dispatchEvent(new CustomEvent('monitoring-alert-assistant-query', {
+          detail: { text: mockTranscript, respond: (next: string) => { answer = next; } },
+        }));
+        addMessage({ role: 'agent', type: 'text', content: answer });
+        setMood('happy');
+        setTimeout(() => setMood('idle'), 1200);
+        return;
+      }
       runRecognitionFlow(() => recognizeText(mockTranscript), {
         label: '正在识别语音…',
         resultType: 'text-detect',
@@ -763,6 +1138,13 @@ const AgentAssistant = () => {
           }));
         }, 0);
       }
+      if (/^\/app\/resource-center\/resources\/(?:new|edit\/[^/]+)$/.test(location.pathname)) {
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('resource-center-prefill-acknowledged', {
+            detail: { fieldKeys },
+          }));
+        }, 0);
+      }
     }
     addMessage({
       role: 'agent',
@@ -778,6 +1160,13 @@ const AgentAssistant = () => {
     if (/^\/app\/agent-needs\/(?:create|edit\/[^/]+)$/.test(location.pathname)) {
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('agent-needs-prefill-acknowledged', {
+          detail: { fieldKeys: [k] },
+        }));
+      }, 0);
+    }
+    if (/^\/app\/resource-center\/resources\/(?:new|edit\/[^/]+)$/.test(location.pathname)) {
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('resource-center-prefill-acknowledged', {
           detail: { fieldKeys: [k] },
         }));
       }, 0);

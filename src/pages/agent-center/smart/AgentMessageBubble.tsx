@@ -73,11 +73,49 @@ const NEED_FIELD_LABELS: Record<string, string> = {
   urgency: '需求紧急程度',
 };
 
+const RESOURCE_FIELD_LABELS: Record<string, string> = {
+  resources: '资源列表',
+  owner: '资源负责人',
+  contact: '联系方式',
+  protocol: '对接方式',
+  version: 'HL7 版本',
+  url: 'URL 地址',
+  key: '密钥 Key',
+  dbType: '数据库类型',
+  mqType: 'MQ 类型',
+  broker: 'Broker 地址',
+  auth: '认证方式',
+};
+
+const APPLY_FIELD_LABELS: Record<string, string> = {
+  agentId: '选择智能体',
+  resourceIds: '申请资源名称',
+  reason: '申请理由',
+};
+
 const isNeedDetectedFields = (fields?: Array<{ fieldKey: string }>) =>
   Boolean(fields?.some((field) => ['reason', 'proposer', 'resources', 'urgency'].includes(field.fieldKey)));
 
-const getDetectedFieldLabel = (fieldKey: string, needFields = false) =>
-  (needFields ? NEED_FIELD_LABELS[fieldKey] : REGISTER_FIELD_LABELS[fieldKey]) || fieldKey;
+const isResourceDetectedFields = (fields?: Array<{ fieldKey: string }>) =>
+  Boolean(fields?.some((field) => ['owner', 'contact', 'protocol', 'dbType', 'mqType', 'broker'].includes(field.fieldKey)));
+
+const getDetectedFieldLabel = (
+  fieldKey: string,
+  fields?: Array<{ fieldKey: string; value?: string }>,
+) => {
+  if (fields?.some((field) => field.fieldKey === 'agentId' || field.fieldKey === 'resourceIds')) {
+    return APPLY_FIELD_LABELS[fieldKey] || fieldKey;
+  }
+  if (isResourceDetectedFields(fields)) {
+    const protocol = fields?.find((field) => field.fieldKey === 'protocol')?.value;
+    if (fieldKey === 'transport') return protocol === 'FHIR' ? '接口协议类型' : '协议类型';
+    if (fieldKey === 'ip') return protocol === 'DICOM' ? 'DICOM IP 地址' : 'IP 地址';
+    if (fieldKey === 'port') return protocol === 'DICOM' ? 'DICOM 端口' : protocol === 'HL7' ? '端口号' : '端口';
+    if (fieldKey === 'name' && protocol === 'DICOM') return 'DICOM 名称';
+    return RESOURCE_FIELD_LABELS[fieldKey] || fieldKey;
+  }
+  return (isNeedDetectedFields(fields) ? NEED_FIELD_LABELS[fieldKey] : REGISTER_FIELD_LABELS[fieldKey]) || fieldKey;
+};
 
 /**
  * 文件识别 / 图片识别 / 链接抓取 / 文字语音识别气泡
@@ -116,7 +154,6 @@ const FileDetectBubble = ({ msg, onAcknowledgeFields, onAcknowledge }: FileDetec
     () => [...allFields].sort((a, b) => b.confidence - a.confidence),
     [allFields],
   );
-  const needFields = isNeedDetectedFields(msg.payload?.detectedFields);
   // 兜底: 如果 store 没有 acknowledged 标志(单测/旧数据), 仍按字段全选
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(pendingFields.map((f) => f.fieldKey)),
@@ -203,7 +240,7 @@ const FileDetectBubble = ({ msg, onAcknowledgeFields, onAcknowledge }: FileDetec
                     onChange={() => toggle(f.fieldKey)}
                     data-testid={`file-detect-field-${f.fieldKey}`}
                   >
-                    <span style={{ color: '#1F1F1F' }}>{getDetectedFieldLabel(f.fieldKey, needFields)}</span>
+                    <span style={{ color: '#1F1F1F' }}>{getDetectedFieldLabel(f.fieldKey, msg.payload?.detectedFields)}</span>
                   </Checkbox>
                   <span style={{ flex: 1, color: '#666', fontSize: 11 }}>{f.value}</span>
                 </div>
@@ -252,7 +289,7 @@ const FileDetectBubble = ({ msg, onAcknowledgeFields, onAcknowledge }: FileDetec
             <Space wrap>
               {pendingFields.map((f) => (
                 <Button key={f.fieldKey} size="small" onClick={() => onAcknowledge(f.fieldKey)}>
-                  采纳 {getDetectedFieldLabel(f.fieldKey, needFields)}
+                  采纳 {getDetectedFieldLabel(f.fieldKey, msg.payload?.detectedFields)}
                 </Button>
               ))}
             </Space>
@@ -333,10 +370,20 @@ const AgentMessageBubble = ({
 }: Props) => {
   const isAgent = msg.role === 'agent';
   const isNeedDraftWelcome = msg.id.startsWith('__welcome__:agent-needs-draft:');
-  // 建设需求草稿欢迎语要求列表直接呈现在欢迎语下方；其他场景仍保持折叠，
+  const isResourceDraftWelcome = msg.id.startsWith('__welcome__:resource-center-draft:');
+  const isResourceApplyDraftWelcome = msg.id.startsWith('__welcome__:resource-apply-draft:');
+  const isResourceApplyReviewingWelcome = msg.id.startsWith('__welcome__:resource-apply-reviewing:');
+  const isResourceApplyPendingWelcome = msg.id.startsWith('__welcome__:resource-apply-pending:');
+  const isResourceApplyRevokedWelcome = msg.id.startsWith('__welcome__:resource-apply-revoked:');
+  const isResourceApplyApprovedWelcome = msg.id.startsWith('__welcome__:resource-apply-approved:');
+  const isResourceApplyRejectedWelcome = msg.id.startsWith('__welcome__:resource-apply-rejected:');
+  const isDirectExpandedDraftWelcome = isNeedDraftWelcome || isResourceDraftWelcome ||
+    isResourceApplyDraftWelcome || isResourceApplyReviewingWelcome || isResourceApplyPendingWelcome ||
+    isResourceApplyRevokedWelcome || isResourceApplyApprovedWelcome || isResourceApplyRejectedWelcome;
+  // 建设需求、资源注册草稿欢迎语要求列表直接呈现在欢迎语下方；其他场景仍保持折叠，
   // 避免较长的状态清单挤占对话窗口。
   const [welcomeMiniExpanded, setWelcomeMiniExpanded] = useState(
-    () => isNeedDraftWelcome,
+    () => isDirectExpandedDraftWelcome,
   );
   // §3.4.1.2 「接入进度·核心指标」→ 对话窗口内呈现的「洞察详情」气泡:
   //   - 一键直达按钮（完善台账 / 发起准入评测 / 查看监控告警 / 编辑修改）通过 useNavigate 跳转
@@ -455,7 +502,7 @@ const AgentMessageBubble = ({
                     }}
                   >
                     <span style={{ minWidth: 96, color: '#1F1F1F' }}>
-                      {getDetectedFieldLabel(f.fieldKey, isNeedDetectedFields(msg.payload?.detectedFields))}
+                      {getDetectedFieldLabel(f.fieldKey, msg.payload?.detectedFields)}
                     </span>
                     {confidenceLevel(f.confidence) === 'low' && (
                       <Text style={{ fontSize: 11, color: '#389E0D' }}>
@@ -1352,8 +1399,8 @@ const AgentMessageBubble = ({
                           border: '1px solid #E8E8E8',
                           borderRadius: 8,
                           background: '#FFFFFF',
-                          maxHeight: isNeedDraftWelcome ? 'none' : 220,
-                          overflowY: isNeedDraftWelcome ? 'visible' : 'auto',
+                          maxHeight: isDirectExpandedDraftWelcome ? 'none' : 220,
+                          overflowY: isDirectExpandedDraftWelcome ? 'visible' : 'auto',
                         }}
                       >
                         {welcomeMiniList.rows.map((row) => (
@@ -1422,7 +1469,7 @@ const AgentMessageBubble = ({
                             </Space>
                           </div>
                         ))}
-                        {!isNeedDraftWelcome && (
+                        {!isDirectExpandedDraftWelcome && (
                           <Button
                             type="link"
                             size="small"

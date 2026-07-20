@@ -91,6 +91,7 @@ import {
   type RiskLevel,
 } from '../../mock/evaluation';
 import { useAuth } from '../../hooks/useAuth';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 
@@ -100,10 +101,11 @@ const EVAL_STANDARD = '团体标准《智能体安全评测规范》';
 // Tab 列表（V1.7：全部 + 7 状态 = 8 个 Tab；「待评测」为排队中间态，统一在全部任务中展示；「待审核」已下线）
 //   · Tab key 与 EvaluationStatus 一一对应（除 'all'），便于 t.status === activeTab 直筛
 //   · 末位 Tab 真实状态为「退回重测」，展示文案沿用「退回修改」
-type TabKey = 'all' | '草稿' | '评测中' | '撤销' | '评测完成' | '审核中' | '审核通过' | '退回重测';
+type TabKey = 'all' | '草稿' | '待评测' | '评测中' | '撤销' | '评测完成' | '审核中' | '审核通过' | '退回重测';
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'all', label: '全部任务' },
   { key: '草稿', label: '草稿' },
+  { key: '待评测', label: '待评测' },
   { key: '评测中', label: '评测中' },
   { key: '撤销', label: '撤销' },
   { key: '评测完成', label: '评测完成' },
@@ -155,6 +157,7 @@ const Tasks = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
 
   // 本地任务（支持操作后修改）
   const [tasks, setTasks] = useState<EvaluationTask[]>(mockEvaluationTasks);
@@ -169,6 +172,12 @@ const Tasks = () => {
   const [statusFilter, setStatusFilter] = useState<EvaluationStatus | undefined>();
   const [riskFilter, setRiskFilter] = useState<RiskLevel | undefined>();
   const [resultFilter, setResultFilter] = useState<string | undefined>();
+
+  // 信息科管理员看全院；科室管理员仅看所属科室。
+  const scopedTasks = useMemo(
+    () => isAdmin ? tasks : tasks.filter((task) => task.department === currentUser?.department),
+    [currentUser?.department, isAdmin, tasks],
+  );
 
   // 联动参数消费:首次挂载后清掉 URL 中的 agentName/tab,避免刷新重复触发
   useEffect(() => {
@@ -185,21 +194,52 @@ const Tasks = () => {
   // ---------------------------------------------------------------------------
   const tabCount = useMemo(() => {
     const m: Record<TabKey, number> = {
-      all: tasks.length,
-      草稿: 0, 评测中: 0, 撤销: 0, 评测完成: 0,
+      all: scopedTasks.length,
+      草稿: 0, 待评测: 0, 评测中: 0, 撤销: 0, 评测完成: 0,
       审核中: 0, 审核通过: 0, 退回重测: 0,
     };
-    tasks.forEach((t) => {
+    scopedTasks.forEach((t) => {
       m[t.status] = (m[t.status] || 0) + 1;
     });
     return m;
-  }, [tasks]);
+  }, [scopedTasks]);
+
+  useEffect(() => {
+    const connectedAgents = new Set(scopedTasks.map((task) => task.agentId)).size;
+    const values = [connectedAgents, tabCount.待评测, tabCount.评测中, tabCount.评测完成,
+      tabCount.审核中, tabCount.审核通过, tabCount.退回重测];
+    pushWelcomeGreeting('evaluation-tasks', isAdmin ? 'admin' : 'dept', () => values, {
+      windowReplacements: values,
+      chips: [
+        { key: 'pending-eval', label: `待评测 ${tabCount.待评测}`, targetTab: '待评测', tone: 'warning' },
+        { key: 'evaluating', label: `评测中 ${tabCount.评测中}`, targetTab: '评测中', tone: 'warning' },
+        { key: 'evaluated', label: `评测完成 ${tabCount.评测完成}`, targetTab: '评测完成', tone: 'success' },
+        { key: 'reviewing', label: `审核中 ${tabCount.审核中}`, targetTab: '审核中', tone: 'warning' },
+        { key: 'approved', label: `审核通过 ${tabCount.审核通过}`, targetTab: '审核通过', tone: 'success' },
+        { key: 'returned', label: `退回修改 ${tabCount.退回重测}`, targetTab: '退回重测', tone: 'error' },
+      ],
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, scopedTasks, tabCount]);
+
+  useEffect(() => {
+    const onJump = (event: Event) => {
+      const nextTab = (event as CustomEvent<string>).detail as TabKey;
+      if (!TABS.some((tab) => tab.key === nextTab)) return;
+      setActiveTab(nextTab);
+      setStatusFilter(undefined);
+      setRiskFilter(undefined);
+      setResultFilter(undefined);
+    };
+    window.addEventListener('agent-jump-tab', onJump);
+    return () => window.removeEventListener('agent-jump-tab', onJump);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // 过滤
   // ---------------------------------------------------------------------------
   const visibleTasks = useMemo(() => {
-    return tasks.filter((t) => {
+    return scopedTasks.filter((t) => {
       if (activeTab !== 'all' && t.status !== activeTab) return false;
       if (keyword) {
         const k = keyword.toLowerCase();
@@ -217,7 +257,7 @@ const Tasks = () => {
       }
       return true;
     });
-  }, [tasks, activeTab, keyword, statusFilter, riskFilter, resultFilter]);
+  }, [scopedTasks, activeTab, keyword, statusFilter, riskFilter, resultFilter]);
 
   // ---------------------------------------------------------------------------
   // 操作：撤销
