@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useDemoSettings } from '../../hooks/useDemoSettings';
+import './Dashboard.css';
 
 const { Text, Title } = Typography;
 const panelStyle = { border: '1px solid #dce8f7', boxShadow: '0 5px 18px rgba(22,119,255,.055)' };
@@ -63,19 +64,19 @@ function KpiCard({ metric }: { metric: typeof adminMetrics[number] | typeof dept
   </Card>;
 }
 
-function ChartCard({ title, children, extra }: { title: string; children: React.ReactNode; extra?: React.ReactNode }) {
-  return <Card size="small" title={<Text strong>{title}</Text>} extra={extra} style={{ ...panelStyle, marginBottom: 12 }} styles={{ header: { minHeight: 42 }, body: { padding: '10px 12px' } }}>{children}</Card>;
+function ChartCard({ title, children, extra, className }: { title: string; children: React.ReactNode; extra?: React.ReactNode; className?: string }) {
+  return <Card size="small" title={<Text strong>{title}</Text>} extra={extra} className={`dashboard-chart-card ${className || ''}`} style={panelStyle} styles={{ header: { minHeight: 38 }, body: { padding: '8px 12px' } }}>{children}</Card>;
 }
 
 function SimpleBars({ data, color = '#1677ff', onClick }: { data: { name: string; value: number }[]; color?: string; onClick?: (name: string) => void }) {
   const max = Math.max(...data.map((item) => item.value));
-  return <Space direction="vertical" size={10} style={{ width: '100%', padding: '4px 2px 2px' }}>{data.map((item) => <div key={item.name} onClick={() => onClick?.(item.name)} style={{ cursor: onClick ? 'pointer' : 'default' }}><Flex justify="space-between" style={{ marginBottom: 4 }}><Text style={{ fontSize: 12 }}>{item.name}</Text><Text strong style={{ fontSize: 12 }}>{item.value.toLocaleString()}</Text></Flex><div style={{ height: 9, overflow: 'hidden', borderRadius: 6, background: '#edf2f8' }}><div style={{ width: `${Math.max(8, item.value / max * 100)}%`, height: '100%', borderRadius: 6, background: `linear-gradient(90deg,${color},${color}aa)` }} /></div></div>)}</Space>;
+  return <Space direction="vertical" size={5} style={{ width: '100%', padding: '2px' }}>{data.map((item) => <div key={item.name} onClick={() => onClick?.(item.name)} style={{ cursor: onClick ? 'pointer' : 'default' }}><Flex justify="space-between" style={{ marginBottom: 2 }}><Text style={{ fontSize: 12 }}>{item.name}</Text><Text strong style={{ fontSize: 12 }}>{item.value.toLocaleString()}</Text></Flex><div style={{ height: 7, overflow: 'hidden', borderRadius: 6, background: '#edf2f8' }}><div style={{ width: `${Math.max(8, item.value / max * 100)}%`, height: '100%', borderRadius: 6, background: `linear-gradient(90deg,${color},${color}aa)` }} /></div></div>)}</Space>;
 }
 
 function ResourceTopology({ isAdmin }: { isAdmin: boolean }) {
   const navigate = useNavigate();
   const shown = isAdmin ? resources : resources.map((r) => [r[0], r[1], Math.max(2, Math.round(r[2] * .22)), r[3]] as const);
-  return <div style={{ minHeight: isAdmin ? 970 : 570, position: 'relative', padding: '26px 10px', borderRadius: 12, overflow: 'hidden', background: 'radial-gradient(circle at 50% 49%,#dceeff 0,#f7fbff 35%,#fff 68%)' }}>
+  return <div className="dashboard-topology" style={{ position: 'relative', height: '100%', minHeight: 0, padding: '18px 10px', borderRadius: 12, overflow: 'hidden', background: 'radial-gradient(circle at 50% 49%,#dceeff 0,#f7fbff 35%,#fff 68%)' }}>
     <div style={{ position: 'absolute', left: '50%', top: '49%', transform: 'translate(-50%,-50%)', textAlign: 'center', width: 168, padding: '25px 8px', color: '#fff', borderRadius: 18, background: 'linear-gradient(135deg,#1677ff,#13c2c2)', boxShadow: '0 10px 28px #1677ff55' }}><CloudServerOutlined style={{ fontSize: 30 }} /><div style={{ fontWeight: 700, marginTop: 6 }}>{isAdmin ? '全院智能体中心' : '影像科智能体中心'}</div><small>{isAdmin ? '128 个智能体' : '18 个智能体'}</small></div>
     {shown.map(([code, name, count, online], i) => { const angle = (Math.PI * 2 * i / shown.length) - Math.PI / 2; const x = 50 + Math.cos(angle) * 38; const y = 49 + Math.sin(angle) * 39; return <Tooltip key={code} title={`${name} · ${count} 个智能体 · ${online ? '连接正常' : '连接异常'}`}><button onClick={() => navigate(`/app/resource-center/resources?keyword=${code}`)} style={{ position: 'absolute', left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)', width: 120, padding: '10px 5px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${online ? '#91caff' : '#ffbb96'}`, color: '#1f2d3d', background: '#fff', boxShadow: '0 4px 12px #94a9c733' }}><ApiOutlined style={{ color: online ? '#1677ff' : '#fa541c' }} /> <b>{code}</b><div style={{ fontSize: 10, color: '#8c8c8c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{count} 个智能体 · {online ? '正常' : '异常'}</div></button></Tooltip>; })}
   </div>;
@@ -90,26 +91,26 @@ export default function Dashboard() {
   const [fullscreen, setFullscreen] = useState(false);
   const navigate = useNavigate();
   const sortedDepartments = useMemo(() => [...departments].sort((a, b) => sortAsc ? a.value - b.value : b.value - a.value), [sortAsc]);
-  const pieBase = { angleField: 'value', colorField: 'name', innerRadius: .58, height: 190, legend: { position: 'bottom' }, label: { text: 'value', position: 'outside' } } as any;
-  return <div style={{ padding: 16, minHeight: 'calc(100vh - 64px)', background: '#f2f7fd', ...(fullscreen ? { position: 'fixed', inset: 0, zIndex: 1200, overflow: 'auto' } : {}) }}>
-    <Card style={{ ...panelStyle, marginBottom: 12, background: 'linear-gradient(110deg,#edf6ff,#fff 55%,#eafafa)' }} styles={{ body: { padding: '16px 20px' } }}><Flex justify="space-between" align="center" wrap gap={12}><Space size={13}><Flex align="center" justify="center" style={{ width: 46, height: 46, borderRadius: 13, color: '#fff', fontSize: 23, background: 'linear-gradient(135deg,#1677ff,#13c2c2)' }}><RobotOutlined /></Flex><div><Title level={3} style={{ margin: 0 }}>{isAdmin ? '全院智能体运行态势大屏' : '影像科智能体运行态势大屏'}</Title><Text type="secondary">{isAdmin ? '全院纳管智能体运行、资源连接与告警态势总览' : '本科室智能体运行、资源连接与待处理告警总览'}</Text></div></Space><Space wrap><Select value={range} onChange={setRange} style={{ width: 110 }} options={[{ value: 'today', label: '今日' }, { value: '7d', label: '近7天' }, { value: '30d', label: '近30天' }]} /><Tag color={isAdmin ? 'blue' : 'cyan'} style={{ padding: '5px 10px' }}>{isAdmin ? '信息科管理员 · 全院口径' : '科室管理员 · 本科室口径'}</Tag><Button icon={<ReloadOutlined />} onClick={() => message.success('大屏数据已刷新')}>刷新</Button><Button icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />} onClick={() => setFullscreen(!fullscreen)}>{fullscreen ? '退出全屏' : '全屏投屏'}</Button></Space></Flex></Card>
+  const pieBase = { angleField: 'value', colorField: 'name', innerRadius: .58, height: 130, theme: 'classicDark', legend: { position: 'bottom' }, label: { text: 'value', position: 'outside' } } as any;
+  return <div className={`dashboard-screen${fullscreen ? ' dashboard-screen--fullscreen' : ''}`}>
+    <Card className="dashboard-header" style={{ ...panelStyle, background: 'linear-gradient(110deg,#edf6ff,#fff 55%,#eafafa)' }} styles={{ body: { padding: '10px 16px' } }}><Flex justify="space-between" align="center" wrap gap={8}><Space size={11}><Flex align="center" justify="center" style={{ width: 42, height: 42, borderRadius: 12, color: '#fff', fontSize: 21, background: 'linear-gradient(135deg,#1677ff,#13c2c2)' }}><RobotOutlined /></Flex><div><Title level={3} style={{ margin: 0, fontSize: 24 }}>{isAdmin ? '全院智能体运行态势大屏' : '影像科智能体运行态势大屏'}</Title><Text type="secondary">{isAdmin ? '全院纳管智能体运行、资源连接与告警态势总览' : '本科室智能体运行、资源连接与待处理告警总览'}</Text></div></Space><Space wrap size={8}><Select value={range} onChange={setRange} style={{ width: 100 }} options={[{ value: 'today', label: '今日' }, { value: '7d', label: '近7天' }, { value: '30d', label: '近30天' }]} /><Button icon={<ReloadOutlined />} onClick={() => message.success('大屏数据已刷新')}>刷新</Button><Button icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />} onClick={() => setFullscreen(!fullscreen)}>{fullscreen ? '退出全屏' : '全屏投屏'}</Button></Space></Flex></Card>
 
-    <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>{metrics.map((m) => <Col key={m[0]} xs={24} sm={12} lg={isAdmin ? 8 : undefined} xl={isAdmin ? 4 : undefined} flex={isAdmin ? undefined : '1 1 200px'}><KpiCard metric={m} /></Col>)}</Row>
+    <Row gutter={[10, 10]} className="dashboard-kpis">{metrics.map((m) => <Col key={m[0]} xs={24} sm={12} lg={isAdmin ? 8 : undefined} xl={isAdmin ? 4 : undefined} flex={isAdmin ? undefined : '1 1 200px'}><KpiCard metric={m} /></Col>)}</Row>
 
-    <Row gutter={[12, 12]} align="stretch">
-      <Col xs={24} xl={6}>
+    <Row gutter={[10, 10]} align="stretch" className="dashboard-main">
+      <Col xs={24} xl={6} className={`dashboard-side dashboard-side--left${isAdmin ? '' : ' dashboard-side--left-dept'}`}>
         {isAdmin ? <>
           <ChartCard title="智能体科室分布" extra={<Button type="link" size="small" onClick={() => setSortAsc(!sortAsc)}>{sortAsc ? '从少到多' : '从多到少'}</Button>}><SimpleBars data={sortedDepartments} onClick={(name) => navigate(`/app/ledger/list?department=${name}`)} /></ChartCard>
           <ChartCard title="高频调用智能体 TOP5"><SimpleBars data={topAgents} color="#13c2c2" /></ChartCard>
           <ChartCard title="智能体诊疗环节分布"><Pie {...pieBase} data={stages} onReady={(p: any) => p.on('element:click', (e: any) => navigate(`/app/ledger/list?stage=${e.data.data.name}`))} /></ChartCard>
           <ChartCard title="智能体风险分级"><Pie {...pieBase} data={risks} color={['#ff4d4f', '#faad14', '#52c41a']} onReady={(p: any) => p.on('element:click', (e: any) => navigate(`/app/ledger/list?risk=${e.data.data.name}`))} /></ChartCard>
         </> : <>
-          <ChartCard title="智能体实时状态"><Row gutter={[10, 10]}>{[["实时在线", 16, '#52c41a', <CheckCircleFilled />], ["实时离线", 2, '#ff4d4f', <ExclamationCircleFilled />], ["平均异常持续时长", '18m', '#fa8c16', <ClockCircleOutlined />], ["累计禁用", 3, '#8c8c8c', <SafetyCertificateOutlined />]].map(([label, value, color, icon]) => <Col span={12} key={String(label)}><Card hoverable onClick={() => navigate('/app/ledger/list')} styles={{ body: { padding: 14 } }}><Text type="secondary" style={{ fontSize: 12 }}>{label}</Text><div style={{ color: String(color), fontSize: 25, fontWeight: 700 }}>{icon} {value}</div><Text type="secondary" style={{ fontSize: 10 }}>{label === '累计禁用' ? '较昨日 +1 · 月趋势平稳' : '点击查看明细'}</Text></Card></Col>)}</Row></ChartCard>
-          <ChartCard title="禁用智能体月趋势"><Line data={spark([1, 1, 2, 2, 2, 3])} xField="label" yField="value" height={200} smooth color="#8c8c8c" point={{ size: 4 }} /></ChartCard>
+          <ChartCard className="dashboard-dept-status" title="智能体实时状态"><Row gutter={[10, 10]}>{[["实时在线", 16, '#52c41a', <CheckCircleFilled />], ["实时离线", 2, '#ff4d4f', <ExclamationCircleFilled />], ["平均异常持续时长", '18m', '#fa8c16', <ClockCircleOutlined />], ["累计禁用", 3, '#8c8c8c', <SafetyCertificateOutlined />]].map(([label, value, color, icon]) => <Col span={12} key={String(label)}><Card hoverable onClick={() => navigate('/app/ledger/list')} styles={{ body: { padding: 14 } }}><Text type="secondary" style={{ fontSize: 12 }}>{label}</Text><div style={{ color: String(color), fontSize: 25, fontWeight: 700 }}>{icon} {value}</div><Text type="secondary" style={{ fontSize: 10 }}>{label === '累计禁用' ? '较昨日 +1 · 月趋势平稳' : '点击查看明细'}</Text></Card></Col>)}</Row></ChartCard>
+          <ChartCard title="禁用智能体月趋势"><Line data={spark([1, 1, 2, 2, 2, 3])} xField="label" yField="value" height={260} theme="classicDark" smooth color="#27d9ff" point={{ size: 4 }} /></ChartCard>
         </>}
       </Col>
-      <Col xs={24} xl={12}><ChartCard title="已关联资源情况" extra={<Text type="secondary"><ApartmentOutlined /> 点击资源查看详情</Text>}><ResourceTopology isAdmin={isAdmin} /></ChartCard><Card style={{ ...panelStyle, background: '#f8fbff' }}><Flex justify="space-around" wrap>{[['资源连接数', isAdmin ? 142 : 28], ['连接正常率', '98.6%'], ['今日调用链路', isAdmin ? '286.4万' : '32.6万']].map(([k, v]) => <div key={String(k)} style={{ textAlign: 'center', padding: 5 }}><Text type="secondary">{k}</Text><div style={{ color: '#1677ff', fontSize: 22, fontWeight: 700 }}>{v}</div></div>)}</Flex></Card></Col>
-      <Col xs={24} xl={6}>
+      <Col xs={24} xl={12} className="dashboard-center"><ChartCard className="dashboard-resource-card" title="已关联资源情况" extra={<Text type="secondary"><ApartmentOutlined /> 点击资源查看详情</Text>}><ResourceTopology isAdmin={isAdmin} /></ChartCard></Col>
+      <Col xs={24} xl={6} className="dashboard-side dashboard-side--right">
         <ChartCard title={isAdmin ? '实时告警情况' : '待处理告警'} extra={<Button type="link" size="small" onClick={() => navigate('/app/monitoring/alert-events')}>全部告警</Button>}><div style={{ maxHeight: 225, overflowY: 'auto' }}>{alerts.map(([name, threshold, level], i) => <div key={name} onClick={() => navigate('/app/monitoring/alert-events')} style={{ padding: '9px 3px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }}><Flex justify="space-between"><Text ellipsis style={{ maxWidth: '72%' }}><ThunderboltOutlined style={{ color: i < 3 ? '#fa541c' : '#faad14' }} /> {name}</Text><Tag color={level === '高级' ? 'red' : level === '中级' ? 'orange' : 'blue'}>{level}</Tag></Flex><Text type="secondary" style={{ fontSize: 11 }}>触发阈值：{threshold}</Text></div>)}</div></ChartCard>
         <ChartCard title="告警类型分布"><Pie {...pieBase} data={alertTypes} /></ChartCard>
         <ChartCard title="告警级别分布"><Pie {...pieBase} data={alertLevels} color={['#ff4d4f', '#faad14', '#69b1ff']} /></ChartCard>
