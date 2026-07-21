@@ -875,7 +875,8 @@ export const SmartDraftProvider = ({
       const windowReplacements = extras?.windowReplacements ?? replacer?.(pageKey, role, 'window');
       const applyReplacements = (template: string, values?: Array<string | number>) => {
         let cursor = 0;
-        return template.replace(/XX|[XN]/g, (ch) => {
+        // X / N 仅作为独立占位符处理，不能替换 DOCX、XLSX、X-Api-Key 等英文单词中的字母。
+        return template.replace(/(?<![A-Za-z])(?:XX|[XN])(?![A-Za-z])/g, (ch) => {
           const v = values?.[cursor];
           cursor += 1;
           return v === undefined || v === null ? ch : String(v);

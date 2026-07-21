@@ -1340,16 +1340,7 @@ const AgentAssistant = () => {
           </button>
           <strong style={{ color: '#1677FF', fontSize: 13 }}>医小管</strong>
           <span
-            style={{
-              marginLeft: 4,
-              display: 'inline-block',
-              marginTop: 4,
-              // 新建注册欢迎语包含 DOCX / XLSX；优先使用标准西文字体，
-              // 避免部分中文字体将大写 X 显示成近似数字 2 / 3 的字形。
-              ...(activeWelcome.pageKey === 'smart-register'
-                ? { fontFamily: 'Arial, "PingFang SC", "Microsoft YaHei", sans-serif' }
-                : {}),
-            }}
+            style={{ marginLeft: 4, display: 'inline-block', marginTop: 4 }}
             data-testid="status-bubble-content"
           >
             {activeWelcome.content}

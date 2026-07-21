@@ -235,28 +235,11 @@ const SmartRegistrationForm = () => {
   //   - store.messages 中也会同步生成一条相同文案的消息 (窗口内展示)
   // 提供方 (provider) = 智能体提供方, 无论科室管理员还是信息科管理员, 进入「新建注册」时走同一句欢迎语
   // 防止 React StrictMode 双调用导致重复推送: store.pushWelcomeGreeting 内部已做去重
-  // §3.1.1 V3.1 fix: bubble 文案含「今日审核中 X 个、准入通过 X 个、退回修改 X 个」,必须传 replacer
-  //   否则 X 占位符保留字面值。
-  // V3.2 fix: 与列表页 (index.tsx) 的 counts 同源语义:
-  //   - 列表页 counts 派生逻辑:草稿仅本人;其余 6 状态 admin 全量 / dept 仅本人。
-  //   - 之前用 ownRecords(只筛 loginName 提交过的记录),管理员账号在「新建注册」页登录时
-  //     自己名下记录为 0,气泡出现「今日审核中 0 个…」。改为按「草稿仅本人;其余 isPlatformAdmin 全量」,
-  //     与列表页气泡数字保持一致。
   useEffect(() => {
-    const isPlatformAdmin = role === ROLE_ADMIN;
-    const fmt = (n: number) => String(n);
-    const ownOnlyStatuses = new Set(['草稿']);
-    const visible = (r: (typeof records)[number]) =>
-      ownOnlyStatuses.has(r.status) ? r.applicant === loginName : isPlatformAdmin || r.applicant === loginName;
-    const count = (status: string) =>
-      records.filter((r) => r.status === status && visible(r)).length;
     pushWelcomeGreeting(
       'smart-register',
       'provider',
-      (_key, _role, surface) =>
-        surface === 'bubble'
-          ? [fmt(count('审核中')), fmt(count('审核通过')), fmt(count('退回修改'))]
-          : undefined,
+      undefined,
       {
         actions: [
           { key: 'upload', label: '📎 上传材料', event: 'agent-register-trigger-upload', enabled: true },
@@ -264,7 +247,7 @@ const SmartRegistrationForm = () => {
         ],
       },
     );
-  }, [pushWelcomeGreeting, records, loginName, role]);
+  }, [pushWelcomeGreeting]);
 
   // PRD §4.2.3：连通测试成功 / 失败的提示由 ConnectivityTester 推 'conn-test-result' 气泡。
   //   进入新建注册页时不再推送 'historical-plan'（PRD §3.3.2 历史方案复用已下线）。
