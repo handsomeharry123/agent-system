@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Dropdown, Space, Avatar, message } from 'antd';
+import { Layout, Menu, Avatar } from 'antd';
 import {
   HomeOutlined,
   RobotOutlined,
   FileTextOutlined,
   UserOutlined,
-  LoginOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 
@@ -18,11 +17,6 @@ const navItems = [
   { key: '/help', label: '帮助中心', icon: <FileTextOutlined /> },
 ];
 
-const userMenuItems: MenuProps['items'] = [
-  { key: 'login', icon: <LoginOutlined />, label: '登录' },
-  { key: 'profile', icon: <UserOutlined />, label: '个人信息' },
-];
-
 const PortalLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -31,14 +25,6 @@ const PortalLayout = () => {
   const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
     setCurrentPath(key);
     navigate(key);
-  };
-
-  const handleUserMenuClick: MenuProps['onClick'] = ({ key }) => {
-    if (key === 'login') {
-      navigate('/login');
-    } else if (key === 'profile') {
-      message.info('个人信息');
-    }
   };
 
   return (
@@ -82,18 +68,11 @@ const PortalLayout = () => {
             style={{ border: 'none', minWidth: 400 }}
           />
         </div>
-        <Space size={24}>
-          <Dropdown
-            menu={{ items: userMenuItems, onClick: handleUserMenuClick }}
-            placement="bottomRight"
-            trigger={['click']}
-          >
-            <Avatar
-              style={{ background: '#f0f0f0', color: '#666', cursor: 'pointer' }}
-              icon={<UserOutlined />}
-            />
-          </Dropdown>
-        </Space>
+        <Avatar
+          style={{ background: '#f0f0f0', color: '#666', cursor: 'pointer' }}
+          icon={<UserOutlined />}
+          onClick={() => navigate('/login')}
+        />
       </Header>
 
       <Content style={{ background: '#F5F5F5' }}>

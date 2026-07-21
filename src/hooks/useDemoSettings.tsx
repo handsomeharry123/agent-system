@@ -30,6 +30,8 @@ export type DemoRole = '信息科管理员' | '科室管理员';
 
 interface DemoSettings {
   demoRole: DemoRole;
+  /** 按角色模拟新用户身份，用于演示首次使用场景 */
+  newUserRoles: Record<DemoRole, boolean>;
   visibleModules: Record<string, boolean>;
   visibleSubPages: Record<string, boolean>;
 }
@@ -45,6 +47,10 @@ const computeDefaults = (): DemoSettings => {
   });
   return {
     demoRole: '信息科管理员',
+    newUserRoles: {
+      '信息科管理员': false,
+      '科室管理员': false,
+    },
     visibleModules,
     visibleSubPages,
   };
@@ -62,6 +68,10 @@ const mergeWithDefaults = (parsed: Partial<DemoSettings> | null | undefined): De
       parsed.demoRole === '信息科管理员' || parsed.demoRole === '科室管理员'
         ? parsed.demoRole
         : '信息科管理员',
+    newUserRoles: {
+      ...defaults.newUserRoles,
+      ...(parsed.newUserRoles || {}),
+    },
     // 偏好中显式 false 也保留 false（不会因「key 不存在 = 默认 true」而漏写）
     visibleModules: { ...defaults.visibleModules, ...(parsed.visibleModules || {}) },
     visibleSubPages: { ...defaults.visibleSubPages, ...(parsed.visibleSubPages || {}) },
@@ -91,6 +101,7 @@ const saveToStorage = (settings: DemoSettings) => {
 
 interface DemoSettingsContextValue extends DemoSettings {
   setDemoRole: (role: DemoRole) => void;
+  setRoleNewUser: (role: DemoRole, enabled: boolean) => void;
   setModuleVisible: (moduleKey: ModuleKey | string, visible: boolean) => void;
   setSubPageVisible: (subKey: string, visible: boolean) => void;
   /** 一键全选 / 全不选；同时影响一级模块 + 二级子页面 */
@@ -128,6 +139,13 @@ export const DemoSettingsProvider = ({ children }: { children: ReactNode }) => {
     },
     [switchRole],
   );
+
+  const setRoleNewUser = useCallback((role: DemoRole, enabled: boolean) => {
+    setSettings((prev) => ({
+      ...prev,
+      newUserRoles: { ...prev.newUserRoles, [role]: enabled },
+    }));
+  }, []);
 
   const setModuleVisible = useCallback((moduleKey: ModuleKey | string, visible: boolean) => {
     setSettings((prev) => ({
@@ -194,6 +212,7 @@ export const DemoSettingsProvider = ({ children }: { children: ReactNode }) => {
       value={{
         ...settings,
         setDemoRole,
+        setRoleNewUser,
         setModuleVisible,
         setSubPageVisible,
         setAllVisible,

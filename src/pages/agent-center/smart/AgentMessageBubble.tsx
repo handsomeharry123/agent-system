@@ -929,6 +929,37 @@ const AgentMessageBubble = ({
       );
     }
 
+    case 'register-submit-confirm': {
+      return (
+        <div style={wrap}>
+          <div
+            data-testid="register-submit-confirm-msg"
+            style={{
+              ...bubble,
+              borderColor: '#91CAFF',
+              background: 'linear-gradient(90deg,#F0F8FF 0%,#FFFFFF 100%)',
+            }}
+          >
+            <Space size={6} style={{ marginBottom: 6 }}>
+              <CheckCircleOutlined style={{ color: '#52C41A' }} />
+              <Tag color="success">信息完整 · 测试通过</Tag>
+            </Space>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+              {msg.content}
+            </div>
+            <Button
+              type="primary"
+              size="small"
+              icon={<RocketOutlined />}
+              onClick={() => window.dispatchEvent(new Event('agent-register-confirm-submit'))}
+            >
+              确认提交
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
     // ─── §4.2.3 PRD：连通测试失败 → Agent 联网搜索解决方案气泡 ───
     case 'web-search-solution': {
       const list = msg.payload?.webSearchSolutions ?? [];

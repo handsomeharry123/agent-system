@@ -72,8 +72,10 @@ import {
   UndoOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/useAuth';
+import { useDemoSettings } from '../../hooks/useDemoSettings';
 import { departmentOptions } from '../../mock/departments';
 import PageHeader from '../../components/PageHeader';
+import NewUserConsole from '../../components/NewUserConsole';
 import {
   ROLE_ADMIN,
   ROLE_DEPT,
@@ -101,7 +103,7 @@ import type { WelcomePageKey, WelcomeRole, WelcomeReplacer, WelcomeMiniList, Wel
 
 const { Text } = Typography;
 
-const AgentCenter = () => {
+const AgentCenterContent = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser } = useAuth();
@@ -1003,6 +1005,12 @@ const AgentCenter = () => {
       <span style={{ display: 'none' }} aria-hidden>{ROLE_DEPT}</span>
     </div>
   );
+};
+
+const AgentCenter = () => {
+  const { demoRole, newUserRoles } = useDemoSettings();
+  if (newUserRoles[demoRole]) return <NewUserConsole kind="register" />;
+  return <AgentCenterContent />;
 };
 
 export default AgentCenter;

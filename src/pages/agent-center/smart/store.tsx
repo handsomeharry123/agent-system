@@ -97,6 +97,8 @@ const deptSituationBubble =
   '今日审核中 X 个、准入通过 X 个、退回修改 X 个。在气泡里点对应状态即可直接进入处理～';
 const registerWindowCopy =
   '你好！我是医小管。点击【新建注册】，把产品说明书 / 技术规格书发给我（支持 PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮你自动识别并填表～';
+const smartRegisterBubbleCopy =
+  '您想要接入什么智能体？把产品说明书、技术规格说明书发给我（支持PDF、DOC、DOCX、XLSX、csv、jpg、jpeg、png、链接等任意文件格式），或文字、语音描述，我来帮您登记注册信息~';
 
 /**
  * PRD §3.1.1 欢迎语表（窗口内 + 机器人旁气泡同步展示）
@@ -458,15 +460,15 @@ const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>
   },
   'smart-register': {
     dept: {
-      bubble: deptSituationBubble,
+      bubble: smartRegisterBubbleCopy,
       window: registerWindowCopy,
     },
     provider: {
-      bubble: deptSituationBubble,
+      bubble: smartRegisterBubbleCopy,
       window: registerWindowCopy,
     },
     admin: {
-      bubble: adminSituationBubble,
+      bubble: smartRegisterBubbleCopy,
       window: registerWindowCopy,
     },
   },
@@ -756,12 +758,34 @@ const HIDDEN_CHAT_MESSAGE_TYPES = new Set<AgentMessage['type']>([
   'pre-audit-issue',
 ]);
 
-export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
+export const SmartDraftProvider = ({
+  children,
+  moduleKey,
+}: {
+  children: ReactNode;
+  /**
+   * 当前一级功能模块。对话只在本次 Provider 生命周期（即一次登录）内保存，
+   * 并按该 key 隔离；切回模块时恢复，Provider 卸载后全部清空。
+   */
+  moduleKey: string;
+}) => {
   // §3.1.1 ChatPanel 浮层打开时默认空消息：实际欢迎语由各页面 useEffect
   //   pushWelcomeGreeting(pageKey, role) 按需投递,带 __welcome__:<key>:<role>
   //   tag 去重,避免重复堆叠;初始留空避免「一进入接入中心就看到旧版
   //   智能填写助手开场白」与 WELCOME_GREETINGS['agent-center-all'] 文案冲突
-  const [messages, setMessages] = useState<AgentMessage[]>(initialMessages);
+  const [messagesByModule, setMessagesByModule] = useState<Record<string, AgentMessage[]>>({});
+  const messages = messagesByModule[moduleKey] ?? initialMessages;
+  const setMessages = useCallback(
+    (update: AgentMessage[] | ((previous: AgentMessage[]) => AgentMessage[])) => {
+      setMessagesByModule((all) => {
+        const previous = all[moduleKey] ?? initialMessages;
+        const next = typeof update === 'function' ? update(previous) : update;
+        if (next === previous) return all;
+        return { ...all, [moduleKey]: next };
+      });
+    },
+    [moduleKey],
+  );
   const [pendingPrefills, setPendingPrefills] = useState<Record<string, string>>({});
   const [prefillMeta, setPrefillMeta] = useState<Record<string, AIPrefillMeta>>({});
   const [pendingFixes, setPendingFixes] = useState<SmartDraftCtx['pendingFixes']>([]);
@@ -797,7 +821,7 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
       ...prev,
       { ...m, id: nextId(), timestamp: formatNow() },
     ]);
-  }, []);
+  }, [setMessages]);
 
   /**
    * 带 id 前缀插入消息（§3.4.1.2 详情页 insight 气泡等场景）。
@@ -809,7 +833,7 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
       ...prev,
       { ...m, id: `${idPrefix}-${nextId()}`, timestamp: formatNow() },
     ]);
-  }, []);
+  }, [setMessages]);
 
   const appendToLastAgent: SmartDraftCtx['appendToLastAgent'] = useCallback((patch) => {
     setMessages((prev) => {
@@ -822,11 +846,11 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
       }
       return next;
     });
-  }, []);
+  }, [setMessages]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
-  }, []);
+  }, [setMessages]);
 
   /**
    * §3.4.1.2 详情页切换记录时, 按 id 前缀清理旧的 insight 消息避免堆叠。
@@ -835,7 +859,7 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
   const removeMessagesByTag = useCallback((tagPrefix: string) => {
     if (!tagPrefix) return;
     setMessages((prev) => prev.filter((m) => !m.id.startsWith(tagPrefix)));
-  }, []);
+  }, [setMessages]);
 
   // PRD §3.1.1 表格：进入页面时同时在「对话窗口内 + 机器人旁气泡」展示欢迎语
   // - 同一页面（pageKey + role）重复进入不重复推消息，但机器人旁气泡每次重新弹出
@@ -920,7 +944,7 @@ export const SmartDraftProvider = ({ children }: { children: ReactNode }) => {
         ];
       });
     },
-    [],
+    [setMessages],
   );
 
   const consumeWelcome: SmartDraftCtx['consumeWelcome'] = useCallback(() => {

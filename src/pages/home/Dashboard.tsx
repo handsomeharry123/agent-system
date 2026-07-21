@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Line, Pie } from "@ant-design/charts";
 import {
   Button,
@@ -23,7 +23,6 @@ import {
   FullscreenOutlined,
   ReloadOutlined,
   EnvironmentFilled,
-  RiseOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
   ThunderboltOutlined,
@@ -42,6 +41,79 @@ const colors = ["#1677ff", "#13c2c2", "#722ed1", "#fa8c16", "#eb2f96"];
 const month = ["02月", "03月", "04月", "05月", "06月", "07月"];
 const spark = (values: number[]) =>
   month.map((label, index) => ({ label, value: values[index] }));
+
+function buildSmoothPath(points: Array<[number, number]>) {
+  if (points.length < 2) return "";
+  return points.slice(1).reduce((path, point, index) => {
+    const previous = points[index];
+    const previousPrevious = points[index - 1] || previous;
+    const next = points[index + 2] || point;
+    const controlX1 = previous[0] + (point[0] - previousPrevious[0]) / 6;
+    const controlY1 = previous[1] + (point[1] - previousPrevious[1]) / 6;
+    const controlX2 = point[0] - (next[0] - previous[0]) / 6;
+    const controlY2 = point[1] - (next[1] - previous[1]) / 6;
+    return `${path} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${point[0]} ${point[1]}`;
+  }, `M ${points[0][0]} ${points[0][1]}`);
+}
+
+function KpiSparkline({ values, color }: { values: readonly number[]; color: string }) {
+  const rawId = useId();
+  const id = rawId.replace(/:/g, "");
+  const width = 190;
+  const height = 72;
+  const paddingX = 8;
+  const paddingY = 10;
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const range = maximum - minimum || 1;
+  const points = values.map((value, index) => [
+    paddingX + (index * (width - paddingX * 2)) / (values.length - 1),
+    height - paddingY - ((value - minimum) / range) * (height - paddingY * 2),
+  ] as [number, number]);
+  const linePath = buildSmoothPath(points);
+  const areaPath = `${linePath} L ${points.at(-1)![0]} ${height} L ${points[0][0]} ${height} Z`;
+  const lastPoint = points.at(-1)!;
+
+  return (
+    <div className="dashboard-kpi-sparkline" aria-hidden="true">
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id={`spark-area-${id}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.42" />
+            <stop offset="72%" stopColor={color} stopOpacity="0.1" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id={`spark-line-${id}`} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={color} stopOpacity="0.55" />
+            <stop offset="45%" stopColor={color} />
+            <stop offset="100%" stopColor="#dffcff" />
+          </linearGradient>
+          <filter id={`spark-glow-${id}`} x="-30%" y="-50%" width="160%" height="200%">
+            <feGaussianBlur stdDeviation="2.4" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <clipPath id={`spark-clip-${id}`}>
+            <rect className="dashboard-kpi-spark-reveal" width={width} height={height} />
+          </clipPath>
+        </defs>
+        <g className="dashboard-kpi-spark-grid">
+          <path d={`M 0 24 H ${width} M 0 48 H ${width}`} />
+          <path d={`M 48 0 V ${height} M 96 0 V ${height} M 144 0 V ${height}`} />
+        </g>
+        <g clipPath={`url(#spark-clip-${id})`}>
+          <path className="dashboard-kpi-spark-area" d={areaPath} fill={`url(#spark-area-${id})`} />
+          <path className="dashboard-kpi-spark-glow" d={linePath} stroke={color} />
+          <path className="dashboard-kpi-spark-line" d={linePath} stroke={`url(#spark-line-${id})`} />
+          {points.map(([x, y], index) => (
+            <circle key={index} className="dashboard-kpi-spark-point" cx={x} cy={y} r="2.2" style={{ animationDelay: `${0.45 + index * 0.09}s` }} />
+          ))}
+        </g>
+        <circle className="dashboard-kpi-spark-pulse" cx={lastPoint[0]} cy={lastPoint[1]} r="5" stroke={color} />
+        <circle className="dashboard-kpi-spark-terminal" cx={lastPoint[0]} cy={lastPoint[1]} r="3.2" fill="#eaffff" filter={`url(#spark-glow-${id})`} />
+      </svg>
+    </div>
+  );
+}
 const adminMetrics = [
   [
     "智能体数量",
@@ -171,6 +243,8 @@ const alertLevels = [
   { name: "中级", value: 12 },
   { name: "低级", value: 20 },
 ];
+
+type PieDatum = { name: string; value: number };
 const alertRank = [
   { name: "影像报告助手", value: 9 },
   { name: "病历质控助手", value: 7 },
@@ -206,7 +280,6 @@ const deploymentPoints = [
     x: 16,
     y: 57,
     popover: "right",
-    tone: "#31a8ff",
   },
   {
     id: "AGT-2025-005",
@@ -217,7 +290,6 @@ const deploymentPoints = [
     x: 34,
     y: 20,
     popover: "right",
-    tone: "#9a61ff",
   },
   {
     id: "AGT-2025-006",
@@ -228,7 +300,6 @@ const deploymentPoints = [
     x: 70,
     y: 18,
     popover: "right",
-    tone: "#4bdc78",
   },
   {
     id: "AGT-2025-008",
@@ -239,7 +310,6 @@ const deploymentPoints = [
     x: 44,
     y: 51,
     popover: "left",
-    tone: "#ffb01f",
   },
   {
     id: "AGT-2025-012",
@@ -250,7 +320,6 @@ const deploymentPoints = [
     x: 74,
     y: 68,
     popover: "right",
-    tone: "#43dc79",
   },
   {
     id: "AGT-2025-014",
@@ -261,7 +330,6 @@ const deploymentPoints = [
     x: 63,
     y: 39,
     popover: "right",
-    tone: "#9a61ff",
   },
   {
     id: "AGT-2025-015",
@@ -272,7 +340,6 @@ const deploymentPoints = [
     x: 27,
     y: 78,
     popover: "left",
-    tone: "#ff513e",
   },
 ] as const;
 
@@ -282,7 +349,7 @@ function KpiCard({
   metric: (typeof adminMetrics)[number] | (typeof deptMetrics)[number];
 }) {
   const navigate = useNavigate();
-  const [title, value, suffix, compare, values, path, color] = metric;
+  const [title, value, suffix, , values, path, color] = metric;
   return (
     <Card
       hoverable
@@ -316,39 +383,8 @@ function KpiCard({
           </Text>
           <Text className="dashboard-kpi-suffix" style={{ color }}>{suffix}</Text>
         </div>
-        <Text
-          style={{
-            display: "block",
-            marginTop: 7,
-            color: compare.includes("-") ? "#52c41a" : "#8c8c8c",
-            fontSize: 11,
-            whiteSpace: "nowrap",
-          }}
-        >
-          <RiseOutlined /> {compare}
-        </Text>
       </div>
-      <div
-        style={{
-          position: "absolute",
-          width: "39%",
-          right: 10,
-          bottom: 15,
-          opacity: 0.9,
-        }}
-      >
-        <Line
-          data={spark([...values])}
-          xField="label"
-          yField="value"
-          height={52}
-          axis={false}
-          tooltip={false}
-          color={color}
-          padding={0}
-          point={false}
-        />
-      </div>
+      <KpiSparkline values={values} color={color} />
     </Card>
   );
 }
@@ -378,6 +414,76 @@ function ChartCard({
   );
 }
 
+function CyberPie({
+  data,
+  color,
+  tone,
+  onReady,
+  className = "",
+}: {
+  data: PieDatum[];
+  color: string[];
+  tone: string;
+  onReady?: (plot: any) => void;
+  className?: string;
+}) {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+
+  return (
+    <div
+      className={`dashboard-cyber-pie ${className}`}
+      style={{ "--pie-tone": tone } as React.CSSProperties}
+    >
+      <Pie
+        angleField="value"
+        colorField="name"
+        data={data}
+        color={color}
+        innerRadius={0.6}
+        radius={0.9}
+        height={130}
+        theme="classicDark"
+        legend={false}
+        label={{
+          text: (datum: PieDatum) => `${datum.name} ${datum.value}`,
+          position: "outside",
+          style: {
+            fill: "#b8d8ff",
+            fontSize: 11,
+            fontWeight: 600,
+            textShadowBlur: 5,
+            textShadowColor: "#06152f",
+          },
+        }}
+        tooltip={{ title: "name" }}
+        style={{
+          stroke: "#071b3b",
+          lineWidth: 2,
+          shadowColor: tone,
+          shadowBlur: 10,
+          cursor: "pointer",
+        }}
+        state={{
+          active: {
+            lineWidth: 3,
+            stroke: "#dff8ff",
+            shadowColor: tone,
+            shadowBlur: 22,
+          },
+          inactive: { opacity: 0.55 },
+        }}
+        interaction={{ elementHighlight: true }}
+        animate={{ enter: { type: "waveIn", duration: 900 } }}
+        onReady={onReady}
+      />
+      <div className="dashboard-pie-core" aria-hidden="true">
+        <strong>{total}</strong>
+        <span>总计</span>
+      </div>
+    </div>
+  );
+}
+
 function SimpleBars({
   data,
   color = "#1677ff",
@@ -389,26 +495,33 @@ function SimpleBars({
 }) {
   const max = Math.max(...data.map((item) => item.value));
   return (
-    <div className="dashboard-simple-bars">
-      {data.map((item) => (
+    <div
+      className="dashboard-simple-bars"
+      style={{ "--bar-tone": color } as React.CSSProperties}
+    >
+      {data.map((item, index) => (
         <div
           key={item.name}
           className="dashboard-simple-bar-row"
           onClick={() => onClick?.(item.name)}
           style={{ cursor: onClick ? "pointer" : "default" }}
         >
-          <Text className="dashboard-simple-bar-name" title={item.name}>
-            {item.name}
-          </Text>
+          <div className="dashboard-simple-bar-label">
+            <span className="dashboard-simple-bar-rank">{index + 1}</span>
+            <Text className="dashboard-simple-bar-name" title={item.name}>
+              {item.name}
+            </Text>
+          </div>
           <div className="dashboard-simple-bar-track">
             <div
+              className="dashboard-simple-bar-fill"
               style={{
                 width: `${Math.max(8, (item.value / max) * 100)}%`,
-                height: "100%",
-                borderRadius: 6,
-                background: `linear-gradient(90deg,${color},${color}aa)`,
+                animationDelay: `${index * 90}ms`,
               }}
-            />
+            >
+              <i className="dashboard-simple-bar-glow" />
+            </div>
           </div>
           <Text strong className="dashboard-simple-bar-value">
             {item.value.toLocaleString()}
@@ -570,13 +683,7 @@ function AgentDistributionMap() {
           key={point.id}
           type="button"
           className={`agent-map-point agent-map-point--popover-${point.popover}`}
-          style={
-            {
-              left: `${point.x}%`,
-              top: `${point.y}%`,
-              "--point-color": point.tone,
-            } as React.CSSProperties
-          }
+          style={{ left: `${point.x}%`, top: `${point.y}%` }}
           onClick={() => navigate(`/app/ledger/detail/${point.id}`)}
           aria-label={`查看${point.name}360画像`}
         >
@@ -588,31 +695,12 @@ function AgentDistributionMap() {
             <b>
               {point.name}
               <em>{point.version}</em>
+              <span>{point.status}</span>
             </b>
             <span>科室：{point.department}</span>
-            <span>
-              状态：
-              <i />
-              {point.status}
-            </span>
-            <small>点击查看 360 画像</small>
           </span>
         </button>
       ))}
-      <div className="hospital-map-legend">
-        <span>
-          <i style={{ background: "#43dc79" }} />
-          运行中
-        </span>
-        <span>
-          <i style={{ background: "#ffb01f" }} />
-          降级
-        </span>
-        <span>
-          <i style={{ background: "#ff513e" }} />
-          故障
-        </span>
-      </div>
     </div>
   );
 }
@@ -624,20 +712,6 @@ export default function Dashboard() {
   const [range, setRange] = useState("30d");
   const [fullscreen, setFullscreen] = useState(false);
   const navigate = useNavigate();
-  const pieBase = {
-    angleField: "value",
-    colorField: "name",
-    innerRadius: 0.58,
-    height: 130,
-    theme: "classicDark",
-    legend: false,
-    label: {
-      text: (datum: { name: string; value: number }) =>
-        `${datum.name} ${datum.value}`,
-      position: "outside",
-      style: { fill: "#a9c4e8", fontSize: 11 },
-    },
-  } as any;
   return (
     <div
       className={`dashboard-screen${fullscreen ? " dashboard-screen--fullscreen" : ""}`}
@@ -724,10 +798,10 @@ export default function Dashboard() {
                 <SimpleBars data={topAgents} color="#13c2c2" />
               </ChartCard>
               <ChartCard className="dashboard-pie-card" title="智能体风险分级">
-                <Pie
-                  {...pieBase}
+                <CyberPie
                   data={risks}
-                  color={["#ff4d4f", "#faad14", "#52c41a"]}
+                  color={["#ff416c", "#ffb21c", "#32e59b"]}
+                  tone="#32e59b"
                   onReady={(p: any) =>
                     p.on("element:click", (e: any) =>
                       navigate(`/app/ledger/list?risk=${e.data.data.name}`),
@@ -742,7 +816,7 @@ export default function Dashboard() {
                 className="dashboard-dept-status"
                 title="智能体实时状态"
               >
-                <Row gutter={[10, 10]}>
+                <div className="dashboard-status-grid">
                   {[
                     ["实时在线", 16, "#52c41a", <CheckCircleFilled />],
                     ["实时离线", 2, "#ff4d4f", <ExclamationCircleFilled />],
@@ -754,33 +828,29 @@ export default function Dashboard() {
                     ],
                     ["累计禁用", 3, "#8c8c8c", <SafetyCertificateOutlined />],
                   ].map(([label, value, color, icon]) => (
-                    <Col span={12} key={String(label)}>
-                      <Card
-                        className="dashboard-status-tile"
-                        hoverable
-                        onClick={() => navigate("/app/ledger/list")}
-                        styles={{ body: { padding: "10px 12px" } }}
+                    <button
+                      type="button"
+                      className="dashboard-status-tile"
+                      key={String(label)}
+                      onClick={() => navigate("/app/ledger/list")}
+                    >
+                      <span className="dashboard-status-label">
+                        {label}
+                      </span>
+                      <span
+                        className="dashboard-status-value"
+                        style={{ color: String(color) }}
                       >
-                        <Text type="secondary" className="dashboard-status-label">
-                          {label}
-                        </Text>
-                        <div
-                          className="dashboard-status-value"
-                          style={{
-                            color: String(color),
-                          }}
-                        >
-                          {icon} {value}
-                        </div>
-                        <Text type="secondary" className="dashboard-status-hint">
-                          {label === "累计禁用"
-                            ? "较昨日 +1 · 月趋势平稳"
-                            : "点击查看明细"}
-                        </Text>
-                      </Card>
-                    </Col>
+                        {icon} {value}
+                      </span>
+                      <span className="dashboard-status-hint">
+                        {label === "累计禁用"
+                          ? "较昨日 +1 · 月趋势平稳"
+                          : "点击查看明细"}
+                      </span>
+                    </button>
                   ))}
-                </Row>
+                </div>
               </ChartCard>
               <ChartCard title="禁用智能体月趋势">
                 <Line
@@ -858,11 +928,12 @@ export default function Dashboard() {
               </div>
             </div>
           </ChartCard>
-          <ChartCard className="dashboard-pie-card" title="告警级别分布">
-            <Pie
-              {...pieBase}
+          <ChartCard className="dashboard-pie-card dashboard-alert-pie-card" title="告警级别分布">
+            <CyberPie
+              className="dashboard-cyber-pie--alert"
               data={alertLevels}
-              color={["#ff4d4f", "#faad14", "#69b1ff"]}
+              color={["#ff416c", "#ffb21c", "#36b9ff"]}
+              tone="#36b9ff"
             />
           </ChartCard>
           <ChartCard className="dashboard-bar-card" title="智能体告警次数排行">

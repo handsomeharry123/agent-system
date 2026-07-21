@@ -36,8 +36,10 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/useAuth';
+import { useDemoSettings } from '../../hooks/useDemoSettings';
 import { departmentOptions } from '../../mock/departments';
 import PageHeader from '../../components/PageHeader';
+import NewUserConsole from '../../components/NewUserConsole';
 import { useSmartDraft } from '../agent-center/smart/store';
 import {
   ROLE_ADMIN,
@@ -56,7 +58,7 @@ const { Text } = Typography;
 
 type TabKey = 'list' | 'draft';
 
-const AgentNeeds = () => {
+const AgentNeedsContent = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser } = useAuth();
@@ -552,6 +554,12 @@ const AgentNeeds = () => {
       <span style={{ display: 'none' }} aria-hidden>{ROLE_DEPT}</span>
     </div>
   );
+};
+
+const AgentNeeds = () => {
+  const { demoRole, newUserRoles } = useDemoSettings();
+  if (newUserRoles[demoRole]) return <NewUserConsole kind="need" />;
+  return <AgentNeedsContent />;
 };
 
 export default AgentNeeds;

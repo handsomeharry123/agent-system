@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Drawer,
   Select,
@@ -9,6 +10,7 @@ import {
   Typography,
   message,
   Tag,
+  Checkbox,
 } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import {
@@ -87,11 +89,15 @@ interface DemoSettingsPanelProps {
 }
 
 const DemoSettingsPanel = ({ open, onClose }: DemoSettingsPanelProps) => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const {
     demoRole,
+    newUserRoles,
     visibleModules,
     visibleSubPages,
     setDemoRole,
+    setRoleNewUser,
     setModuleVisible,
     setSubPageVisible,
     setAllVisible,
@@ -201,7 +207,30 @@ const DemoSettingsPanel = ({ open, onClose }: DemoSettingsPanelProps) => {
     setMockDemoRole(mockRole);
     setMockCurrentUser({ account: applicantAccount, name: ROLE_DETAIL[role].userName, role: mockRole });
 
+    // 角色切换后按该角色保存的新用户状态进入对应默认页。
+    navigate(
+      newUserRoles[role] ? '/app/agent-center' : '/app/home/dashboard',
+      { replace: true },
+    );
     message.success(`已切换为：${ROLE_LABEL[role]}`);
+  };
+
+  const handleNewUserChange = (enabled: boolean) => {
+    setRoleNewUser(demoRole, enabled);
+    if (enabled) {
+      navigate('/app/agent-center', { replace: true });
+      return;
+    }
+
+    // 首个智能体提交成功后，注册页会先跳到待审核地址；新用户占位页虽然
+    // 暂时遮住列表，但这里必须保留该业务落点，不能再重定向到首页。
+    const submittedFirstAgent =
+      location.pathname === '/app/agent-center' &&
+      new URLSearchParams(location.search).get('tab') === '待审核';
+    navigate(
+      submittedFirstAgent ? '/app/agent-center?tab=待审核' : '/app/home/dashboard',
+      { replace: true },
+    );
   };
 
   return (
@@ -226,21 +255,30 @@ const DemoSettingsPanel = ({ open, onClose }: DemoSettingsPanelProps) => {
       {/* 角色切换 */}
       <div style={{ marginBottom: 16 }}>
         <Text strong>演示角色</Text>
-        <Select
-          value={demoRole}
-          onChange={handleRoleChange}
-          style={{ width: '100%', marginTop: 8 }}
-          options={[
-            {
-              label: `信息科管理员（${ROLE_DETAIL['信息科管理员'].userName}）`,
-              value: '信息科管理员',
-            },
-            {
-              label: `科室管理员（${ROLE_DETAIL['科室管理员'].userName}）`,
-              value: '科室管理员',
-            },
-          ]}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+          <Select
+            value={demoRole}
+            onChange={handleRoleChange}
+            style={{ flex: 1 }}
+            options={[
+              {
+                label: `信息科管理员（${ROLE_DETAIL['信息科管理员'].userName}）`,
+                value: '信息科管理员',
+              },
+              {
+                label: `科室管理员（${ROLE_DETAIL['科室管理员'].userName}）`,
+                value: '科室管理员',
+              },
+            ]}
+          />
+          <Checkbox
+            checked={newUserRoles[demoRole]}
+            onChange={(event) => handleNewUserChange(event.target.checked)}
+            style={{ whiteSpace: 'nowrap' }}
+          >
+            新用户
+          </Checkbox>
+        </div>
         <div
           style={{
             fontSize: 12,

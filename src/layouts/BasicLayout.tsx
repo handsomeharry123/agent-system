@@ -46,10 +46,11 @@ const BasicLayout = () => {
     return unsubscribe;
   }, []);
   const [demoPanelOpen, setDemoPanelOpen] = useState(false);
-  const { currentUser } = useAuth();
+  const { currentUser, logout } = useAuth();
   const { themeKey, setThemeKey } = useTheme();
   const isTech = themeKey === 'tech';
-  const { visibleModules, visibleSubPages, demoRole } = useDemoSettings();
+  const { visibleModules, visibleSubPages, demoRole, newUserRoles } = useDemoSettings();
+  const isNewUser = newUserRoles[demoRole];
 
   const demoMode = isDemoModeEnabled();
 
@@ -63,10 +64,21 @@ const BasicLayout = () => {
 
   // 根据 demo 角色 + 模块显隐集合计算最终菜单
   // 2 角色可见性维度：信息科管理员 = itAdmin；科室管理员 = itUser
-  const filteredMenuItems = useMemo(
-    () => resolveMenu(visibleModules, visibleSubPages, demoRole === '信息科管理员' ? 'itAdmin' : 'itUser'),
-    [visibleModules, visibleSubPages, demoRole],
-  );
+  const filteredMenuItems = useMemo(() => {
+    const effectiveVisibleModules = isNewUser
+      ? Object.fromEntries(
+          masterMenu.map((module) => [
+            module.key,
+            module.key === 'agent-needs' || module.key === 'agent-center',
+          ]),
+        )
+      : visibleModules;
+    return resolveMenu(
+      effectiveVisibleModules,
+      visibleSubPages,
+      demoRole === '信息科管理员' ? 'itAdmin' : 'itUser',
+    );
+  }, [visibleModules, visibleSubPages, demoRole, isNewUser]);
 
   // ProLayout 默认使用前缀匹配菜单路径。模块首页与「监控告警总览」共用
   // /app/monitoring 时，访问任意更深的监控页面也会误选中总览。
@@ -87,6 +99,9 @@ const BasicLayout = () => {
   // 使用原有医小管。避免两个宿主同时存在时出现重复机器人，同时保留原助手的欢迎提示。
   const isLedgerRoute =
     location.pathname === '/app/ledger' || location.pathname.startsWith('/app/ledger/');
+  const isNewUserConsoleRoute =
+    isNewUser &&
+    (location.pathname === '/app/agent-needs' || location.pathname === '/app/agent-center');
 
   // 当前所在模块若被关闭 / 角色无权，自动跳转到一个安全的落地页
   // 安全的落地页 = 所有角色均回到首页数据大屏
@@ -95,6 +110,15 @@ const BasicLayout = () => {
   useEffect(() => {
     if (!currentUser) return;
     const path = location.pathname;
+    const isNewUserAllowedPath =
+      path === '/app/agent-needs' ||
+      path.startsWith('/app/agent-needs/') ||
+      path === '/app/agent-center' ||
+      path.startsWith('/app/agent-center/');
+    if (isNewUser && !isNewUserAllowedPath) {
+      navigate('/app/agent-center', { replace: true });
+      return;
+    }
     // 🛡️ V2.4 兜底:接入中心全部二级路径永久豁免拦截(不依赖 masterMenu 子项配置)
     //  场景:StrictMode + 子组件 hooks 顺序漂移导致 ErrorBoundary 替换为 "Something went wrong.",
     //  用户会误读为「拒绝访问」;此短路确保即使上游拦截逻辑因任何 race 误判,
@@ -166,7 +190,7 @@ const BasicLayout = () => {
       // 当前路径未触发拦截，重置 warned 标记
       warnedForRef.current = '';
     }
-  }, [location.pathname, visibleModules, visibleSubPages, demoRole, currentUser, navigate]);
+  }, [location.pathname, visibleModules, visibleSubPages, demoRole, isNewUser, currentUser, navigate]);
 
   const isItAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
 
@@ -226,6 +250,7 @@ const BasicLayout = () => {
         setDemoPanelOpen(true);
         break;
       case 'logout':
+        logout();
         message.success('已退出登录');
         navigate('/login');
         break;
@@ -340,9 +365,9 @@ const BasicLayout = () => {
         {/* V1 智能化升级：§3.1.1 全局 Agent 对话浮层 + 草稿 store
            —— Provider 必须包住 Outlet, 让 SmartRegistrationForm (通过 React Router 渲染)
               也能 useSmartDraft() 拿到 store */}
-        <SmartDraftProvider>
+        <SmartDraftProvider moduleKey={location.pathname.split('/')[2] || 'app'}>
           <Outlet />
-          {!isLedgerRoute && <AgentAssistant />}
+          {!isLedgerRoute && !isNewUserConsoleRoute && <AgentAssistant />}
           {/* 台账中心智能化升级(PRD §3.1.1 + §3.1.2):
               进入台账总览 / 台账列表页时,自动弹出非打断态势汇报气泡欢迎语;
               点击机器人可唤起 Agent 对话窗口(自然语言问答 + 推荐问句)。

@@ -165,23 +165,26 @@ const SmartRegistrationForm = () => {
   const watchedApiKey = Form.useWatch('apiKey', form);
   const watchedPlatformUrl = Form.useWatch('platformUrl', form);
   const watchedPlatformKey = Form.useWatch('platformKey', form);
+  const watchedRegistrationValues = Form.useWatch([], form);
   const connAutoTriggerKey = useMemo(() => {
     const mode = watchedAccessMode;
     if (mode === 'API') {
       const ep = String(watchedApiEndpoint || '').trim();
       const ak = String(watchedApiKey || '').trim();
-      // 仅当 endpoint + apiKey 都非空时输出签名 → ConnectivityTester 自动跑
+      // AI 预填字段必须先由用户明确采纳；手动修改会清除 prefillMeta，可直接测试。
       if (!ep || !ak) return '';
+      if (prefillMeta.apiEndpoint?.acknowledged === false || prefillMeta.apiKey?.acknowledged === false) return '';
       return `API::${ep}::${ak}`;
     }
     if (mode === 'SDK' || mode === 'OTel') {
       const pu = String(watchedPlatformUrl || '').trim();
       const pk = String(watchedPlatformKey || '').trim();
       if (!pu || !pk) return '';
+      if (prefillMeta.platformUrl?.acknowledged === false || prefillMeta.platformKey?.acknowledged === false) return '';
       return `${mode}::${pu}::${pk}`;
     }
     return '';
-  }, [watchedAccessMode, watchedApiEndpoint, watchedApiKey, watchedPlatformUrl, watchedPlatformKey]);
+  }, [watchedAccessMode, watchedApiEndpoint, watchedApiKey, watchedPlatformUrl, watchedPlatformKey, prefillMeta]);
 
   // §3.1.1 P1.3 语义联动填充：
   //   - 用户输入「功能描述」后,实时推断临床环节 + 所属科室
@@ -872,6 +875,28 @@ const SmartRegistrationForm = () => {
     });
     setTimeout(() => navigate('/app/agent-center?tab=待审核'), 600);
   };
+
+  // 信息完整且测试通过后，由医小管询问是否代提交。相同表单/测试签名只提示一次。
+  const submitPromptKeyRef = useRef('');
+  useEffect(() => {
+    if (!tested || !testResult?.ok || !connAutoTriggerKey) return;
+    const values = watchedRegistrationValues || form.getFieldsValue(true);
+    if (!isRequiredRegistrationInfoComplete(values) || missingRequired.length > 0) return;
+    const key = `${connAutoTriggerKey}::${values.name}::${values.version}::${fileList.map((f) => f.uid).join(',')}`;
+    if (submitPromptKeyRef.current === key) return;
+    submitPromptKeyRef.current = key;
+    addMessage({
+      role: 'agent',
+      type: 'register-submit-confirm',
+      content: '注册信息已完整且测试验证通过，是否需要帮你提交注册信息？',
+    });
+  }, [tested, testResult, connAutoTriggerKey, watchedRegistrationValues, form, missingRequired.length, fileList, addMessage]);
+
+  useEffect(() => {
+    const onConfirmSubmit = () => void submitRegister();
+    window.addEventListener('agent-register-confirm-submit', onConfirmSubmit);
+    return () => window.removeEventListener('agent-register-confirm-submit', onConfirmSubmit);
+  });
 
   // 用户手动修改字段 → 清除 AI 预填高亮 (AIPrefillWrapper 内部已自动处理)
   // 但还要给 store 一个通知, 让对话助手下次推送不再以 "高亮未确认" 状态展示

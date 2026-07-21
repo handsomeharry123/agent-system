@@ -111,21 +111,8 @@ export const masterMenu: MasterModule[] = [
     icon: <RobotOutlined />,
     defaultVisible: true,
     defaultRoleVisible: 'both',
-    children: [
-      // V2.x fix: 显式列出 smart-register 子项;BasicLayout 的 subPage 查找精确命中,
-      //   而不是用 startsWith('/app/agent-center/') 长前缀匹配兜底。
-      //   defaultVisible:false 让它不挤进侧边栏(主入口仍是 /app/agent-center),
-      //   但路径归属判定走精确 path,语义更稳,信息科管理员不会因路径前缀匹配
-      //   在某种异步竞态下被 BasicLayout 误判。
-      {
-        key: 'agent-center:smart-register',
-        name: '智能填写新建注册',
-        path: '/app/agent-center/smart-register',
-        defaultVisible: false,
-        defaultRoleVisible: 'both',
-      },
-    ],
-    // V2.1：一级入口直接进入"注册管理"页面，不再有二级子菜单
+    // 一级入口直接进入注册管理页面；新建注册是页内路由，不进入侧边栏菜单树。
+    // 不保留隐藏 children，避免旧版 localStorage 显隐配置将其重新显示为二级菜单。
   },
   {
     key: 'ledger',

@@ -349,6 +349,7 @@ const recognizeText = async (text: string): Promise<RecognizeResult> => {
 
 const CHAT_WIDTH = 480;
 const CHAT_HEIGHT = 660;
+const CHAT_BOTTOM_OFFSET = 40;
 const HIDDEN_CHAT_MESSAGE_TYPES = new Set(['historical-plan', 'pre-audit-summary', 'pre-audit-issue']);
 
 // ──────────────────────────────────────────────────────────────────────
@@ -1339,7 +1340,16 @@ const AgentAssistant = () => {
           </button>
           <strong style={{ color: '#1677FF', fontSize: 13 }}>医小管</strong>
           <span
-            style={{ marginLeft: 4, display: 'inline-block', marginTop: 4 }}
+            style={{
+              marginLeft: 4,
+              display: 'inline-block',
+              marginTop: 4,
+              // 新建注册欢迎语包含 DOCX / XLSX；优先使用标准西文字体，
+              // 避免部分中文字体将大写 X 显示成近似数字 2 / 3 的字形。
+              ...(activeWelcome.pageKey === 'smart-register'
+                ? { fontFamily: 'Arial, "PingFang SC", "Microsoft YaHei", sans-serif' }
+                : {}),
+            }}
             data-testid="status-bubble-content"
           >
             {activeWelcome.content}
@@ -1922,10 +1932,10 @@ const AgentAssistant = () => {
           style={{
             position: 'fixed',
             right: 24,
-            bottom: 24,
+            bottom: CHAT_BOTTOM_OFFSET,
             width: CHAT_WIDTH,
             height: CHAT_HEIGHT,
-            maxHeight: 'calc(100vh - 48px)',
+            maxHeight: `calc(100vh - ${CHAT_BOTTOM_OFFSET + 24}px)`,
             background: '#FFFFFF',
             borderRadius: 12,
             boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
