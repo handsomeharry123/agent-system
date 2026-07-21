@@ -47,6 +47,8 @@ const AlertEventReview = () => {
 
   const preReview = useMemo(() => {
     if (!event) return null;
+    const completeRemark = `经智能预审，处理人已完成“${event.triggerContent.rule_name}”相关排查与处置，处理方案包含原因排查、服务恢复及指标复核，且记录显示告警指标已恢复正常，建议审核通过并关闭该告警事项。`;
+    const returnRemark = `经智能预审，当前处理记录尚不足以证明“${event.triggerContent.rule_name}”对应指标已恢复至正常范围，请补充根因、处置结果及恢复后的监控数据后重新提交。`;
     const recovered = event.handleResult === '已处理' && /回升|恢复|正常|已处理/.test(
       `${event.handlePlan || ''} ${event.handleTimeline?.map((item) => item.remark || '').join(' ') || ''}`,
     );
@@ -54,13 +56,17 @@ const AlertEventReview = () => {
       return {
         reviewOpinion: '处理完成，关闭该告警事项',
         verdict: '处理完成，关闭该告警事项',
-        reviewRemark: `经智能预审，处理人已完成“${event.triggerContent.rule_name}”相关排查与处置，处理方案包含原因排查、服务恢复及指标复核，且记录显示告警指标已恢复正常，建议审核通过并关闭该告警事项。`,
+        reviewRemark: completeRemark,
+        completeRemark,
+        returnRemark,
       };
     }
     return {
       reviewOpinion: '退回重新处理',
       verdict: '退回重新处理',
-      reviewRemark: `经智能预审，当前处理记录尚不足以证明“${event.triggerContent.rule_name}”对应指标已恢复至正常范围，请补充根因、处置结果及恢复后的监控数据后重新提交。`,
+      reviewRemark: returnRemark,
+      completeRemark,
+      returnRemark,
     };
   }, [event]);
 
@@ -69,11 +75,12 @@ const AlertEventReview = () => {
     pushWelcomeGreeting(
       'monitoring-alert-review',
       'admin',
-      () => [preReview.verdict, preReview.reviewRemark],
+      () => [preReview.verdict],
       {
-        windowReplacements: [preReview.verdict, preReview.reviewRemark],
+        windowReplacements: [preReview.verdict],
         actions: [
-          { key: 'adopt-alert-review', label: '采用预审建议', event: 'monitoring-alert-adopt-review', enabled: true },
+          { key: 'complete-alert-review', label: '处理完成', event: 'monitoring-alert-review-complete', enabled: true },
+          { key: 'return-alert-review', label: '退回重新处理', event: 'monitoring-alert-review-return', enabled: true },
         ],
       },
     );
@@ -81,19 +88,33 @@ const AlertEventReview = () => {
 
   useEffect(() => {
     if (!preReview) return undefined;
-    const adoptReview = () => {
+    // 进入审核页即自动填入智能预审结论与审核说明，用户仍可修改。
+    reviewForm.setFieldsValue({
+      reviewOpinion: preReview.reviewOpinion,
+      reviewRemark: preReview.reviewRemark,
+    });
+
+    const chooseReview = (reviewOpinion: string, reviewRemark: string) => {
       reviewForm.setFieldsValue({
-        reviewOpinion: preReview.reviewOpinion,
-        reviewRemark: preReview.reviewRemark,
+        reviewOpinion,
+        reviewRemark,
       });
-      message.success('已采用医小管预审建议，请确认后提交审核');
       document.querySelector('[data-testid="alert-review-form"]')?.scrollIntoView({
         behavior: 'smooth',
         block: 'center',
       });
+      window.setTimeout(() => {
+        (document.querySelector('[data-testid="alert-review-submit"]') as HTMLButtonElement | null)?.click();
+      }, 0);
     };
-    window.addEventListener('monitoring-alert-adopt-review', adoptReview);
-    return () => window.removeEventListener('monitoring-alert-adopt-review', adoptReview);
+    const completeReview = () => chooseReview('处理完成，关闭该告警事项', preReview.completeRemark);
+    const returnReview = () => chooseReview('退回重新处理', preReview.returnRemark);
+    window.addEventListener('monitoring-alert-review-complete', completeReview);
+    window.addEventListener('monitoring-alert-review-return', returnReview);
+    return () => {
+      window.removeEventListener('monitoring-alert-review-complete', completeReview);
+      window.removeEventListener('monitoring-alert-review-return', returnReview);
+    };
   }, [preReview, reviewForm]);
 
   useEffect(() => {
@@ -242,7 +263,7 @@ const AlertEventReview = () => {
 
       <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
         <Button onClick={() => navigate('/app/monitoring/alert-events')}>返回</Button>
-        <Button type="primary" icon={<AuditOutlined />} onClick={submitReview} loading={saving}>
+        <Button data-testid="alert-review-submit" type="primary" icon={<AuditOutlined />} onClick={submitReview} loading={saving}>
           提交审核
         </Button>
       </div>

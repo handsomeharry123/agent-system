@@ -89,7 +89,7 @@ const BasicLayout = () => {
     location.pathname === '/app/ledger' || location.pathname.startsWith('/app/ledger/');
 
   // 当前所在模块若被关闭 / 角色无权，自动跳转到一个安全的落地页
-  // 安全的落地页 = 当前角色基线可见的页面：信息科管理员 → 首页；科室管理员 → 工作台
+  // 安全的落地页 = 所有角色均回到首页数据大屏
   // V2.0：用 ref 记录"已提示过的拦截目标"，避免 React 18 StrictMode 下 effect 双跑 / 同一次访问重弹 message
   const warnedForRef = useRef<string>('');
   useEffect(() => {
@@ -121,9 +121,8 @@ const BasicLayout = () => {
     });
     if (!ownerModule) return;
 
-    // 计算当前角色下「安全的」回退路径
-    // 2 角色：信息科管理员 → 首页；科室管理员 → 工作台
-    const safeFallback = demoRole === '信息科管理员' ? '/app/home/overview' : '/app/home/workbench';
+    // 权限拦截后也统一回到首页数据大屏。
+    const safeFallback = '/app/home/dashboard';
 
     // 拦截策略 V2.1：仅在「角色基线无权」时强制回退，不再因演示面板取消勾选拦截路径。
     // 理由：演示面板的可见性只是「侧边栏显隐」开关，不应劫持地址栏直接访问的路由。
@@ -329,7 +328,7 @@ const BasicLayout = () => {
         </div>
       )}
       rightContentRender={() => renderHeaderContent()}
-      onMenuHeaderClick={() => navigate('/app/home/workbench')}
+      onMenuHeaderClick={() => navigate('/app/home/dashboard')}
       menuItemRender={menuItemRender}
     >
       <div

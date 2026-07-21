@@ -10,6 +10,7 @@ import { chromium } from 'playwright';
 import path from 'node:path';
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:3001';
+const TARGET_PATH = process.env.TARGET_PATH || '/app/agent-center';
 const VIEWPORT = { width: 1440, height: 900 };
 
 const log = (...a) => console.log('[draggable]', ...a);
@@ -21,8 +22,8 @@ const entryHandleSel = '[aria-label*="可拖拽"]';
   const ctx = await browser.newContext({ viewport: VIEWPORT });
   const page = await ctx.newPage();
 
-  // 进 agent-center (任意有浮窗的页面)
-  await page.goto(`${BASE}/app/agent-center`, { waitUntil: 'networkidle' });
+  // 进入指定的有浮窗页面，默认仍为 agent-center。
+  await page.goto(`${BASE}${TARGET_PATH}`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(800);
   await page.evaluate(() => localStorage.removeItem('agent_assistant_pos_v1'));
   await page.reload({ waitUntil: 'networkidle' });

@@ -32,6 +32,7 @@ import type { ReactNode } from 'react';
 
 export type ModuleKey =
   | 'home'
+  | 'assistant'
   | 'workbench'
   | 'agent-needs'
   | 'agent-center'
@@ -70,25 +71,18 @@ export const masterMenu: MasterModule[] = [
   {
     key: 'home',
     name: '首页',
-    path: '/app/home/overview',
-    icon: <HomeOutlined />,
-    // 首页下设数据大屏与医小管两个二级入口；原首页作为医小管落地页保留。
+    path: '/app/home/dashboard',
+    icon: <DashboardOutlined />,
     defaultVisible: true,
     defaultRoleVisible: 'both',
-    children: [
-      {
-        key: 'home:dashboard',
-        name: '数据大屏',
-        path: '/app/home/dashboard',
-        defaultVisible: true,
-      },
-      {
-        key: 'home:overview',
-        name: '医小管',
-        path: '/app/home/overview',
-        defaultVisible: true,
-      },
-    ],
+  },
+  {
+    key: 'assistant',
+    name: '医小管',
+    path: '/app/home/overview',
+    icon: <RobotOutlined />,
+    defaultVisible: true,
+    defaultRoleVisible: 'both',
   },
   {
     key: 'workbench',

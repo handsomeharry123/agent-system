@@ -157,11 +157,11 @@ const routes: RouteObject[] = [
     children: [
       // 默认落地页：根据角色动态跳转（管理员到首页，普通用户到工作台）
       { index: true, element: <RoleBasedRedirect /> },
-      // Home - 首页（仅管理员通过侧边栏访问）
+      // 首页数据大屏与医小管共用 home 路由段，侧边栏中分别作为一级菜单展示
       {
         path: 'home',
         children: [
-          { index: true, element: <Navigate to="/app/home/overview" replace /> },
+          { index: true, element: <Navigate to="/app/home/dashboard" replace /> },
           { path: 'overview', element: <HomePage /> },
           { path: 'workbench', element: <Workbench /> },
           { path: 'dashboard', element: <Dashboard /> },

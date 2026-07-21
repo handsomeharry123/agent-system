@@ -466,6 +466,7 @@ const AgentAssistant = () => {
   const posRef = useRef(pos);
   const [draggingFloat, setDraggingFloat] = useState(false);
   const dragMovedRef = useRef(false); // 区分「拖动」与「点击」, 拖动时屏蔽 click 唤起
+  const dragPointerIdRef = useRef<number | null>(null);
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; posX: number; posY: number } | null>(
     null,
   );
@@ -817,36 +818,12 @@ const AgentAssistant = () => {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // ─── PRD §3.1.1 「位置与拖拽」: 鼠标按住机器人拖拽, 松开停靠 ───
-  // - mousedown 落在 entryRef 子树即启动; 拖拽过程中不触发 click 唤起
-  // - mousemove/mouseup 挂 window 避免 React StrictMode 双跑留幽灵监听
+  // ─── PRD §3.1.1 「位置与拖拽」: 按住机器人拖拽, 松开停靠 ───
+  // 使用 Pointer Events 并由入口捕获指针，避免光标进入表格固定列、滚动容器
+  // 或页面遮罩层后丢失移动事件。
   useEffect(() => {
-    const handle = entryRef.current;
-    if (!handle) return undefined;
-
-    const onMouseDown = (e: MouseEvent) => {
-      if (e.button !== 0) return; // 仅左键
-      e.preventDefault();
-      dragStartRef.current = {
-        mouseX: e.clientX,
-        mouseY: e.clientY,
-        posX: posRef.current.left,
-        posY: posRef.current.top,
-      };
-      dragMovedRef.current = false;
-      // 阻止后续 click 触发唤起: 拖动超过阈值才置 true, mouseup 据此 stopPropagation
-      // 简单实现: 鼠标按下时用 capture 拦截 click
-      const onClickCapture = (ev: MouseEvent) => {
-        if (dragMovedRef.current) {
-          ev.stopPropagation();
-          ev.preventDefault();
-        }
-        handle.removeEventListener('click', onClickCapture, true);
-      };
-      handle.addEventListener('click', onClickCapture, true);
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
+    const onPointerMove = (e: PointerEvent) => {
+      if (dragPointerIdRef.current !== e.pointerId) return;
       const start = dragStartRef.current;
       if (!start) return;
       const dx = e.clientX - start.mouseX;
@@ -863,10 +840,10 @@ const AgentAssistant = () => {
       setDraggingFloat(true);
     };
 
-    const onMouseUp = () => {
-      if (!dragStartRef.current) return;
-      const start = dragStartRef.current;
+    const onPointerUp = (e: PointerEvent) => {
+      if (dragPointerIdRef.current !== e.pointerId || !dragStartRef.current) return;
       dragStartRef.current = null;
+      dragPointerIdRef.current = null;
       // 拖动过才落库 + 视觉态复位
       if (dragMovedRef.current) {
         // 异步读最新 pos 写盘, 避免闭包旧值
@@ -879,19 +856,17 @@ const AgentAssistant = () => {
         // 纯点击: 让 click 正常走到 onClick（唤起浮层）
         setDraggingFloat(false);
       }
-      // 静默使用 start, 防止 lint 警告; 真实消费在 setPos 回调中
-      void start;
     };
 
-    handle.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
     return () => {
-      handle.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
     };
-  }, [open]);
+  }, []);
 
   // ─── 输入发送 ───
   const sendText = () => {
@@ -1271,6 +1246,19 @@ const AgentAssistant = () => {
       p.startsWith('/app/home/')
     );
   }, [location.pathname]);
+  const handleEntryPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragPointerIdRef.current = e.pointerId;
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      posX: posRef.current.left,
+      posY: posRef.current.top,
+    };
+    dragMovedRef.current = false;
+  };
   if (shouldHideFloatEntry) return null;
 
   return (
@@ -1833,10 +1821,16 @@ const AgentAssistant = () => {
       {!open && (
         <div
           ref={entryRef}
+          onPointerDown={handleEntryPointerDown}
           onMouseEnter={() => setHover(true)}
           onMouseLeave={() => setHover(false)}
-          onClick={() => {
-            // 拖动产生的 click 已在 capture 阶段被拦截, 此处仅响应纯点击
+          onClick={(e) => {
+            if (dragMovedRef.current) {
+              e.preventDefault();
+              e.stopPropagation();
+              dragMovedRef.current = false;
+              return;
+            }
             setOpen(true);
             // 唤起浮层时主动问候一次（医小管 通用开场白）
             // —— 真正的页面欢迎语已由 SmartRegistrationForm 推过, 这里仅补一次轻量问候
@@ -1864,7 +1858,8 @@ const AgentAssistant = () => {
             // PRD §3.1.1 拖拽过程中略降透明度, 跟随光标移动; 抓握光标
             opacity: draggingFloat ? 0.7 : 1,
             cursor: draggingFloat ? 'grabbing' : 'grab',
-            userSelect: draggingFloat ? 'none' : 'auto',
+            userSelect: 'none',
+            touchAction: 'none',
             zIndex: 1001,
             transition: draggingFloat
               ? 'none'

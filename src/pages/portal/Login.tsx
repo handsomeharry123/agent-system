@@ -103,7 +103,7 @@ const Login = () => {
 
     if (user) {
       message.success('登录成功');
-      navigate('/app/home');
+      navigate('/app/home/dashboard', { replace: true });
     } else {
       const newErrorCount = errorCount + 1;
       setErrorCount(newErrorCount);
@@ -123,7 +123,7 @@ const Login = () => {
     await new Promise((r) => setTimeout(r, 800));
     setLoading(false);
     message.success('登录成功');
-    navigate('/app/home');
+    navigate('/app/home/dashboard', { replace: true });
   };
 
   const isLocked = lockUntil !== null && Date.now() < lockUntil;

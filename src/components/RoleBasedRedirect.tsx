@@ -9,17 +9,8 @@ const RoleBasedRedirect = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    // V1.1：多角色 — 以主角色（roles[0]）作为路由分流依据
-    const primaryRole = currentUser.roles[0];
-    switch (primaryRole) {
-      case '信息科管理员':
-        navigate('/app/home/overview', { replace: true });
-        break;
-      case '科室管理员':
-      default:
-        navigate('/app/home/workbench', { replace: true });
-        break;
-    }
+    // 所有角色登录后统一以首页数据大屏作为默认落地页。
+    navigate('/app/home/dashboard', { replace: true });
   }, [currentUser, navigate]);
 
   return null;
