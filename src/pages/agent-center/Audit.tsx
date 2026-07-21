@@ -6,7 +6,6 @@
  *  - §4.2  智能预审：在基本信息 / 技术信息 字段上直接标注疑似问题
  *    + 在技术信息区执行连通测试 + 给出预审结论（建议通过 / 建议退回）
  *  - §4.3  二次审核：管理在「人工意见」基础上作出最终结论，退回时使用汇总草稿
- *  - §4.4  审核通过后引导：跳转前在页面顶部展示一键直达卡片
  *
  * V2.2：从原 Drawer 转为下转页面 + 底部固定审核操作栏。
  * 顶部为只读记录详情，底部为审核结论（Radio）+ 说明 + 二次确认。
@@ -34,16 +33,13 @@ import {
 } from 'antd';
 import {
   BugOutlined,
-  CheckCircleOutlined,
-  DatabaseOutlined,
-  ExperimentOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
   EyeOutlined as EyeIcon,
   FilePdfOutlined,
   InfoCircleOutlined,
   ReloadOutlined,
-  RocketOutlined,
+  ThunderboltFilled,
   ThunderboltOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
@@ -164,6 +160,7 @@ const Audit = () => {
     });
   }, [isPlatformAdmin, pushWelcomeGreeting]);
   const [verdict, setVerdict] = useState<'通过' | '退回' | null>(null);
+  const [aiPreAuditFields, setAiPreAuditFields] = useState({ verdict: false, explanation: false });
   const [confirming, setConfirming] = useState<'通过' | '退回' | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [testStage, setTestStage] = useState<number>(-1);
@@ -174,6 +171,7 @@ const Audit = () => {
   useEffect(() => {
     const select = (v: '通过' | '退回') => {
       setVerdict(v);
+      setAiPreAuditFields((prev) => ({ ...prev, verdict: false }));
       confirmForm.setFieldValue('verdict', v);
       document.querySelector('[data-testid="audit-verdict-section"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
@@ -297,13 +295,6 @@ const Audit = () => {
     return parts.join('\n');
   }, [activeProblems, testResult]);
 
-  // §4.4 通过后引导条：通过 → 在卡片顶部展开「下一步」气泡，附一键直达按钮
-  const [showPassGuide, setShowPassGuide] = useState(false);
-  // 区分"打开时已是审核通过的记录" vs "本会话刚审核通过"
-  //   - 打开即通过:不主动弹引导(避免老记录每次进都刷引导), 让用户可手动展开
-  //   - 本会话刚通过:必弹引导, 不阻断操作, 一键直达/返回列表
-  const [justPassedThisSession, setJustPassedThisSession] = useState(false);
-
   // 进入审核：状态变为「审核中」（若仍为「待审核」）
   useEffect(() => {
     if (record && record.status === '待审核') {
@@ -327,9 +318,7 @@ const Audit = () => {
     );
   }
 
-  // 进入时已是审核通过的终态 — 让审核通过记录继续走主流程
-  // （renderHook 后由 showPassGuide 顶部渲染"通过后引导"卡,而非早早 return）
-  // 这里不再 early return,保证 hooks 调用顺序一致。
+  // 进入时已是审核通过的终态时继续展示记录详情，不提前返回。
 
   const runTest = async () => {
     if (!record) return;
@@ -559,6 +548,7 @@ const Audit = () => {
     if (preAuditVerdict === '建议退回' && !returnDraft) return;
     const v: '通过' | '退回' = preAuditVerdict === '建议通过' ? '通过' : '退回';
     setVerdict(v);
+    setAiPreAuditFields({ verdict: true, explanation: true });
     confirmForm.setFieldsValue({
       verdict: v,
       // 退回时一并把预审草稿(预审问题 + 连通失败)写进 returnReason; 通过时写一句自动备注
@@ -592,9 +582,6 @@ const Audit = () => {
     confirmForm,
     addMessage,
   ]);
-
-  // §4.4 通过后引导：审核通过 → 显示引导气泡；关闭 → 进入列表页
-  // （submitAudit 提交后会设置 showPassGuide，按钮"我知道了"关闭）
 
   const submitAudit = async () => {
     if (!verdict) return;
@@ -652,9 +639,7 @@ const Audit = () => {
     setVerdict(null);
     message.success(verdict === '通过' ? '审核通过' : '已退回，等待申请人修改');
     if (verdict === '通过') {
-      // §4.4 通过 → 在原页面顶部展开「一键直达」引导，不直接跳走
-      setJustPassedThisSession(true);
-      setShowPassGuide(true);
+      // 审核通过后保留在当前记录页，不再展示页面头部的下一步引导标签。
     } else {
       // 退回 → 直接跳到「退回修改」Tab
       navigate('/app/agent-center?tab=退回修改');
@@ -674,76 +659,6 @@ const Audit = () => {
           { path: id ? `/app/agent-center/audit/${id}` : '', breadcrumbName: '审核' },
         ]}
       />
-
-      {/* §4.4 审核通过后引导：审核完成时在页面顶部展开一键直达
-          - justPassedThisSession:本会话管理员刚点通过 → 自动展开引导
-          - 老记录已通过:默认不弹, 仅当用户点 PageHeader 旁的"展开下一步"时才显示 */}
-      {(justPassedThisSession || showPassGuide) && record.status === '审核通过' && (
-        <Card
-          size="small"
-          style={{
-            marginTop: 12,
-            borderColor: '#52C41A',
-            background: 'linear-gradient(90deg,#F6FFED 0%, #FFFFFF 100%)',
-          }}
-          data-testid="audit-pass-guide"
-          title={
-            <Space>
-              <CheckCircleOutlined style={{ color: '#52C41A' }} />
-              <Text strong style={{ color: '#389E0D' }}>审核通过 · 下一步动作</Text>
-              <Tag color="success">轻量引导 · 不打断</Tag>
-            </Space>
-          }
-          extra={
-            <Space>
-              <Button
-                type="text"
-                size="small"
-                onClick={() => {
-                  setShowPassGuide(false);
-                  setJustPassedThisSession(false);
-                }}
-              >
-                我知道了
-              </Button>
-              <Button
-                type="text"
-                size="small"
-                onClick={() => navigate('/app/agent-center?tab=审核通过')}
-              >
-                返回列表
-              </Button>
-            </Space>
-          }
-        >
-          <Space wrap size={[8, 8]}>
-            <Tooltip title="为该智能体新建评测任务，在沙盒里跑一轮准入评测">
-              <Button
-                type="primary"
-                icon={<ExperimentOutlined />}
-                onClick={() =>
-                  navigate(`/app/evaluation/tasks/create?agentName=${encodeURIComponent(record.name)}`)
-                }
-              >
-                立即发起准入评测
-              </Button>
-            </Tooltip>
-            <Tooltip title="跳转统一台账中心查看 / 补全该智能体的运行指标">
-              <Button
-                icon={<DatabaseOutlined />}
-                onClick={() =>
-                  navigate(`/app/ledger/list?search=${encodeURIComponent(record.name)}&openDetail=1`)
-                }
-              >
-                查看统一台账
-              </Button>
-            </Tooltip>
-            <Button icon={<RocketOutlined />} onClick={() => navigate('/app/agent-center?tab=审核通过')}>
-              返回审核通过列表
-            </Button>
-          </Space>
-        </Card>
-      )}
 
       <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 12 }}>
         {/* §4.2.1 PRD 严格措辞：
@@ -909,63 +824,66 @@ const Audit = () => {
           style={{ marginTop: 16, marginBottom: 16 }}
         >
           <Form form={confirmForm} layout="vertical">
-            <Form.Item
-              name="verdict"
-              label="审核结论"
-              rules={[{ required: true, message: '请选择审核结论' }]}
+            <div
+              data-testid="audit-verdict-ai-field"
+              data-ai-prefilled={aiPreAuditFields.verdict ? 'true' : 'false'}
             >
-              <Radio.Group
-                onChange={(e) => {
-                  setVerdict(e.target.value);
-                  // §4.3 退回时,自动汇总预审标注 + 连通结果草稿
-                  if (e.target.value === '退回' && returnDraft) {
-                    confirmForm.setFieldsValue({ returnReason: returnDraft });
-                  }
-                }}
-                options={[
-                  { label: '审核通过', value: '通过' },
-                  { label: '退回修改', value: '退回' },
-                ]}
-              />
-            </Form.Item>
-            {verdict === '退回' && (
               <Form.Item
-                name="returnReason"
-                label="退回说明"
-                rules={[{ required: true, message: '请填写退回说明' }, { max: 500, message: '≤ 500 字' }]}
-                tooltip="明确指出需修改的字段或材料问题"
-                extra={
-                  returnDraft ? (
-                    <Space>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        预审已自动汇总 {preAuditProblems.length} 项标注 + 连通结果，可编辑后下发。
-                      </Text>
-                      <Button
-                        size="small"
-                        type="link"
-                        onClick={() => confirmForm.setFieldsValue({ returnReason: returnDraft })}
-                      >
-                        重新采纳预审草稿
-                      </Button>
-                    </Space>
-                  ) : null
-                }
+                name="verdict"
+                label={aiPreAuditFields.verdict ? <span>审核结论<Tag color="green" icon={<ThunderboltFilled />} style={{ marginLeft: 6, fontSize: 11, lineHeight: '18px', padding: '0 6px', borderRadius: 4 }}>AI 预审</Tag></span> : '审核结论'}
+                rules={[{ required: true, message: '请选择审核结论' }]}
               >
-                <TextArea rows={4} maxLength={500} showCount placeholder="明确指出需修改的字段或材料问题" />
+                <Radio.Group
+                  className={aiPreAuditFields.verdict ? 'audit-ai-preaudit-radio' : undefined}
+                  onChange={(e) => {
+                    setVerdict(e.target.value);
+                    setAiPreAuditFields((prev) => ({ ...prev, verdict: false }));
+                    // §4.3 退回时,自动汇总预审标注 + 连通结果草稿
+                    if (e.target.value === '退回' && returnDraft) {
+                      confirmForm.setFieldsValue({ returnReason: returnDraft });
+                      setAiPreAuditFields((prev) => ({ ...prev, explanation: true }));
+                    }
+                  }}
+                  options={[
+                    { label: '审核通过', value: '通过' },
+                    { label: '退回修改', value: '退回' },
+                  ]}
+                />
               </Form.Item>
+            </div>
+            {verdict === '退回' && (
+              <div
+                data-testid="audit-explanation-ai-field"
+                data-ai-prefilled={aiPreAuditFields.explanation ? 'true' : 'false'}
+              >
+                <Form.Item
+                  name="returnReason"
+                  label={aiPreAuditFields.explanation ? <span>退回说明<Tag color="green" icon={<ThunderboltFilled />} style={{ marginLeft: 6, fontSize: 11, lineHeight: '18px', padding: '0 6px', borderRadius: 4 }}>AI 预审</Tag></span> : '退回说明'}
+                  rules={[{ required: true, message: '请填写退回说明' }, { max: 500, message: '≤ 500 字' }]}
+                  tooltip="明确指出需修改的字段或材料问题"
+                  extra={returnDraft ? <Space><Text type="secondary" style={{ fontSize: 12 }}>预审已自动汇总 {preAuditProblems.length} 项标注 + 连通结果，可编辑后下发。</Text><Button size="small" type="link" onClick={() => { confirmForm.setFieldsValue({ returnReason: returnDraft }); setAiPreAuditFields((prev) => ({ ...prev, explanation: true })); }}>重新采纳预审草稿</Button></Space> : null}
+                >
+                  <TextArea className={aiPreAuditFields.explanation ? 'ai-prefill-highlight' : undefined} onChange={() => setAiPreAuditFields((prev) => ({ ...prev, explanation: false }))} rows={4} maxLength={500} showCount placeholder="明确指出需修改的字段或材料问题" />
+                </Form.Item>
+              </div>
             )}
             {verdict === '通过' && (
-              <Form.Item
-                name="passNote"
-                label="具体说明"
-                rules={[{ max: 500, message: '≤ 500 字' }]}
-                tooltip="如有条件通过的备注或通过意见"
+              <div
+                data-testid="audit-explanation-ai-field"
+                data-ai-prefilled={aiPreAuditFields.explanation ? 'true' : 'false'}
               >
-                <TextArea rows={4} maxLength={500} showCount placeholder="如有条件通过的备注或通过意见，≤ 500 字" />
-              </Form.Item>
+                <Form.Item
+                  name="passNote"
+                  label={aiPreAuditFields.explanation ? <span>具体说明<Tag color="green" icon={<ThunderboltFilled />} style={{ marginLeft: 6, fontSize: 11, lineHeight: '18px', padding: '0 6px', borderRadius: 4 }}>AI 预审</Tag></span> : '具体说明'}
+                  rules={[{ max: 500, message: '≤ 500 字' }]}
+                  tooltip="如有条件通过的备注或通过意见"
+                >
+                  <TextArea className={aiPreAuditFields.explanation ? 'ai-prefill-highlight' : undefined} onChange={() => setAiPreAuditFields((prev) => ({ ...prev, explanation: false }))} rows={4} maxLength={500} showCount placeholder="如有条件通过的备注或通过意见，≤ 500 字" />
+                </Form.Item>
+              </div>
             )}
             <Space>
-              <Button onClick={() => { setVerdict(null); confirmForm.resetFields(); }}>重置</Button>
+              <Button onClick={() => { setVerdict(null); setAiPreAuditFields({ verdict: false, explanation: false }); confirmForm.resetFields(); }}>重置</Button>
               <Button
                 type="primary"
                 danger={verdict === '退回'}

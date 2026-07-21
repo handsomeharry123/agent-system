@@ -253,6 +253,15 @@ html, body {
   border-color: #95DE64 !important;
 }
 
+/* 审核注册页：AI 预审结论沿用接入注册页的字段级绿色高亮。 */
+.audit-ai-preaudit-radio {
+  padding: 7px 10px;
+  background: linear-gradient(180deg, #f6ffed 0%, #d9f7be 100%);
+  border: 1px solid #95de64;
+  border-radius: 6px;
+  transition: background 0.2s, border-color 0.2s;
+}
+
 /* 建设需求页：AI 自动填充字段沿用接入中心的绿色高亮语义。 */
 .need-ai-prefilled-field .ant-form-item-label > label::after {
   content: 'AI填充';
