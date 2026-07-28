@@ -63,29 +63,33 @@ html, body {
   color: #8c8c8c;
 }
 
+.user-center-form {
+  max-width: 960px;
+}
+
+.user-center-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 32px;
+}
+
+.user-center-form-actions {
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+
+@media (max-width: 900px) {
+  .user-center-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .permission-role-bar {
   padding: 14px 16px;
   border: 1px solid #e8eef7;
   border-radius: 8px;
   background: #f7faff;
   color: inherit;
-}
-
-.permission-tree {
-  padding: 8px 12px 24px;
-  background: transparent;
-}
-
-.permission-tree .ant-tree-treenode {
-  width: 100%;
-  min-height: 42px;
-  padding: 4px 0;
-  border-bottom: 1px solid #f0f2f5;
-}
-
-.permission-tree .ant-tree-node-content-wrapper {
-  min-height: 34px;
-  line-height: 34px;
 }
 
 .permission-config-layout {
@@ -163,8 +167,78 @@ html, body {
 }
 
 .permission-folder-icon {
-  color: #f5b82e;
+  color: #f6c344;
   font-size: 19px;
+}
+
+.permission-detail-summary {
+  margin-left: 10px;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.permission-groups {
+  padding: 0 24px 28px;
+}
+
+.permission-group {
+  border-bottom: 1px solid #edf0f4;
+}
+
+.permission-group-heading {
+  display: flex;
+  min-height: 62px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+}
+
+.permission-expand-icon {
+  color: #667085;
+  font-size: 10px;
+}
+
+.permission-group-heading .ant-checkbox-wrapper {
+  margin-left: 2px;
+}
+
+.permission-standalone-page .permission-group-heading {
+  min-height: 76px;
+  gap: 12px;
+}
+
+.permission-standalone-page .permission-folder-icon {
+  margin-left: 18px;
+}
+
+.permission-action-list {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px 28px;
+  padding: 12px 24px 16px 92px;
+  border-top: 1px solid #f3f4f6;
+  background: #fcfcfd;
+}
+
+.permission-action-list .ant-checkbox-wrapper {
+  margin-inline-start: 0;
+  color: #595959;
+}
+
+.permission-group-depth-1 {
+  margin-left: 40px;
+  border-top: 1px solid #edf0f4;
+  border-bottom: 0;
+}
+
+.permission-group-depth-1 .permission-group-heading {
+  min-height: 56px;
+}
+
+.permission-group-depth-1 .permission-action-list {
+  padding-left: 84px;
 }
 
 @media (max-width: 900px) {
@@ -198,6 +272,15 @@ html, body {
 
   .permission-module-item.is-active {
     border-bottom-color: #1677ff;
+  }
+
+  .permission-action-list,
+  .permission-group-depth-1 .permission-action-list {
+    padding-left: 52px;
+  }
+
+  .permission-group-depth-1 {
+    margin-left: 20px;
   }
 }
 

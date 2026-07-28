@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Alert, Button, Card, Checkbox, Select, Space, Tree, Typography, message } from 'antd';
+import { Button, Card, Checkbox, Select, Space, Typography, message } from 'antd';
 import type { DataNode } from 'antd/es/tree';
-import { FolderOpenOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { DownOutlined, FolderFilled, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
 import { systemRoles } from './constants';
 
@@ -16,7 +16,12 @@ const permissionTree: DataNode[] = [
   {
     key: 'access', title: '智能体接入中心', children: [
       { key: 'access:list', title: '注册管理列表页', children: leaves('access:list', ['操作：审核', '操作：撤销']) },
-      ...leaves('access:tab', ['草稿 tab 页', '待审核 tab 页（审核、撤销）', '审核中 tab 页（审核、撤销）', '撤销修改 tab 页', '退回修改 tab 页', '审核通过 tab 页']),
+      { key: 'access:tab:0', title: '草稿 tab 页' },
+      { key: 'access:tab:1', title: '待审核 tab 页', children: leaves('access:tab:1', ['操作：审核', '操作：撤销']) },
+      { key: 'access:tab:2', title: '审核中 tab 页', children: leaves('access:tab:2', ['操作：审核', '操作：撤销']) },
+      { key: 'access:tab:3', title: '撤销修改 tab 页' },
+      { key: 'access:tab:4', title: '退回修改 tab 页' },
+      { key: 'access:tab:5', title: '审核通过 tab 页' },
       ...leaves('access:page', ['新建注册页', '审核注册页', '注册信息详情页']),
     ],
   },
@@ -80,15 +85,72 @@ const FunctionPermission = () => {
       : previous.filter((key) => !currentKeys.includes(key)));
   };
 
-  const checkCurrentTree = (keys: React.Key[] | { checked: React.Key[] }) => {
-    const nextCurrentKeys = Array.isArray(keys) ? keys : keys.checked;
-    setChecked((previous) => [
-      ...previous.filter((key) => !currentKeys.includes(key)),
-      ...nextCurrentKeys,
-    ]);
+  const checkKeys = (keys: React.Key[], value: boolean) => {
+    setChecked((previous) => value
+      ? Array.from(new Set([...previous, ...keys]))
+      : previous.filter((key) => !keys.includes(key)));
   };
 
   const resetRole = () => setChecked(defaults[role] || []);
+
+  const renderPermissionNode = (node: DataNode, depth = 0, standalonePage = false) => {
+    const nodeKeys = flattenKeys([node]);
+    const selectedCount = nodeKeys.filter((key) => checked.includes(key)).length;
+    const fullyChecked = selectedCount === nodeKeys.length;
+    const partlyChecked = selectedCount > 0 && !fullyChecked;
+    const children = node.children || [];
+    const leafChildren = children.filter((child) => !child.children?.length);
+    const groupChildren = children.filter((child) => child.children?.length);
+
+    if (!children.length) {
+      if (standalonePage) {
+        return (
+          <div className="permission-group permission-standalone-page" key={node.key}>
+            <div className="permission-group-heading">
+              <FolderFilled className="permission-folder-icon" />
+              <Checkbox
+                checked={checked.includes(node.key)}
+                onChange={(event) => checkKeys([node.key], event.target.checked)}
+              >
+                <Text strong>{String(node.title)}</Text>
+              </Checkbox>
+            </div>
+          </div>
+        );
+      }
+      return (
+        <Checkbox
+          key={node.key}
+          checked={checked.includes(node.key)}
+          onChange={(event) => checkKeys([node.key], event.target.checked)}
+        >
+          {String(node.title)}
+        </Checkbox>
+      );
+    }
+
+    return (
+      <div className={`permission-group permission-group-depth-${depth}`} key={node.key}>
+        <div className="permission-group-heading">
+          <DownOutlined className="permission-expand-icon" />
+          <FolderFilled className="permission-folder-icon" />
+          <Checkbox
+            checked={fullyChecked}
+            indeterminate={partlyChecked}
+            onChange={(event) => checkKeys(nodeKeys, event.target.checked)}
+          >
+            <Text strong>{String(node.title)}</Text>
+          </Checkbox>
+        </div>
+        {leafChildren.length > 0 && (
+          <div className="permission-action-list">
+            {leafChildren.map((child) => renderPermissionNode(child, depth + 1))}
+          </div>
+        )}
+        {groupChildren.map((child) => renderPermissionNode(child, depth + 1))}
+      </div>
+    );
+  };
 
   return (
     <div className="user-center-page">
@@ -101,7 +163,6 @@ const FunctionPermission = () => {
         <div className="permission-role-bar">
           <Space size={16} wrap><Text strong>配置角色</Text><Select value={role} options={roles.map((value) => ({ label: value, value }))} onChange={switchRole} style={{ width: 220 }} /><Text type="secondary">已选择 {checked.length} 项权限</Text></Space>
         </div>
-        {role === '科室管理员' && <Alert type="info" showIcon message="科室管理员的数据自动限定为本科室；审批类操作默认不开放。" style={{ marginBottom: 16 }} />}
         <div className="permission-config-layout">
           <aside className="permission-module-nav">
             <div className="permission-module-nav-title">功能模块</div>
@@ -124,23 +185,19 @@ const FunctionPermission = () => {
           <section className="permission-detail-panel">
             <div className="permission-detail-header">
               <Space>
-                <FolderOpenOutlined className="permission-folder-icon" />
-                <Text strong>{String(currentModule.title)}</Text>
-                <Text type="secondary">{currentCheckedCount}/{currentKeys.length} 项</Text>
+                <FolderFilled className="permission-folder-icon" />
+                <div>
+                  <Text strong>{String(currentModule.title)}</Text>
+                  <Text type="secondary" className="permission-detail-summary">{currentCheckedCount}/{currentKeys.length} 项权限</Text>
+                </div>
               </Space>
               <Checkbox checked={moduleFullyChecked} indeterminate={modulePartlyChecked} onChange={(event) => checkModule(event.target.checked)}>
                 全选本模块
               </Checkbox>
             </div>
-            <Tree
-              checkable
-              blockNode
-              defaultExpandAll
-              treeData={currentNodes}
-              checkedKeys={checked}
-              onCheck={(keys) => checkCurrentTree(keys as React.Key[] | { checked: React.Key[] })}
-              className="permission-tree"
-            />
+            <div className="permission-groups">
+              {currentNodes.map((node) => renderPermissionNode(node, 0, !node.children?.length))}
+            </div>
           </section>
         </div>
       </Card>

@@ -120,6 +120,7 @@ import CollectionLogList from './pages/data-asset/CollectionLogList';
 
 // Pages - User Center
 import UserCenter from './pages/user-center/UserList';
+import UserFormPage from './pages/user-center/UserForm';
 import AssignRole from './pages/user-center/AssignRole';
 import RoleManage from './pages/user-center/RoleManage';
 import FunctionPermission from './pages/user-center/FunctionPermission';
@@ -128,7 +129,7 @@ import FunctionPermission from './pages/user-center/FunctionPermission';
 import NotificationList from './pages/notifications';
 
 // Pages - Audit
-import Audit from './pages/audit/LogList';
+import Audit from './pages/audit';
 
 // Pages - Data Dictionary (V1.0 需求说明书)
 import DictCategoryList from './pages/dict/CategoryList';
@@ -371,6 +372,8 @@ const routes: RouteObject[] = [
         path: 'user-center',
         children: [
           { index: true, element: <UserCenter /> },
+          { path: 'create', element: <UserFormPage /> },
+          { path: ':id/edit', element: <UserFormPage /> },
           { path: 'assign-role/:id', element: <AssignRole /> },
           { path: 'roles', element: <RoleManage /> },
           { path: 'roles/:id', element: <RoleManage /> },
@@ -388,7 +391,11 @@ const routes: RouteObject[] = [
       {
         path: 'audit',
         children: [
-          { index: true, element: <Audit /> },
+          { index: true, element: <Navigate to="/app/audit/economic" replace /> },
+          { path: 'economic', element: <Audit /> },
+          { path: 'project', element: <Audit /> },
+          { path: 'behavior', element: <Audit /> },
+          { path: 'logs', element: <Audit /> },
         ],
       },
       // Data Dictionary（V1.0 需求说明书）

@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button, Card, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd';
+import { Button, Card, Form, Modal, Select, Space, Table, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { CheckCircleOutlined, ExportOutlined, StopOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, EditOutlined, ExportOutlined, PlusOutlined, StopOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import { mockUsers } from '../../mock/users';
 import type { UserRole } from '../../types/user';
@@ -44,8 +44,11 @@ export const initialCenterUsers: CenterUser[] = mockUsers.slice(0, 12).map((user
 
 const UserList = () => {
   const navigate = useNavigate();
-  const [form] = Form.useForm();
-  const [users, setUsers] = useState(initialCenterUsers);
+  const [filterForm] = Form.useForm();
+  const [users, setUsers] = useState<CenterUser[]>(() => {
+    const saved = sessionStorage.getItem('user-center-users');
+    return saved ? JSON.parse(saved) : initialCenterUsers;
+  });
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [filters, setFilters] = useState<{ department?: string; role?: UserRole; status?: AccountStatus }>({});
 
@@ -62,7 +65,11 @@ const UserList = () => {
   );
 
   const updateStatus = (ids: React.Key[], status: AccountStatus) => {
-    setUsers((current) => current.map((user) => (ids.includes(user.id) ? { ...user, status } : user)));
+    setUsers((current) => {
+      const next = current.map((user) => (ids.includes(user.id) ? { ...user, status } : user));
+      sessionStorage.setItem('user-center-users', JSON.stringify(next));
+      return next;
+    });
     setSelectedRowKeys([]);
     message.success(`已${status === '正常' ? '启用' : '停用'} ${ids.length} 个帐号`);
   };
@@ -118,7 +125,7 @@ const UserList = () => {
       title: '操作', key: 'action', width: 190, fixed: 'right',
       render: (_, record) => (
         <Space size={2}>
-          <Button type="link" size="small" onClick={() => navigate(`/app/user-center/assign-role/${record.id}`)}>分配角色</Button>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => navigate(`/app/user-center/${record.id}/edit`)}>编辑</Button>
           <Button
             type="link"
             size="small"
@@ -134,13 +141,17 @@ const UserList = () => {
 
   return (
     <div className="user-center-page">
-      <PageHeader title="用户列表" subTitle="管理平台用户帐号、角色及使用状态" />
+      <PageHeader
+        title="用户列表"
+        subTitle="管理平台用户帐号、角色及使用状态"
+        extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/app/user-center/create')}>新建用户</Button>}
+      />
       <Card className="user-center-filter" bordered={false}>
-        <Form form={form} layout="inline" onFinish={setFilters}>
+        <Form form={filterForm} layout="inline" onFinish={setFilters}>
           <Form.Item name="department" label="所属组织"><Select allowClear placeholder="全部组织" options={departments} style={{ width: 180 }} /></Form.Item>
           <Form.Item name="role" label="用户角色"><Select allowClear placeholder="全部角色" options={systemRoles.map((value) => ({ label: value, value }))} style={{ width: 170 }} /></Form.Item>
           <Form.Item name="status" label="帐号状态"><Select allowClear placeholder="全部状态" options={['正常', '停用'].map((value) => ({ label: value, value }))} style={{ width: 140 }} /></Form.Item>
-          <Form.Item><Space><Button type="primary" htmlType="submit">查询</Button><Button onClick={() => { form.resetFields(); setFilters({}); }}>重置</Button></Space></Form.Item>
+          <Form.Item><Space><Button type="primary" htmlType="submit">查询</Button><Button onClick={() => { filterForm.resetFields(); setFilters({}); }}>重置</Button></Space></Form.Item>
         </Form>
       </Card>
       <Card bordered={false}>

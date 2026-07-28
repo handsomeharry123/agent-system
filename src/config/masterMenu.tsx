@@ -242,10 +242,16 @@ export const masterMenu: MasterModule[] = [
   {
     key: 'audit',
     name: '审计中心',
-    path: '/app/audit',
+    path: '/app/audit/economic',
     icon: <AuditOutlined />,
     defaultVisible: true,
     defaultRoleVisible: 'both',
+    children: [
+      { key: 'audit:economic', name: '经济审计', path: '/app/audit/economic', defaultVisible: true },
+      { key: 'audit:project', name: '项目审计', path: '/app/audit/project', defaultVisible: true },
+      { key: 'audit:behavior', name: '智能体行为审计', path: '/app/audit/behavior', defaultVisible: true },
+      { key: 'audit:logs', name: '操作日志', path: '/app/audit/logs', defaultVisible: true },
+    ],
   },
   // 环境配置（V1.1）：沙盒/正式两套运行环境的参数配置 + 环境内智能体；仅平台管理员
   {
