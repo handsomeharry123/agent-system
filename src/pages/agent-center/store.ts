@@ -26,6 +26,13 @@ const initialRecords: AccessRecord[] = [
     name: '超声检查预约助手',
     agentCode: '0601-0001',
     version: '1.0',
+    modelName: 'Qwen',
+    modelVersion: '2.1',
+    modelDeploymentMode: '本地化部署',
+    modelConfigs: [
+      { modelName: 'Qwen', modelVersion: '2.1', deploymentMode: '本地化部署' },
+      { modelName: 'BGE', modelVersion: '1.0', deploymentMode: '混合部署' },
+    ],
     department: '超声医学科',
     clinicalStage: '辅助检查',
     source: '合作研发',

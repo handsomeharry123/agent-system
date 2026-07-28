@@ -61,6 +61,8 @@ export type WelcomePageKey =
   // 提供方侧单页
   | 'smart-register'           // 新建注册页
   | 'agent-center-detail'      // 注册信息详情页
+  | 'agent-center-eval-offer'  // 审核通过后询问是否创建评测任务
+  | 'agent-center-eval-created' // 评测任务创建后的进度提示
   | 'evaluation-tasks'         // 准入评测「评测任务管理」页
   | 'evaluation-report'        // 准入评测「评测结果详情」页
   | 'monitoring-overview'      // 统一运行监控中心「监控总览」页
@@ -108,6 +110,16 @@ const smartRegisterBubbleCopy =
  *   其余页面两角色走同一句欢迎语。
  */
 const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>> = {
+  'agent-center-eval-offer': {
+    dept: { bubble: '该智能体已审核通过，是否需要立即创建评测任务？', window: '该智能体已审核通过，是否需要立即创建评测任务？' },
+    provider: { bubble: '该智能体已审核通过，是否需要立即创建评测任务？', window: '该智能体已审核通过，是否需要立即创建评测任务？' },
+    admin: { bubble: '该智能体已审核通过，是否需要立即创建评测任务？', window: '该智能体已审核通过，是否需要立即创建评测任务？' },
+  },
+  'agent-center-eval-created': {
+    dept: { bubble: '评测任务已创建：X。当前进度：X（X）。', window: '评测任务已创建：X。当前进度：X（X）。' },
+    provider: { bubble: '评测任务已创建：X。当前进度：X（X）。', window: '评测任务已创建：X。当前进度：X（X）。' },
+    admin: { bubble: '评测任务已创建：X。当前进度：X（X）。', window: '评测任务已创建：X。当前进度：X（X）。' },
+  },
   'monitoring-overview': {
     dept: { bubble: '您好！我是医小管，有什么运行监控信息都可以问我', window: '您好！我是医小管，本科室智能体累计告警X次，今日告警X次，待处理X项，有什么运行监控信息都可以问我' },
     provider: { bubble: '您好！我是医小管，有什么运行监控信息都可以问我', window: '您好！我是医小管，本科室智能体累计告警X次，今日告警X次，待处理X项，有什么运行监控信息都可以问我' },
@@ -592,6 +604,17 @@ export interface WelcomePreviewProblem {
   category?: ReviewProblem['category'];
 }
 
+export interface WelcomeEvaluationSummary {
+  taskNo: string;
+  agentName: string;
+  dimensions: string[];
+  sampleLevel: string;
+  samplePercent: number;
+  progress: number;
+  progressText: string;
+  estimatedRemaining: string;
+}
+
 interface SmartDraftCtx {
   messages: AgentMessage[];
   addMessage: (m: Omit<AgentMessage, 'id' | 'timestamp'>) => void;
@@ -635,6 +658,8 @@ interface SmartDraftCtx {
       total: number;
       items: WelcomePreviewProblem[];
     };
+    /** 审核通过后自动创建的评测任务摘要，展示为机器人旁的进度卡片。 */
+    evaluationSummary?: WelcomeEvaluationSummary;
   } | null;
   pushWelcomeGreeting: (
     pageKey: WelcomePageKey,
@@ -653,6 +678,7 @@ interface SmartDraftCtx {
         score: number;
       }>;
       previewProblems?: { total: number; items: WelcomePreviewProblem[] };
+      evaluationSummary?: WelcomeEvaluationSummary;
     },
   ) => void;
   /**
@@ -894,6 +920,7 @@ export const SmartDraftProvider = ({
         chips: extras?.chips,
         actions: extras?.actions,
         miniList: extras?.miniList,
+        evaluationSummary: extras?.evaluationSummary,
         // §3.2.1 智能预审气泡：调用方若显式传 previewProblems, 用之; 否则消费草稿
         //   - 草稿在下一次重审时会被刷新, 实现「气泡内容随表单实时同步」的目标
         //   - 新建注册页初始欢迎气泡按 PRD §3.1.1 仅展示态势文案 + 上传/语音直接操作;
@@ -916,6 +943,8 @@ export const SmartDraftProvider = ({
           pageKey === 'resource-apply-pending' || pageKey === 'resource-apply-revoked' ||
           pageKey === 'resource-apply-approved' || pageKey === 'resource-apply-rejected' ||
           pageKey === 'resource-apply-detail' || pageKey === 'resource-approval' ||
+          pageKey === 'agent-center-eval-offer' ||
+          pageKey === 'agent-center-eval-created' ||
           pageKey === 'evaluation-tasks' ||
           pageKey === 'monitoring-overview' ||
           pageKey === 'monitoring-business' ||

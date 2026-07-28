@@ -1,0 +1,52 @@
+.project-form-page {
+  width: 100%;
+}
+
+.project-form-shell {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.project-form-main {
+  min-width: 0;
+}
+
+.project-upload-compact .ant-upload-drag {
+  min-height: 128px;
+}
+
+.project-upload-compact .ant-upload-drag-icon {
+  margin-bottom: 4px !important;
+}
+
+.project-upload-compact .ant-upload-drag-icon .anticon {
+  font-size: 30px;
+}
+
+.project-upload-compact .ant-upload-text {
+  font-size: 13px !important;
+}
+
+.project-upload-compact .ant-upload-hint {
+  margin-top: 2px !important;
+  font-size: 11px !important;
+}
+
+.project-option-buttons {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.project-option-buttons .ant-radio-button-wrapper {
+  text-align: center;
+}
+
+.project-form-main .ant-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.project-form-main .ant-checkbox-wrapper {
+  margin-inline-start: 0;
+}

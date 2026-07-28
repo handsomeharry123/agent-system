@@ -1,463 +1,218 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Avatar,
-  Button,
-  Card,
-  Drawer,
-  Form,
-  Input,
-  List,
-  Modal,
-  Popconfirm,
-  Select,
-  Space,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
-import { ProColumns, ProTable } from '@ant-design/pro-components';
-import {
-  CrownOutlined,
-  UserOutlined,
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  SafetyOutlined,
-  TeamOutlined,
-  CopyOutlined,
-} from '@ant-design/icons';
-import type { UserRole } from '../../types/user';
-import { mockUsers } from '../../mock/users';
-import { useAuth } from '../../hooks/useAuth';
+import { useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Button, Card, Descriptions, Form, Input, Modal, Radio, Select, Space, Table, Tag, message } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { PlusOutlined } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
+import type { UserRole } from '../../types/user';
+import { departmentOptions } from '../../mock/departments';
+import { useAccessRecords } from '../agent-center/store';
 import { roleColorMap } from './constants';
 
-const { Text } = Typography;
+const { TextArea } = Input;
+type RoleStatus = '启用' | '停用';
+type DataRange = '全院智能体' | '本科室智能体' | '指定科室智能体' | '指定智能体';
 
-/* ---------- 角色类型 ---------- */
-interface Role {
+interface RoleItem {
   id: string;
-  name: UserRole;
+  name: UserRole | string;
   description: string;
   userCount: number;
-  isSystem: boolean;
-  /** 是否基于已有角色复制而来（仅自定义角色关注） */
-  copyFrom?: UserRole;
+  dataRange: DataRange;
+  functionCount: number;
+  status: RoleStatus;
+  createdAt: string;
+  updatedAt: string;
 }
 
-/* ---------- 系统默认角色：信息科管理员 + 科室管理员 ---------- */
-const systemRoleDescriptions: Record<UserRole, string> = {
-  '信息科管理员': '拥有平台全部功能与数据权限，可管理所有模块、用户与权限配置',
-  '科室管理员': '负责本科室智能体的接入申请与日常管理，仅可访问本科室数据',
-};
-
-const baseRoles: Role[] = [
-  { id: 'role-it-admin', name: '信息科管理员', description: systemRoleDescriptions['信息科管理员'], userCount: 0, isSystem: true },
-  { id: 'role-dept-admin', name: '科室管理员', description: systemRoleDescriptions['科室管理员'], userCount: 0, isSystem: true },
+const roleSeed: RoleItem[] = [
+  {
+    id: 'leader', name: '医院领导', userCount: 6, dataRange: '全院智能体', functionCount: 8, status: '启用',
+    description: '拥有全局数据查看权限，通常只读，不参与具体配置与用户管理',
+    createdAt: '2026-01-02 09:00:00', updatedAt: '2026-07-18 14:20:00',
+  },
+  {
+    id: 'it-admin', name: '信息科管理员', userCount: 12, dataRange: '全院智能体', functionCount: 76, status: '启用',
+    description: '拥有平台全部功能与数据权限，可管理所有模块、用户与权限配置',
+    createdAt: '2026-01-02 09:00:00', updatedAt: '2026-07-22 10:08:00',
+  },
+  {
+    id: 'dept-admin', name: '科室管理员', userCount: 28, dataRange: '本科室智能体', functionCount: 43, status: '启用',
+    description: '负责本科室智能体的接入申请与日常管理',
+    createdAt: '2026-01-02 09:00:00', updatedAt: '2026-07-20 16:36:00',
+  },
 ];
 
-/** 演示用的自定义角色（管理员可新增自定义角色，可删除） */
-const customRoles: Role[] = [
-  { id: 'role-clinic-liaison', name: '临床科室联络员' as UserRole, description: '协助科室管理员对接智能体上线，查看本科室评测报告', userCount: 0, isSystem: false, copyFrom: '科室管理员' },
-  { id: 'role-auditor', name: '审计专员' as UserRole, description: '可访问审计中心全部模块，不可修改任何业务数据', userCount: 0, isSystem: false, copyFrom: '科室管理员' },
-];
-
-const roleIcons: Record<string, React.ReactNode> = {
-  '信息科管理员': <CrownOutlined />,
-  '科室管理员': <TeamOutlined />,
+const dataRangeDetail: Record<DataRange, string[]> = {
+  全院智能体: ['心电图智能辅助诊断系统', '胸部 CT 影像智能分析平台', '处方智能审核系统', '全院其余已纳管智能体'],
+  本科室智能体: ['用户所属科室内全部已纳管智能体'],
+  指定科室智能体: ['心内科智能体', '影像科智能体'],
+  指定智能体: ['心电图智能辅助诊断系统'],
 };
 
 const RoleManage = () => {
-  const { currentUser } = useAuth();
   const navigate = useNavigate();
+  const { id } = useParams();
   const [form] = Form.useForm();
-  const [editModalVisible, setEditModalVisible] = useState(false);
-  const [detailDrawerVisible, setDetailDrawerVisible] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [roles, setRoles] = useState(roleSeed);
+  const [editing, setEditing] = useState<RoleItem | null>(null);
+  const detail = id ? roles.find((role) => role.id === id) : undefined;
+  const isCreate = id === 'new';
 
-  // V1.1：用户可同时拥有多个角色 → 用 includes 判断
-  const isItAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
-
-  // 动态计算每个角色下绑定的用户数
-  const mockRoles: Role[] = useMemo(() => {
-    const all = [...baseRoles, ...customRoles];
-    return all.map((r) => ({
-      ...r,
-      userCount: mockUsers.filter((u) => u.roles.includes(r.name)).length,
-    }));
-  }, []);
-
-  /* ---------- 行操作 ---------- */
-  const handleViewDetail = (role: Role) => {
-    setSelectedRole(role);
-    setDetailDrawerVisible(true);
-  };
-  const handleViewUsers = (roleName: UserRole) => {
-    navigate(`/app/user-center?role=${encodeURIComponent(roleName)}`);
-  };
-
-  const handleAdd = () => {
-    setSelectedRole(null);
-    form.resetFields();
-    form.setFieldsValue({ copyFrom: undefined });
-    setEditModalVisible(true);
-  };
-
-  const handleEdit = (role: Role) => {
-    setSelectedRole(role);
-    form.setFieldsValue({
-      name: role.name,
-      description: role.description,
-      copyFrom: role.copyFrom,
-    });
-    setEditModalVisible(true);
-  };
-
-  const handleSave = async () => {
+  const saveRole = async () => {
     const values = await form.validateFields();
-    if (selectedRole) {
-      message.success(`角色「${selectedRole.name}」已更新`);
-    } else {
-      // V1.1：新增自定义角色；如选了"基于已有角色复制"，提示将基于其权限创建
-      const copyFrom = values.copyFrom as UserRole | undefined;
-      const newName = values.name as string;
-      message.success(
-        copyFrom
-          ? `角色「${newName}」已创建（已基于「${copyFrom}」复制功能权限）`
-          : `角色「${newName}」已创建`,
-      );
-      // 跳到功能权限配置页继续配置
-      setTimeout(() => navigate('/app/user-center/function-permission'), 600);
-    }
-    setEditModalVisible(false);
-    form.resetFields();
-  };
-
-  const handleDelete = (role: Role) => {
-    if (role.isSystem) {
-      message.warning('系统默认角色不可删除');
+    if (isCreate) {
+      message.success('角色创建成功，请继续分配功能权限');
+      navigate(`/app/user-center/function-permission?role=${encodeURIComponent(values.name)}`);
       return;
     }
-    // V1.1：仅当角色下无绑定用户时可删除
-    if (role.userCount > 0) {
-      message.error(`角色「${role.name}」下还有 ${role.userCount} 名用户，请先移除用户绑定`);
-      return;
+    if (editing) {
+      setRoles((current) => current.map((role) => role.id === editing.id
+        ? { ...role, ...values, updatedAt: new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-') }
+        : role));
+      message.success('角色信息已更新');
+      setEditing(null);
     }
-    message.success(`角色「${role.name}」已删除`);
   };
 
-  /* ---------- 列 ---------- */
-  const columns: ProColumns<Role>[] = [
+  if (isCreate) {
+    return (
+      <div className="user-center-page">
+        <PageHeader title="新增角色" showBack onBack={() => navigate(-1)} subTitle="创建角色并设置其数据权限范围" />
+        <Card bordered={false}>
+          <RoleForm form={form} />
+          <Space><Button onClick={() => navigate(-1)}>取消</Button><Button type="primary" onClick={saveRole}>创建并分配功能权限</Button></Space>
+        </Card>
+      </div>
+    );
+  }
+
+  if (detail) {
+    return (
+      <div className="user-center-page">
+        <PageHeader title="角色详情" showBack onBack={() => navigate(-1)} extra={<Button type="primary" onClick={() => setEditing(detail)}>编辑</Button>} />
+        <Card bordered={false}>
+          <Descriptions bordered column={2}>
+            <Descriptions.Item label="角色名称">{detail.name}</Descriptions.Item>
+            <Descriptions.Item label="状态"><Tag color={detail.status === '启用' ? 'success' : 'default'}>{detail.status}</Tag></Descriptions.Item>
+            <Descriptions.Item label="角色描述" span={2}>{detail.description}</Descriptions.Item>
+            <Descriptions.Item label="关联用户数">{detail.userCount} 人</Descriptions.Item>
+            <Descriptions.Item label="关联功能权限范围">{detail.functionCount} 项</Descriptions.Item>
+            <Descriptions.Item label="关联数据权限范围" span={2}>
+              <Space wrap><Tag color="blue">{detail.dataRange}</Tag>{dataRangeDetail[detail.dataRange].map((item) => <Tag key={item}>{item}</Tag>)}</Space>
+            </Descriptions.Item>
+            <Descriptions.Item label="拥有的功能权限" span={2}>
+              首页、医小管、统一台账中心、统一运行监控中心等，共 {detail.functionCount} 项
+            </Descriptions.Item>
+            <Descriptions.Item label="创建时间">{detail.createdAt}</Descriptions.Item>
+            <Descriptions.Item label="更新时间">{detail.updatedAt}</Descriptions.Item>
+          </Descriptions>
+          <Button style={{ marginTop: 24 }} onClick={() => navigate(-1)}>返回</Button>
+        </Card>
+        <Modal title="编辑角色" open={!!editing} onCancel={() => setEditing(null)} onOk={saveRole} okText="保存" cancelText="取消">
+          <RoleForm form={form} initial={editing || undefined} />
+        </Modal>
+      </div>
+    );
+  }
+
+  const columns: ColumnsType<RoleItem> = [
     {
-      title: '角色名称',
-      dataIndex: 'name',
-      key: 'name',
-      width: 200,
-      render: (name, record) => (
-        <Tag
-          color={roleColorMap[record.isSystem ? (name as UserRole) : '科室管理员']}
-          icon={roleIcons[name as string] || <UserOutlined />}
-        >
-          <a onClick={() => handleViewDetail(record)} style={{ color: 'inherit' }}>{name}</a>
-        </Tag>
-      ),
+      title: '角色名称', dataIndex: 'name', width: 150,
+      render: (name: UserRole, record) => <a onClick={() => navigate(`/app/user-center/roles/${record.id}`)}><Tag color={roleColorMap[name] || 'blue'}>{name}</Tag></a>,
     },
+    { title: '角色描述', dataIndex: 'description', ellipsis: true, width: 300 },
+    { title: '关联用户数', dataIndex: 'userCount', width: 110, render: (value) => `${value} 人` },
+    { title: '关联数据权限范围', dataIndex: 'dataRange', width: 160 },
+    { title: '关联功能权限范围', dataIndex: 'functionCount', width: 160, render: (value) => `${value} 项权限` },
+    { title: '状态', dataIndex: 'status', width: 90, render: (value: RoleStatus) => <Tag color={value === '启用' ? 'success' : 'default'}>{value}</Tag> },
+    { title: '创建时间', dataIndex: 'createdAt', width: 170 },
+    { title: '更新时间', dataIndex: 'updatedAt', width: 170 },
     {
-      title: '角色描述',
-      dataIndex: 'description',
-      key: 'description',
-      width: 320,
-      ellipsis: true,
-    },
-    {
-      title: '用户数',
-      dataIndex: 'userCount',
-      key: 'userCount',
-      width: 100,
-      align: 'center',
-      render: (val, record) => (
-        <a onClick={() => handleViewUsers(record.name as UserRole)}>
-          <TeamOutlined /> {val} 人
-        </a>
-      ),
-    },
-    {
-      title: '类型',
-      dataIndex: 'isSystem',
-      key: 'isSystem',
-      width: 110,
-      align: 'center',
-      render: (isSystem: boolean) => (
-        <Tag color={isSystem ? 'blue' : 'default'}>
-          {isSystem ? '系统默认' : '自定义'}
-        </Tag>
-      ),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 280,
-      fixed: 'right',
+      title: '操作', fixed: 'right', width: 220,
       render: (_, record) => (
-        <Space size={4}>
-          <Button
-            type="link"
-            size="small"
-            icon={<SafetyOutlined />}
-            onClick={() => navigate('/app/user-center/function-permission')}
-          >
-            配置功能权限
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-          >
-            编辑
-          </Button>
-          {!record.isSystem && (
-            <Popconfirm
-              title="确认删除"
-              description={
-                record.userCount > 0
-                  ? `角色「${record.name}」下还有 ${record.userCount} 名用户，无法删除`
-                  : `确定要删除角色「${record.name}」吗？`
-              }
-              onConfirm={() => handleDelete(record)}
-              okButtonProps={{ disabled: record.userCount > 0 }}
-            >
-              <Button
-                type="link"
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                disabled={record.userCount > 0}
-              >
-                删除
-              </Button>
-            </Popconfirm>
-          )}
+        <Space size={2}>
+          <Button type="link" size="small" onClick={() => navigate(`/app/user-center/roles/${record.id}`)}>查看详情</Button>
+          <Button type="link" size="small" onClick={() => { setEditing(record); form.setFieldsValue(record); }}>编辑</Button>
+          <Button type="link" size="small" danger={record.status === '启用'} onClick={() => {
+            setRoles((current) => current.map((role) => role.id === record.id ? { ...role, status: role.status === '启用' ? '停用' : '启用' } : role));
+            message.success(record.status === '启用' ? '角色已停用' : '角色已恢复使用');
+          }}>{record.status === '启用' ? '停用' : '恢复使用'}</Button>
         </Space>
       ),
     },
   ];
 
-  // 角色列表选项（用于"基于已有角色复制"）
-  const roleOptionsForCopy = mockRoles.map((r) => ({
-    label: `${r.name}${r.isSystem ? '（系统默认）' : '（自定义）'}`,
-    value: r.name,
-  }));
+  return (
+    <div className="user-center-page">
+      <PageHeader title="角色管理" subTitle="配置平台角色的数据范围与功能权限" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/app/user-center/roles/new')}>新增角色</Button>} />
+      <Card bordered={false}><Table rowKey="id" columns={columns} dataSource={roles} scroll={{ x: 1550 }} pagination={false} /></Card>
+      <Modal title="编辑角色" open={!!editing} onCancel={() => setEditing(null)} onOk={saveRole} okText="保存" cancelText="取消">
+        <RoleForm form={form} initial={editing || undefined} />
+      </Modal>
+    </div>
+  );
+};
+
+const RoleForm = ({ form, initial }: { form: ReturnType<typeof Form.useForm>[0]; initial?: RoleItem }) => {
+  const dataRange = Form.useWatch('dataRange', form);
+  const accessRecords = useAccessRecords();
+  const agentOptions = accessRecords
+    .filter((record) => record.ledgerSynced)
+    .map((record) => ({
+      label: `${record.name}（${record.department}）`,
+      value: record.id,
+    }));
 
   return (
-    <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100%' }}>
-      <PageHeader
-        title="角色管理"
-        subTitle="系统默认 3 类角色 + 自定义角色；管理员可新增/编辑/删除自定义角色"
-        style={{ marginBottom: 16 }}
-      />
-
-      <Card bordered={false} styles={{ body: { padding: 0 } }}>
-        <ProTable<Role>
-          columns={columns}
-          dataSource={mockRoles}
-          rowKey="id"
-          search={false}
-          pagination={false}
-          scroll={{ x: 900 }}
-          toolBarRender={() => [
-            isItAdmin ? (
-              <Button key="add" type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-                新增角色
-              </Button>
-            ) : null,
-          ]}
-        />
-      </Card>
-
-      {/* 新增 / 编辑 角色 */}
-      <Modal
-        title={selectedRole ? '编辑角色' : '新增角色'}
-        open={editModalVisible}
-        onCancel={() => {
-          setEditModalVisible(false);
-          form.resetFields();
-        }}
-        onOk={handleSave}
-        okText={selectedRole ? '保存' : '创建并配置权限'}
-        cancelText="取消"
-        width={520}
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item
-            name="name"
-            label="角色名称"
-            rules={[
-              { required: true, message: '请输入角色名称' },
-              {
-                validator: (_, value) => {
-                  if (!value) return Promise.resolve();
-                  if (mockRoles.some((r) => r.name === value && r.id !== selectedRole?.id)) {
-                    return Promise.reject(new Error('角色名称不可与已有角色重名'));
-                  }
-                  return Promise.resolve();
-                },
-              },
-            ]}
-          >
-            <Input placeholder="请输入角色名称" disabled={!!selectedRole?.isSystem} />
-          </Form.Item>
-          <Form.Item
-            name="description"
-            label="角色描述"
-            rules={[{ required: true, message: '请输入角色描述' }]}
-          >
-            <Input.TextArea rows={3} placeholder="请输入角色描述" />
-          </Form.Item>
-          {!selectedRole && (
-            <Form.Item
-              name="copyFrom"
-              label={
-                <Space>
-                  <CopyOutlined />
-                  基于已有角色复制
-                </Space>
-              }
-              tooltip="可选择基于现有角色的功能权限作为起始模板"
-            >
-              <Select
-                placeholder="（可选）选择一个角色作为模板"
-                allowClear
-                options={roleOptionsForCopy}
-              />
-            </Form.Item>
-          )}
-        </Form>
-      </Modal>
-
-      {/* 角色详情抽屉 */}
-      <Drawer
-        title="角色详情"
-        open={detailDrawerVisible}
-        onClose={() => {
-          setDetailDrawerVisible(false);
-          setSelectedRole(null);
-        }}
-        width={560}
-        footer={
-          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            {selectedRole && !selectedRole.isSystem && selectedRole.userCount === 0 && (
-              <Popconfirm
-                title="确认删除"
-                description={`确定要删除角色「${selectedRole.name}」吗？`}
-                onConfirm={() => {
-                  handleDelete(selectedRole);
-                  setDetailDrawerVisible(false);
-                }}
-              >
-                <Button danger icon={<DeleteOutlined />}>删除角色</Button>
-              </Popconfirm>
-            )}
-            <Button
-              type="primary"
-              icon={<EditOutlined />}
-              onClick={() => {
-                if (selectedRole) {
-                  setDetailDrawerVisible(false);
-                  handleEdit(selectedRole);
-                }
-              }}
-            >
-              编辑角色信息
-            </Button>
-            <Button icon={<SafetyOutlined />} onClick={() => navigate('/app/user-center/function-permission')}>
-              配置功能权限
-            </Button>
+    <Form form={form} layout="vertical" initialValues={initial || { status: '启用', dataRange: '本科室智能体' }} preserve={false}>
+      <Form.Item name="name" label="角色名称" rules={[{ required: true, message: '请输入角色名称' }]}><Input placeholder="请输入角色名称" /></Form.Item>
+      <Form.Item name="description" label="角色描述" rules={[{ required: true, message: '请输入角色描述' }, { max: 500, message: '角色描述不能超过 500 字' }]}>
+        <TextArea rows={4} maxLength={500} showCount placeholder="请输入角色职责及适用范围" />
+      </Form.Item>
+      <Form.Item name="dataRange" label="数据权限范围" rules={[{ required: true }]}>
+        <Radio.Group>
+          <Space direction="vertical">
+            {(['全院智能体', '本科室智能体', '指定科室智能体', '指定智能体'] as DataRange[]).map((value) => <Radio key={value} value={value}>{value}</Radio>)}
           </Space>
-        }
-      >
-        {selectedRole && (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Space size={8}>
-              <Tag
-                color={roleColorMap[selectedRole.isSystem ? (selectedRole.name as UserRole) : '科室管理员']}
-                icon={roleIcons[selectedRole.name as string] || <UserOutlined />}
-                style={{ fontSize: 16, padding: '4px 12px' }}
-              >
-                {selectedRole.name}
-              </Tag>
-              <Tag color={selectedRole.isSystem ? 'blue' : 'default'}>
-                {selectedRole.isSystem ? '系统默认' : '自定义'}
-              </Tag>
-            </Space>
-
-            <div>
-              <Text type="secondary">角色描述</Text>
-              <div style={{ marginTop: 4 }}>
-                <Text>{selectedRole.description}</Text>
-              </div>
-            </div>
-
-            {selectedRole.copyFrom && (
-              <div>
-                <Text type="secondary">创建方式</Text>
-                <div style={{ marginTop: 4 }}>
-                  <Tag icon={<CopyOutlined />}>基于「{selectedRole.copyFrom}」复制</Tag>
-                </div>
-              </div>
-            )}
-
-            <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
-              <Text type="secondary">用户数量</Text>
-              <div style={{ marginTop: 4 }}>
-                <Text strong style={{ fontSize: 20 }}>{selectedRole.userCount}</Text>
-                <Text type="secondary"> 人</Text>
-                <a style={{ marginLeft: 12 }} onClick={() => handleViewUsers(selectedRole.name as UserRole)}>
-                  查看全部
-                </a>
-              </div>
-            </div>
-
-            <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
-              <Text strong style={{ display: 'block', marginBottom: 8 }}>已分配用户</Text>
-              {selectedRole.userCount === 0 ? (
-                <Text type="secondary">暂无用户</Text>
-              ) : (
-                <List
-                  size="small"
-                  dataSource={mockUsers.filter((u) => u.roles.includes(selectedRole.name as UserRole))}
-                  renderItem={(user) => (
-                    <List.Item>
-                      <List.Item.Meta
-                        avatar={<Avatar size="small" icon={<UserOutlined />} style={{ backgroundColor: '#1677FF' }} />}
-                        title={user.name}
-                        description={`${user.employeeId} · ${user.department}`}
-                      />
-                    </List.Item>
-                  )}
-                />
-              )}
-            </div>
-
-            <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
-              <Text strong style={{ display: 'block', marginBottom: 8 }}>权限概览</Text>
-              <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text>功能权限</Text>
-                  <Button type="link" size="small" onClick={() => navigate('/app/user-center/function-permission')}>
-                    配置 / 查看 →
-                  </Button>
-                </div>
-                <div style={{ fontSize: 12, color: '#8C8C8C' }}>
-                  数据权限按组织（科室）配置：用户自动继承所属科室规则；如需例外，请前往 10-4 数据权限配置页。
-                </div>
-              </Space>
-            </div>
-          </Space>
-        )}
-      </Drawer>
-    </div>
+        </Radio.Group>
+      </Form.Item>
+      {dataRange === '指定科室智能体' && (
+        <Form.Item
+          name="departments"
+          label="选择科室"
+          rules={[{ required: true, message: '请至少选择一个科室' }]}
+        >
+          <Select
+            mode="multiple"
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            maxTagCount="responsive"
+            placeholder="请选择科室（支持多选）"
+            options={departmentOptions}
+          />
+        </Form.Item>
+      )}
+      {dataRange === '指定智能体' && (
+        <Form.Item
+          name="agents"
+          label="选择智能体"
+          rules={[{ required: true, message: '请至少选择一个智能体' }]}
+        >
+          <Select
+            mode="multiple"
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            maxTagCount="responsive"
+            placeholder="请选择智能体（支持多选）"
+            options={agentOptions}
+          />
+        </Form.Item>
+      )}
+      <Form.Item name="status" label="状态" rules={[{ required: true }]}><Radio.Group options={['启用', '停用']} /></Form.Item>
+    </Form>
   );
 };
 

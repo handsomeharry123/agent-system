@@ -35,6 +35,8 @@ import type { UploadFile } from 'antd';
 import {
   CloudUploadOutlined,
   CopyOutlined,
+  DeleteOutlined,
+  PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
   SendOutlined,
@@ -85,11 +87,21 @@ const CATEGORY_MAX: Record<Category, number> = { product: 1, tech: 1, other: 5 }
 const isFilled = (v: unknown) => (typeof v === 'string' ? v.trim().length > 0 : !!v);
 
 const isRequiredRegistrationInfoComplete = (v: Record<string, any>) => {
+  const modelConfigs = Array.isArray(v.modelConfigs) ? v.modelConfigs : [];
+  const modelsOk =
+    modelConfigs.length > 0 &&
+    modelConfigs.every(
+      (item: Record<string, unknown>) =>
+        isFilled(item?.modelName) &&
+        /^\d+\.\d+$/.test(String(item?.modelVersion || '')) &&
+        isFilled(item?.deploymentMode),
+    );
   const commonOk =
     isFilled(v.name) &&
     String(v.name).trim().length >= 2 &&
     String(v.name).trim().length <= 20 &&
     /^\d+\.\d+$/.test(v.version || '') &&
+    modelsOk &&
     isFilled(v.department) &&
     isFilled(v.description) &&
     String(v.description || '').length <= 500 &&
@@ -150,6 +162,7 @@ const SmartRegistrationForm = () => {
     form.setFieldsValue({
       version: '1.0',
       accessMode: 'API',
+      modelConfigs: [{ modelName: '', modelVersion: '', deploymentMode: '本地化部署' }],
       department: isDeptAdmin ? currentUser?.department : undefined,
     });
   }, [form, isDeptAdmin, currentUser]);
@@ -553,12 +566,20 @@ const SmartRegistrationForm = () => {
       (k) => pendingPrefills[k] !== lastPrefillRef.current[k],
     );
     if (changedKeys.length === 0) return;
-    const patch: Record<string, string> = {};
+    const patch: Record<string, unknown> = {};
+    const firstModel = { ...(form.getFieldValue(['modelConfigs', 0]) || {}) };
     changedKeys.forEach((k) => {
       const meta = prefillMeta[k];
       if (meta?.acknowledged) return;
-      patch[k] = pendingPrefills[k];
+      if (k === 'modelName') firstModel.modelName = pendingPrefills[k];
+      else if (k === 'modelVersion') firstModel.modelVersion = pendingPrefills[k];
+      else if (k === 'modelDeploymentMode') firstModel.deploymentMode = pendingPrefills[k];
+      else patch[k] = pendingPrefills[k];
     });
+    if (changedKeys.some((k) => ['modelName', 'modelVersion', 'modelDeploymentMode'].includes(k))) {
+      const current = form.getFieldValue('modelConfigs') || [];
+      patch.modelConfigs = [firstModel, ...current.slice(1)];
+    }
     if (Object.keys(patch).length > 0) {
       form.setFieldsValue(patch);
     }
@@ -797,6 +818,10 @@ const SmartRegistrationForm = () => {
       name: v.name || '未命名草稿',
       agentCode: code,
       version: v.version || '',
+      modelName: v.modelConfigs?.[0]?.modelName || '',
+      modelVersion: v.modelConfigs?.[0]?.modelVersion || '',
+      modelDeploymentMode: v.modelConfigs?.[0]?.deploymentMode,
+      modelConfigs: v.modelConfigs || [],
       department: v.department || '',
       clinicalStage,
       source: v.source || '自研' as const,
@@ -1093,6 +1118,88 @@ const SmartRegistrationForm = () => {
                     <Input placeholder="如：1.0 / 1.1 / 2.0 / 2.1" />
                   </Form.Item>
                 </AIPrefillWrapper>
+              </Col>
+              <Col span={24}>
+                <Form.List
+                  name="modelConfigs"
+                  rules={[{
+                    validator: async (_, value) => {
+                      if (!value?.length) throw new Error('请至少添加一条模型信息');
+                    },
+                  }]}
+                >
+                  {(fields, { add, remove }, { errors }) => (
+                    <div style={{ width: '100%' }}>
+                      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <Text strong>模型信息</Text>
+                        <Button
+                          type="dashed"
+                          icon={<PlusOutlined />}
+                          onClick={() => add({ deploymentMode: '本地化部署' })}
+                        >
+                          添加模型
+                        </Button>
+                      </Space>
+                      {fields.map((field, index) => (
+                        <Card
+                          key={field.key}
+                          size="small"
+                          title={`模型 ${index + 1}`}
+                          extra={fields.length > 1 ? (
+                            <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(field.name)}>
+                              删除
+                            </Button>
+                          ) : null}
+                          style={{ marginBottom: 12, background: '#FAFAFA' }}
+                        >
+                          <Row gutter={16}>
+                            <Col span={12}>
+                              <AIPrefillWrapper fieldKey="modelName" onUserChange={() => handleUserChange('modelName')}>
+                                <Form.Item
+                                  name={[field.name, 'modelName']}
+                                  label="使用模型名称"
+                                  rules={[{ required: true, message: '请输入使用模型名称' }]}
+                                >
+                                  <Input placeholder="如：DeepSeek-V3 / Qwen2.5" allowClear />
+                                </Form.Item>
+                              </AIPrefillWrapper>
+                            </Col>
+                            <Col span={12}>
+                              <AIPrefillWrapper fieldKey="modelVersion" onUserChange={() => handleUserChange('modelVersion')}>
+                                <Form.Item
+                                  name={[field.name, 'modelVersion']}
+                                  label="使用模型版本"
+                                  rules={[
+                                    { required: true, message: '请输入使用模型版本' },
+                                    { pattern: /^\d+\.\d+$/, message: '格式：数字.数字，如 1.1 / 2.1' },
+                                  ]}
+                                >
+                                  <Input placeholder="如：1.0 / 1.1 / 2.0 / 2.1" allowClear />
+                                </Form.Item>
+                              </AIPrefillWrapper>
+                            </Col>
+                            <Col span={24}>
+                              <AIPrefillWrapper fieldKey="modelDeploymentMode" onUserChange={() => handleUserChange('modelDeploymentMode')}>
+                                <Form.Item
+                                  name={[field.name, 'deploymentMode']}
+                                  label="模型部署方式"
+                                  rules={[{ required: true, message: '请选择模型部署方式' }]}
+                                >
+                                  <Radio.Group>
+                                    <Radio value="本地化部署">本地化部署</Radio>
+                                    <Radio value="云端部署">云端部署</Radio>
+                                    <Radio value="混合部署">混合部署</Radio>
+                                  </Radio.Group>
+                                </Form.Item>
+                              </AIPrefillWrapper>
+                            </Col>
+                          </Row>
+                        </Card>
+                      ))}
+                      <Form.ErrorList errors={errors} />
+                    </div>
+                  )}
+                </Form.List>
               </Col>
               <Col span={12}>
                 <Form.Item

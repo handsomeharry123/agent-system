@@ -27,6 +27,13 @@ import AgentNeedForm from './pages/agent-needs/NeedForm';
 import AgentNeedDetail from './pages/agent-needs/Detail';
 import AgentNeedDoc from './pages/agent-needs/DocPreview';
 
+// Pages - Project Application
+import ProjectApplication, {
+  ProjectApplicationAudit,
+  ProjectApplicationDetail,
+  ProjectApplicationForm,
+} from './pages/project-application';
+
 // Pages - Agent Center（V2.2：注册管理下分 4 个下转路由页）
 import AgentCenter from './pages/agent-center/index';
 import AgentRegistration from './pages/agent-center/Registration';
@@ -113,9 +120,9 @@ import CollectionLogList from './pages/data-asset/CollectionLogList';
 
 // Pages - User Center
 import UserCenter from './pages/user-center/UserList';
+import AssignRole from './pages/user-center/AssignRole';
 import RoleManage from './pages/user-center/RoleManage';
 import FunctionPermission from './pages/user-center/FunctionPermission';
-import DataPermission from './pages/user-center/DataPermission';
 
 // Pages - Notifications
 import NotificationList from './pages/notifications';
@@ -188,6 +195,16 @@ const routes: RouteObject[] = [
           { path: 'detail/:id', element: <AgentNeedDetail /> },
           // 需求文档在线预览（可下载 Word / PDF）
           { path: 'doc/:id', element: <AgentNeedDoc /> },
+        ],
+      },
+      {
+        path: 'project-application',
+        children: [
+          { index: true, element: <ProjectApplication /> },
+          { path: 'create', element: <ProjectApplicationForm /> },
+          { path: 'edit/:id', element: <ProjectApplicationForm /> },
+          { path: 'detail/:id', element: <ProjectApplicationDetail /> },
+          { path: 'audit/:id', element: <ProjectApplicationAudit /> },
         ],
       },
       {
@@ -354,9 +371,10 @@ const routes: RouteObject[] = [
         path: 'user-center',
         children: [
           { index: true, element: <UserCenter /> },
+          { path: 'assign-role/:id', element: <AssignRole /> },
           { path: 'roles', element: <RoleManage /> },
+          { path: 'roles/:id', element: <RoleManage /> },
           { path: 'function-permission', element: <FunctionPermission /> },
-          { path: 'data-permission', element: <DataPermission /> },
         ],
       },
       // Notifications

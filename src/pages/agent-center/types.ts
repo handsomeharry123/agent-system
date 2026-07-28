@@ -12,6 +12,12 @@ export type RegisterStatus =
   | '退回修改';
 
 export type AccessMode = 'API' | 'SDK' | 'OTel';
+export type ModelDeploymentMode = '本地化部署' | '云端部署' | '混合部署';
+export interface ModelConfig {
+  modelName: string;
+  modelVersion: string;
+  deploymentMode: ModelDeploymentMode;
+}
 
 export interface TimelineNode {
   label: string;
@@ -26,6 +32,10 @@ export interface AccessRecord {
   name: string;
   agentCode: string;
   version: string;
+  modelName?: string;
+  modelVersion?: string;
+  modelDeploymentMode?: ModelDeploymentMode;
+  modelConfigs?: ModelConfig[];
   department: string;
   clinicalStage: string;
   source: '自研' | '第三方' | '合作研发';

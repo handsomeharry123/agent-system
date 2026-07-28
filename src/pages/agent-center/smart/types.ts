@@ -3,7 +3,7 @@
  *
  * §3.1.1 Agent 对话入口 / §3.1.2 新建注册页(智能填写) 共用
  */
-import type { AccessMode } from '../types';
+import type { AccessMode, ModelConfig, ModelDeploymentMode } from '../types';
 
 // ──────────────────────────────────────────────────────────────────────
 // §3.1.1 Agent 对话
@@ -228,6 +228,10 @@ export interface RegistrationDraft {
   name: string;
   agentCode: string;
   version: string;
+  modelName: string;
+  modelVersion: string;
+  modelDeploymentMode: ModelDeploymentMode;
+  modelConfigs: ModelConfig[];
   department: string;
   clinicalStage: string;
   clinicalStageCustom?: string;

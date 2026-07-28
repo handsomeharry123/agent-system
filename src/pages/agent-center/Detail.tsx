@@ -5,7 +5,7 @@
  * V2.3：PRD §3.4.1.2 — 删除嵌入式「接入进度 · 核心指标」卡片, 改为由 Agent 对话窗口呈现。
  */
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
   Button,
@@ -33,11 +33,18 @@ import { useSmartDraft } from './smart/store.tsx';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_ADMIN, ROLE_DEPT } from './types';
 import type { InsightProgress, ProgressPhase } from './smart/types';
+import {
+  mockEvaluationTasks,
+  persistChatEvaluationTask,
+  type EvalDimension,
+  type EvaluationTask,
+} from '../../mock/evaluation';
 
 const { Text, Paragraph } = Typography;
 
 const Detail = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams<{ id: string }>();
   const records = useAccessRecords();
   const record = records.find((r) => r.id === id);
@@ -49,6 +56,10 @@ const Detail = () => {
   const currentRole = currentUser?.roles[0] || ROLE_DEPT;
   const isPlatformAdmin = currentRole === ROLE_ADMIN;
   const loginName = currentUser?.name || '当前用户';
+  const offerEvaluationAfterAudit = Boolean(
+    (location.state as { offerEvaluationAfterAudit?: boolean } | null)?.offerEvaluationAfterAudit,
+  );
+  const [evaluationTask, setEvaluationTask] = useState<EvaluationTask | null>(null);
 
   // PRD §3.4.1.2 — 接入进度 + 核心指标改为对话窗口呈现(详情页不嵌入卡片)
   // 在 early-return 之前派生, 避免 hooks 顺序不一致
@@ -156,6 +167,114 @@ const Detail = () => {
       ],
     });
   }, [pushWelcomeGreeting, record, isPlatformAdmin, records, loginName]);
+
+  // 审核通过后进入详情页：先询问，用户确认后立即创建评测任务并用第二个气泡展示进度。
+  useEffect(() => {
+    if (!record || !isPlatformAdmin || !offerEvaluationAfterAudit || evaluationTask) return;
+    pushWelcomeGreeting('agent-center-eval-offer', 'admin', undefined, {
+      actions: [
+        { key: 'create-evaluation', label: '确认创建', event: 'agent-detail-create-evaluation', enabled: true },
+        { key: 'skip-evaluation', label: '暂不创建', event: 'agent-detail-skip-evaluation', enabled: true },
+      ],
+    });
+  }, [record, isPlatformAdmin, offerEvaluationAfterAudit, evaluationTask, pushWelcomeGreeting]);
+
+  useEffect(() => {
+    if (!record || !offerEvaluationAfterAudit) return;
+    const clearNavigationFlag = () =>
+      navigate(location.pathname, { replace: true, state: {} });
+    const onSkip = () => {
+      clearNavigationFlag();
+      message.info('已暂不创建评测任务');
+    };
+    const onCreate = () => {
+      const dimensions: EvalDimension[] = ['输入安全', '输出安全', '行为安全', '数据安全', '工具安全'];
+      const stamp = Date.now();
+      const created: EvaluationTask = {
+        id: `task-audit-${record.id}-${stamp}`,
+        taskNo: `EV${new Date().toISOString().slice(0, 10).replace(/-/g, '')}${String(stamp).slice(-4)}`,
+        agentCode: record.agentCode,
+        agentId: record.id,
+        agentName: record.name,
+        version: record.version,
+        riskLevel: '低风险',
+        department: record.department,
+        status: '评测中',
+        sampleLevel: '标准评测',
+        dimensions: dimensions.map((dimension) => ({ dimension, sampleLevel: '标准评测' })),
+        submitTime: new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-'),
+        createTime: new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-'),
+        progress: 18,
+        progressText: '54 / 300',
+        creator: loginName,
+      };
+      mockEvaluationTasks.unshift(created);
+      persistChatEvaluationTask(created);
+      window.sessionStorage.setItem('agent-system.latestAuditEvaluationTaskId', created.id);
+      setEvaluationTask(created);
+      clearNavigationFlag();
+      pushWelcomeGreeting(
+        'agent-center-eval-created',
+        'admin',
+        () => [created.taskNo, created.status, created.progressText || '0 / 300'],
+        {
+          evaluationSummary: {
+            taskNo: created.taskNo,
+            agentName: created.agentName,
+            dimensions: created.dimensions.map((item) => item.dimension),
+            sampleLevel: created.sampleLevel,
+            samplePercent: created.sampleLevel === '快速评测' ? 30 : created.sampleLevel === '标准评测' ? 60 : 100,
+            progress: created.progress ?? 0,
+            progressText: created.progressText || '0 / 300',
+            estimatedRemaining: '还剩约 1 小时',
+          },
+          actions: [
+            {
+              key: 'evaluation-detail',
+              label: '查看任务详情',
+              event: 'agent-detail-open-current-evaluation',
+              enabled: true,
+            },
+          ],
+        },
+      );
+      message.success(`评测任务 ${created.taskNo} 已创建`);
+    };
+    window.addEventListener('agent-detail-create-evaluation', onCreate);
+    window.addEventListener('agent-detail-skip-evaluation', onSkip);
+    return () => {
+      window.removeEventListener('agent-detail-create-evaluation', onCreate);
+      window.removeEventListener('agent-detail-skip-evaluation', onSkip);
+    };
+  }, [
+    record,
+    offerEvaluationAfterAudit,
+    location.pathname,
+    loginName,
+    navigate,
+    pushWelcomeGreeting,
+  ]);
+
+  // 无论从机器人旁气泡还是展开后的对话消息点击，都只打开本次刚创建的任务。
+  // 与评测中心任务列表的「查看详情」保持一致，统一进入 /report 任务详情页；
+  // /progress 仅为旧版评测进度演示页，不再作为此处详情入口。
+  useEffect(() => {
+    const onOpenCurrentEvaluation = () => {
+      const taskId =
+        evaluationTask?.id ||
+        window.sessionStorage.getItem('agent-system.latestAuditEvaluationTaskId');
+      if (!taskId) {
+        message.warning('未找到本次创建的评测任务');
+        return;
+      }
+      navigate(
+        `/app/evaluation/tasks/${encodeURIComponent(taskId)}/report?fromTab=${encodeURIComponent('评测中')}`,
+      );
+    };
+    window.addEventListener('agent-detail-open-current-evaluation', onOpenCurrentEvaluation);
+    return () =>
+      window.removeEventListener('agent-detail-open-current-evaluation', onOpenCurrentEvaluation);
+  }, [evaluationTask, navigate]);
 
   // 气泡「查看附件」→ 滚动到备案材料 Card
   useEffect(() => {
@@ -288,6 +407,34 @@ const Detail = () => {
             <Descriptions.Item label="联系方式">{record.contactPhone}</Descriptions.Item>
             <Descriptions.Item label="智能体类型">{record.type}</Descriptions.Item>
             <Descriptions.Item label="智能体版本">{record.version}</Descriptions.Item>
+            {(record.modelConfigs?.length
+              ? record.modelConfigs
+              : [{
+                  modelName: record.modelName || '',
+                  modelVersion: record.modelVersion || '',
+                  deploymentMode: record.modelDeploymentMode || '',
+                }]
+            ).flatMap((model, index) => [
+              <Descriptions.Item
+                key={`model-name-${index}`}
+                label={`使用模型名称${(record.modelConfigs?.length || 0) > 1 ? `（模型 ${index + 1}）` : ''}`}
+              >
+                {model.modelName || '--'}
+              </Descriptions.Item>,
+              <Descriptions.Item
+                key={`model-version-${index}`}
+                label={`使用模型版本${(record.modelConfigs?.length || 0) > 1 ? `（模型 ${index + 1}）` : ''}`}
+              >
+                {model.modelVersion || '--'}
+              </Descriptions.Item>,
+              <Descriptions.Item
+                key={`model-deployment-${index}`}
+                label={`模型部署方式${(record.modelConfigs?.length || 0) > 1 ? `（模型 ${index + 1}）` : ''}`}
+                span={2}
+              >
+                {model.deploymentMode || '--'}
+              </Descriptions.Item>,
+            ])}
             <Descriptions.Item label="功能描述" span={2}>
               <Paragraph style={{ marginBottom: 0 }}>{record.description}</Paragraph>
             </Descriptions.Item>

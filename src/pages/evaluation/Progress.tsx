@@ -65,10 +65,23 @@ const generateDimensionState = (
   name: EvalDimension,
   sampleLevel: SampleLevel,
   index: number,
+  taskProgress?: number,
+  dimensionCount = 5,
 ): DimensionState => {
   const baseTotal = { 快速评测: 150, 标准评测: 300, 深度评测: 500 }[sampleLevel];
-  const status: DimensionStatus = index === 0 ? '已完成' : index === 1 ? '执行中' : '待执行';
-  const processed = status === '已完成' ? baseTotal : status === '执行中' ? Math.floor(baseTotal * 0.65) : 0;
+  const completedDimensionUnits =
+    taskProgress === undefined ? undefined : (taskProgress / 100) * dimensionCount;
+  const dimensionPercent =
+    completedDimensionUnits === undefined
+      ? index === 0
+        ? 100
+        : index === 1
+          ? 65
+          : 0
+      : Math.max(0, Math.min(100, Math.round((completedDimensionUnits - index) * 100)));
+  const status: DimensionStatus =
+    dimensionPercent >= 100 ? '已完成' : dimensionPercent > 0 ? '执行中' : '待执行';
+  const processed = Math.round(baseTotal * (dimensionPercent / 100));
   const percent = Math.round((processed / baseTotal) * 100);
   return {
     name,
@@ -77,7 +90,7 @@ const generateDimensionState = (
     percent,
     processed,
     total: baseTotal,
-    remainingMinutes: status === '已完成' ? 0 : status === '执行中' ? 5 : 8,
+    remainingMinutes: status === '已完成' ? 0 : 60,
     currentIndicator: status === '执行中' ? '防越狱与提示注入' : undefined,
     indicators: [
       { name: '防越狱与提示注入', status: status === '已完成' ? '已完成' : status === '执行中' ? '已完成' : '待执行', score: status === '已完成' || status === '执行中' ? 90 + Math.random() * 8 : undefined },
@@ -109,7 +122,9 @@ const ProgressDetail = () => {
 
   const dimensionStates = useMemo<DimensionState[]>(() => {
     if (!task) return [];
-    return task.dimensions.map((d, i) => generateDimensionState(d.dimension, d.sampleLevel, i));
+    return task.dimensions.map((d, i) =>
+      generateDimensionState(d.dimension, d.sampleLevel, i, task.progress, task.dimensions.length),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task, tick]);
 
@@ -126,7 +141,8 @@ const ProgressDetail = () => {
   // ---------------------------------------------------------------------------
   const totalCount = dimensionStates.reduce((acc, d) => acc + d.total, 0);
   const processedCount = dimensionStates.reduce((acc, d) => acc + d.processed, 0);
-  const overallPercent = totalCount > 0 ? Math.round((processedCount / totalCount) * 100) : 0;
+  const overallPercent =
+    task.progress ?? (totalCount > 0 ? Math.round((processedCount / totalCount) * 100) : 0);
   const remainingMin = Math.max(...dimensionStates.map((d) => d.remainingMinutes), 0);
 
   // ---------------------------------------------------------------------------
@@ -269,10 +285,10 @@ const ProgressDetail = () => {
               <Descriptions.Item label="发起人">{task.creator || <Text type="secondary">-</Text>}</Descriptions.Item>
               <Descriptions.Item label="发起时间">{task.createTime}</Descriptions.Item>
               <Descriptions.Item label="预计完成时间">
-                {task.status === '评测中' ? '约 5 分钟后' : '-'}
+                {task.status === '评测中' ? `约 ${remainingMin} 分钟后` : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="已耗时">
-                {task.status === '评测中' ? '约 35 分钟' : '-'}
+                {task.status === '评测中' ? '刚刚开始' : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="评测维度与样本量" span={2}>
                 <Space wrap>

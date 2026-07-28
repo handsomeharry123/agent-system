@@ -2,6 +2,7 @@ import type { UserRole, DataClassification, SyncStatus } from '../../types/user'
 
 /** 角色 → Tag 颜色（用户中心 4 个页面共享） */
 export const roleColorMap: Record<UserRole, string> = {
+  '医院领导': 'gold',
   '信息科管理员': 'red',
   '科室管理员': 'green',
 };
@@ -28,7 +29,7 @@ export const syncStatusLabelMap: Record<SyncStatus, string> = {
 };
 
 /** 系统默认角色（信息科管理员 + 科室管理员） */
-export const systemRoles: UserRole[] = ['信息科管理员', '科室管理员'];
+export const systemRoles: UserRole[] = ['医院领导', '信息科管理员', '科室管理员'];
 
 /** 数据分级全部可选值（按 V1.1 文档） */
 export const allDataClassifications: DataClassification[] = ['一般', '重要', '核心', '敏感'];

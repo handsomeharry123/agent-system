@@ -20,6 +20,7 @@ import {
   Alert,
   Button,
   Input,
+  Progress,
   Space,
   Tag,
   Tooltip,
@@ -281,6 +282,9 @@ const recognizeFile = async (fileName: string): Promise<RecognizeResult> => {
   const baseFields: RecognizeResult['fields'] = [
     { fieldKey: 'name', value: '智能辅助诊断系统', confidence: 0.96, source: `${fileName} §1.1` },
     { fieldKey: 'version', value: '2.1', confidence: 0.93, source: `${fileName} §1.3` },
+    { fieldKey: 'modelName', value: 'DeepSeek-V3', confidence: 0.91, source: `${fileName} §1.3 模型配置` },
+    { fieldKey: 'modelVersion', value: '2.1', confidence: 0.89, source: `${fileName} §1.3 模型配置` },
+    { fieldKey: 'modelDeploymentMode', value: '本地化部署', confidence: 0.87, source: `${fileName} §4.1 部署架构` },
     { fieldKey: 'department', value: '心内科', confidence: 0.88, source: `${fileName} §1.4 语义联动` },
     { fieldKey: 'clinicalStage', value: '辅助诊断', confidence: 0.82, source: `${fileName} §1.4 语义联动` },
     { fieldKey: 'source', value: '第三方', confidence: 0.85, source: `${fileName} §1.5` },
@@ -321,6 +325,9 @@ const recognizeLink = async (url: string): Promise<RecognizeResult> => {
     fields: [
       { fieldKey: 'name', value: '链取引擎：在线问诊智能体', confidence: 0.74, source: url },
       { fieldKey: 'version', value: '1.5', confidence: 0.7, source: url },
+      { fieldKey: 'modelName', value: 'Qwen2.5', confidence: 0.68, source: url },
+      { fieldKey: 'modelVersion', value: '1.1', confidence: 0.66, source: url },
+      { fieldKey: 'modelDeploymentMode', value: '云端部署', confidence: 0.65, source: url },
       { fieldKey: 'description', value: '面向在线问诊场景的智能体，提供症状采集与初步分诊', confidence: 0.68, source: url },
     ],
     summary: `已抓取链接内容，识别 3 个字段（置信度偏低）。`,
@@ -331,6 +338,12 @@ const recognizeText = async (text: string): Promise<RecognizeResult> => {
   await new Promise((r) => setTimeout(r, 800));
   // 简单关键词推断
   const fields: RecognizeResult['fields'] = [];
+  const modelName = text.match(/(?:使用)?模型名称[：:\s]*([A-Za-z0-9._+\-/]+)/i)?.[1];
+  const modelVersion = text.match(/(?:使用)?模型版本[：:\s]*(\d+\.\d+)/i)?.[1];
+  const deploymentMode = text.match(/(本地化部署|云端部署|混合部署)/)?.[1];
+  if (modelName) fields.push({ fieldKey: 'modelName', value: modelName, confidence: 0.94, source: '用户文本' });
+  if (modelVersion) fields.push({ fieldKey: 'modelVersion', value: modelVersion, confidence: 0.94, source: '用户文本' });
+  if (deploymentMode) fields.push({ fieldKey: 'modelDeploymentMode', value: deploymentMode, confidence: 0.96, source: '用户文本' });
   if (/诊断|读片|影像/.test(text)) {
     fields.push({ fieldKey: 'description', value: text, confidence: 0.6, source: '用户文本' });
     fields.push({ fieldKey: 'clinicalStage', value: '辅助诊断', confidence: 0.7, source: '用户文本 语义联动' });
@@ -395,11 +408,13 @@ const hasTallContent = (
   welcome: {
     previewProblems?: { items: unknown[] } | null;
     miniList?: { rows: unknown[] } | null;
+    evaluationSummary?: unknown;
   } | null,
   miniExpanded?: boolean,
 ) => {
   if (!welcome) return false;
   if (welcome.previewProblems && welcome.previewProblems.items.length > 0) return true;
+  if (welcome.evaluationSummary) return true;
   // miniList 仅在「真展开」时按 tall 计算; 折叠态只是 1 个 ghost button
   if (miniExpanded && welcome.miniList && welcome.miniList.rows.length > 0) return true;
   return false;
@@ -1227,7 +1242,8 @@ const AgentAssistant = () => {
       activeWelcome &&
       ((activeWelcome.chips && activeWelcome.chips.length > 0) ||
         (activeWelcome.actions && activeWelcome.actions.length > 0) ||
-        (activeWelcome.miniList && activeWelcome.miniList.rows.length > 0))
+        (activeWelcome.miniList && activeWelcome.miniList.rows.length > 0) ||
+        activeWelcome.evaluationSummary)
     );
     return bubbleActualH ?? (tall ? 420 : hasChipsOrActions ? 280 : 80);
   };
@@ -1303,6 +1319,8 @@ const AgentAssistant = () => {
             maxHeight:
               activeWelcome.previewProblems && activeWelcome.previewProblems.items.length > 0
                 ? 'min(420px, calc(100vh - 32px))'
+                : activeWelcome.evaluationSummary
+                  ? 'min(460px, calc(100vh - 32px))'
                 : ((activeWelcome.chips && activeWelcome.chips.length > 0) ||
                 (activeWelcome.actions && activeWelcome.actions.length > 0) ||
                 (activeWelcome.miniList && activeWelcome.miniList.rows.length > 0))
@@ -1352,6 +1370,7 @@ const AgentAssistant = () => {
           {((activeWelcome.chips && activeWelcome.chips.length > 0) ||
             (activeWelcome.actions && activeWelcome.actions.length > 0) ||
             (activeWelcome.miniList && activeWelcome.miniList.rows.length > 0) ||
+            activeWelcome.evaluationSummary ||
             (activeWelcome.previewProblems && activeWelcome.previewProblems.items.length > 0)) && (
           <div
             style={{
@@ -1364,6 +1383,58 @@ const AgentAssistant = () => {
               overflowY: 'visible',
             }}
           >
+          {activeWelcome.evaluationSummary && (
+            <div
+              data-testid="status-bubble-evaluation-summary"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                marginTop: 8,
+                padding: '10px 12px',
+                border: '1px solid #D9D9D9',
+                borderRadius: 10,
+                background: '#FFF',
+                color: '#262626',
+              }}
+            >
+              <div style={{ display: 'grid', gap: 7, fontSize: 13 }}>
+                <div>
+                  <Text type="secondary">任务编号：</Text>
+                  <Text strong>{activeWelcome.evaluationSummary.taskNo}</Text>
+                </div>
+                <div>
+                  <Text type="secondary">评测智能体名称：</Text>
+                  <Text>{activeWelcome.evaluationSummary.agentName}</Text>
+                </div>
+                <div>
+                  <Text type="secondary">评测维度：</Text>
+                  <Text>{activeWelcome.evaluationSummary.dimensions.join(' / ')}</Text>
+                </div>
+                <div>
+                  <Text type="secondary">评测样本量：</Text>
+                  <Text>
+                    {activeWelcome.evaluationSummary.sampleLevel}
+                    （抽题 {activeWelcome.evaluationSummary.samplePercent}%）
+                  </Text>
+                </div>
+              </div>
+              <div style={{ borderTop: '1px solid #F0F0F0', marginTop: 10, paddingTop: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text strong>评测进度</Text>
+                  <Text type="secondary">{activeWelcome.evaluationSummary.estimatedRemaining}</Text>
+                </div>
+                <Progress
+                  percent={activeWelcome.evaluationSummary.progress}
+                  size="small"
+                  strokeColor="#1677FF"
+                  trailColor="#E6F4FF"
+                  format={(percent) => `${percent}%`}
+                />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  已完成 {activeWelcome.evaluationSummary.progressText}
+                </Text>
+              </div>
+            </div>
+          )}
           {/* §4.1.1 状态分流 chip：点击直接跳对应状态 tab */}
           {activeWelcome.chips && activeWelcome.chips.length > 0 && (
             <div
@@ -1584,13 +1655,16 @@ const AgentAssistant = () => {
                     disabled={!a.enabled}
                     onClick={() => {
                       if (!a.enabled) return;
+                      // 先消费当前气泡，再执行动作。部分页面事件会同步推送下一张气泡
+                      // （例如审核通过后创建评测任务）；若放在事件之后消费，会把刚写入
+                      // 的新气泡一并清空，表现为第二张气泡无法呈现。
+                      consumeWelcome();
                       if (a.event) {
                         // 单记录页直接操作（上传 / 语音 / 审核结论 / 附件预览等）走页面内事件
                         window.dispatchEvent(new CustomEvent(a.event));
                       } else if (a.path) {
                         window.location.href = a.path;
                       }
-                      consumeWelcome();
                     }}
                     style={{ padding: '0 6px' }}
                   >

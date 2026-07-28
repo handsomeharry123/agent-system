@@ -219,6 +219,14 @@ const Audit = () => {
     // 不规范（格式）
     if (record.version && !/^\d+\.\d+$/.test(record.version))
       probs.push({ id: 'version-format', fieldKey: 'version', severity: 'error', title: '版本号格式不符', reason: '应符合「数字.数字」' });
+    if (!record.modelName)
+      probs.push({ id: 'model-name-missing', fieldKey: 'modelName', severity: 'error', title: '使用模型名称为空', reason: '必填字段缺失' });
+    if (!record.modelVersion)
+      probs.push({ id: 'model-version-missing', fieldKey: 'modelVersion', severity: 'error', title: '使用模型版本为空', reason: '必填字段缺失' });
+    else if (!/^\d+\.\d+$/.test(record.modelVersion))
+      probs.push({ id: 'model-version-format', fieldKey: 'modelVersion', severity: 'error', title: '使用模型版本格式不符', reason: '应符合「数字.数字」，如 1.1 / 2.1' });
+    if (!record.modelDeploymentMode)
+      probs.push({ id: 'model-deployment-missing', fieldKey: 'modelDeploymentMode', severity: 'error', title: '模型部署方式为空', reason: '必填字段缺失' });
     if (!record.contactPhone || !/^1[3-9]\d{9}$/.test(record.contactPhone))
       probs.push({ id: 'phone-format', fieldKey: 'contactPhone', severity: 'error', title: '手机号格式不符', reason: '限制 11 位 1[3-9] 开头的手机号' });
     if (record.accessMode === 'API' && record.apiEndpoint && !/^https?:\/\//.test(record.apiEndpoint))
@@ -639,7 +647,11 @@ const Audit = () => {
     setVerdict(null);
     message.success(verdict === '通过' ? '审核通过' : '已退回，等待申请人修改');
     if (verdict === '通过') {
-      // 审核通过后保留在当前记录页，不再展示页面头部的下一步引导标签。
+      // 审核通过 → 注册信息详情页，并由详情页机器人询问是否立即创建评测任务。
+      navigate(`/app/agent-center/detail/${record.id}`, {
+        state: { offerEvaluationAfterAudit: true },
+        replace: true,
+      });
     } else {
       // 退回 → 直接跳到「退回修改」Tab
       navigate('/app/agent-center?tab=退回修改');
@@ -751,6 +763,20 @@ const Audit = () => {
             <Descriptions.Item label={<FieldFlag fieldKey="version" problems={problemsByField.version || []} label="智能体版本" />}>
               {record.version || <Text type="secondary">（未填）</Text>}
             </Descriptions.Item>
+            {(record.modelConfigs?.length
+              ? record.modelConfigs
+              : [{
+                  modelName: record.modelName || '',
+                  modelVersion: record.modelVersion || '',
+                  deploymentMode: record.modelDeploymentMode || '',
+                }]
+            ).map((model, index) => (
+              <Descriptions.Item key={`${model.modelName}-${index}`} label={`模型信息 ${index + 1}`} span={2}>
+                {model.modelName && model.modelVersion && model.deploymentMode
+                  ? `${model.modelName} / ${model.modelVersion} / ${model.deploymentMode}`
+                  : <Text type="secondary">（未完整填写）</Text>}
+              </Descriptions.Item>
+            ))}
             <Descriptions.Item label="功能描述" span={2}>
               <Paragraph style={{ marginBottom: 0 }}>{record.description}</Paragraph>
             </Descriptions.Item>

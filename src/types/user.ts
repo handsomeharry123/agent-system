@@ -1,4 +1,4 @@
-export type UserRole = '信息科管理员' | '科室管理员';
+export type UserRole = '医院领导' | '信息科管理员' | '科室管理员';
 
 export type UserStatus = '正常' | '在职' | '已停用';
 

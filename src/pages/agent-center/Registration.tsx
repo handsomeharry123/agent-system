@@ -290,6 +290,9 @@ const Registration = () => {
         name: draftTarget.name,
         agentCode: draftTarget.agentCode,
         version: draftTarget.version,
+        modelName: draftTarget.modelName,
+        modelVersion: draftTarget.modelVersion,
+        modelDeploymentMode: draftTarget.modelDeploymentMode,
         department: draftTarget.department,
         clinicalStage: draftTarget.clinicalStage,
         source: draftTarget.source,
@@ -792,6 +795,14 @@ const Registration = () => {
       message.error('版本号仅允许「数字.数字」格式');
       return false;
     }
+    if (!v.modelName?.trim() || !v.modelVersion?.trim() || !v.modelDeploymentMode) {
+      message.error('请完整填写使用模型名称、使用模型版本和模型部署方式');
+      return false;
+    }
+    if (!/^\d+\.\d+$/.test(v.modelVersion)) {
+      message.error('使用模型版本仅允许「数字.数字」格式');
+      return false;
+    }
     if ((v.description || '').length > 500) {
       message.error('功能描述不超过 500 字');
       return false;
@@ -823,6 +834,9 @@ const Registration = () => {
       name: v.name || '未命名草稿',
       agentCode: code,
       version: v.version || '',
+      modelName: v.modelName || '',
+      modelVersion: v.modelVersion || '',
+      modelDeploymentMode: v.modelDeploymentMode,
       department: v.department || '',
       clinicalStage: v.clinicalStage || '',
       source: v.source,
@@ -1084,6 +1098,49 @@ const Registration = () => {
                     ]}
                   >
                     <Input placeholder="如：1.0 / 1.1 / 2.0 / 2.1" />
+                  </Form.Item>
+                </AIPrefillWrapper>
+              </Col>
+              <Col span={12}>
+                <AIPrefillWrapper fieldKey="modelName" onUserChange={() => handleUserChange('modelName')}>
+                  <Form.Item
+                    name="modelName"
+                    label="使用模型名称"
+                    rules={[{ required: true, message: '请输入使用模型名称' }]}
+                  >
+                    <Input placeholder="如：DeepSeek-V3 / Qwen2.5" allowClear />
+                  </Form.Item>
+                </AIPrefillWrapper>
+              </Col>
+              <Col span={12}>
+                <AIPrefillWrapper fieldKey="modelVersion" onUserChange={() => handleUserChange('modelVersion')}>
+                  <Form.Item
+                    name="modelVersion"
+                    label="使用模型版本"
+                    rules={[
+                      { required: true, message: '请输入使用模型版本' },
+                      { pattern: /^\d+\.\d+$/, message: '格式：数字.数字，如 1.1 / 2.1' },
+                    ]}
+                  >
+                    <Input placeholder="如：1.1 / 2.1" allowClear />
+                  </Form.Item>
+                </AIPrefillWrapper>
+              </Col>
+              <Col span={12}>
+                <AIPrefillWrapper
+                  fieldKey="modelDeploymentMode"
+                  onUserChange={() => handleUserChange('modelDeploymentMode')}
+                >
+                  <Form.Item
+                    name="modelDeploymentMode"
+                    label="模型部署方式"
+                    rules={[{ required: true, message: '请选择模型部署方式' }]}
+                  >
+                    <Radio.Group>
+                      <Radio value="本地化部署">本地化部署</Radio>
+                      <Radio value="云端部署">云端部署</Radio>
+                      <Radio value="混合部署">混合部署</Radio>
+                    </Radio.Group>
                   </Form.Item>
                 </AIPrefillWrapper>
               </Col>

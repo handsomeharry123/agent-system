@@ -13,11 +13,12 @@ import {
   SettingOutlined,
   DeploymentUnitOutlined,
   MedicineBoxOutlined,
+  ProjectOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 
 /**
- * 11 个一级模块的单一配置源
+ * 一级模块的单一配置源
  * 供 BasicLayout（侧边栏渲染）与 DemoFloatButton（模块显隐树）共同消费
  *
  * 字段：
@@ -35,6 +36,7 @@ export type ModuleKey =
   | 'assistant'
   | 'workbench'
   | 'agent-needs'
+  | 'project-application'
   | 'agent-center'
   | 'ledger'
   | 'resource-center'
@@ -101,6 +103,14 @@ export const masterMenu: MasterModule[] = [
     name: '智能体建设需求管理',
     path: '/app/agent-needs',
     icon: <BulbOutlined />,
+    defaultVisible: true,
+    defaultRoleVisible: 'both',
+  },
+  {
+    key: 'project-application',
+    name: '立项申报管理中心',
+    path: '/app/project-application',
+    icon: <ProjectOutlined />,
     defaultVisible: true,
     defaultRoleVisible: 'both',
   },
@@ -227,7 +237,6 @@ export const masterMenu: MasterModule[] = [
       { key: 'user-center:list', name: '用户列表', path: '/app/user-center', defaultVisible: true },
       { key: 'user-center:roles', name: '角色管理', path: '/app/user-center/roles', defaultVisible: true },
       { key: 'user-center:function', name: '功能权限配置', path: '/app/user-center/function-permission', defaultVisible: true },
-      { key: 'user-center:data', name: '数据权限配置', path: '/app/user-center/data-permission', defaultVisible: true },
     ],
   },
   {
