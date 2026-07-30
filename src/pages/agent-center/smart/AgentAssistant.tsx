@@ -140,6 +140,25 @@ const answerResourceDetailQuestion = (question: string, context: any): string =>
   return outOfScope;
 };
 
+const answerAuditProjectDetailQuestion = (question: string, context: any): string => {
+  const outOfScope = '超出当前项目审计信息详情页信息范围，暂无法为您解答，我们将持续完善。';
+  if (!context) return outOfScope;
+  if (/项目名称|什么项目|项目叫什么/.test(question)) return `当前项目为【${context.name}】。`;
+  if (/申报科室|哪个科室|所属科室/.test(question)) return `该项目的申报科室为${context.dept}。`;
+  if (/申报赛道|赛道|项目类型/.test(question)) return `该项目的申报赛道为${context.track}。`;
+  if (/项目负责人|负责人/.test(question)) return `该项目负责人为${context.owner}。`;
+  if (/项目联系人|联系人/.test(question)) return `该项目联系人为${context.contact}，联系方式为${context.phone}。`;
+  if (/联系方式|联系电话|电话/.test(question)) return `该项目联系方式为${context.phone}。`;
+  if (/证明材料|材料|附件|文件/.test(question)) return `当前详情页展示了 ${context.materials.length} 份证明材料：${context.materials.join('、')}。`;
+  if (/建设内容|完成情况|完成度|进度/.test(question)) return `项目建设内容完成度为 ${context.completion || 80}%。${context.completionDescription}`;
+  if (/考核指标|指标|达成情况|达成率/.test(question)) return `项目考核指标达成率为 ${context.indicator || 85}%。${context.indicatorDescription}`;
+  if (/资金|经费|使用率/.test(question)) return `项目资金使用率为 ${context.fund || 74}%。${context.fundDescription}`;
+  if (/基本信息|项目情况|详情|概况|介绍/.test(question)) {
+    return `【${context.name}】由${context.dept}申报，申报赛道为${context.track}，项目负责人为${context.owner}，联系人为${context.contact}；建设内容完成度 ${context.completion || 80}%，考核指标达成率 ${context.indicator || 85}%，资金使用率 ${context.fund || 74}%。`;
+  }
+  return outOfScope;
+};
+
 const answerEvaluationReportQuestion = (question: string, context: any): string => {
   const outOfScope = '超出当前评测结果详情信息范围，暂无法为您解答，我们将持续完善。';
   if (!context) return outOfScope;
@@ -577,6 +596,22 @@ const AgentAssistant = () => {
     const isMonitoringStatusPage = location.pathname === '/app/monitoring/status';
     const isMonitoringCostPage = location.pathname === '/app/monitoring/cost';
     const isMonitoringAlertRulesPage = location.pathname === '/app/monitoring/alert-rules';
+    const isProjectApplicationAllPage = location.pathname === '/app/project-application';
+    const isProjectApplicationDraftTab = isProjectApplicationAllPage &&
+      new URLSearchParams(location.search).get('status') === '草稿';
+    const isProjectApplicationPendingTab = isProjectApplicationAllPage &&
+      new URLSearchParams(location.search).get('status') === '待审核';
+    const isProjectApplicationReviewingTab = isProjectApplicationAllPage &&
+      new URLSearchParams(location.search).get('status') === '审核中';
+    const isProjectApplicationRevokedTab = isProjectApplicationAllPage &&
+      new URLSearchParams(location.search).get('status') === '撤销修改';
+    const isProjectApplicationRejectedTab = isProjectApplicationAllPage &&
+      new URLSearchParams(location.search).get('status') === '立项不通过';
+    const isProjectApplicationPassedTab = isProjectApplicationAllPage &&
+      new URLSearchParams(location.search).get('status') === '立项通过';
+    const isProjectApplicationFormPage =
+      /^\/app\/project-application\/(?:create|edit\/[^/]+)$/.test(location.pathname);
+    const isAuditProjectPage = location.pathname === '/app/audit/project';
     const isMonitoringAlertEventsPage = location.pathname === '/app/monitoring/alert-events';
     const isMonitoringAlertDetailPage = /^\/app\/monitoring\/alert-events\/[^/]+$/.test(location.pathname);
     const isMonitoringAlertReviewPage = /^\/app\/monitoring\/alert-events\/[^/]+\/review$/.test(location.pathname);
@@ -596,6 +631,29 @@ const AgentAssistant = () => {
       // 历史页面欢迎气泡混入当前智能体窗口；用户后续对话消息仍正常保留。
       if (isNeedDraftTab && m.id.startsWith('__welcome__:')) {
         return m.id.startsWith('__welcome__:agent-needs-draft:');
+      }
+      if (isProjectApplicationAllPage && m.id.startsWith('__welcome__:')) {
+        return isProjectApplicationDraftTab
+          ? m.id.startsWith('__welcome__:project-application-draft:')
+          : isProjectApplicationPendingTab
+          ? m.id.startsWith('__welcome__:project-application-pending:')
+          : isProjectApplicationReviewingTab
+          ? m.id.startsWith('__welcome__:project-application-reviewing:')
+          : isProjectApplicationRevokedTab
+          ? m.id.startsWith('__welcome__:project-application-revoked:')
+          : isProjectApplicationRejectedTab
+          ? m.id.startsWith('__welcome__:project-application-rejected:')
+          : isProjectApplicationPassedTab
+          ? m.id.startsWith('__welcome__:project-application-passed:')
+          : m.id.startsWith('__welcome__:project-application-all:');
+      }
+      if (isProjectApplicationFormPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:project-application-form:');
+      }
+      if (isAuditProjectPage && m.id.startsWith('__welcome__:audit-project-')) {
+        return activeWelcome
+          ? m.id.startsWith(`__welcome__:${activeWelcome.pageKey}:`)
+          : false;
       }
       // 生成需求与编辑需求草稿共用同一套智能体流程：上传材料 → 识别填充
       // → 采纳 → 提交。进入表单后仅保留该流程的欢迎/节点消息，避免草稿
@@ -690,7 +748,7 @@ const AgentAssistant = () => {
       }
       return true;
     });
-  }, [location.pathname, location.search, messages]);
+  }, [activeWelcome, location.pathname, location.search, messages]);
 
   // 滚动到底部
   useEffect(() => {
@@ -765,9 +823,16 @@ const AgentAssistant = () => {
   useEffect(() => {
     if (!activeWelcome) return;
     if (open) return; // 浮层已开, 机器人旁气泡不重复
-    // 告警「待审核事件」是持续待办提醒，保留到用户点击机器人、气泡或关闭按钮，
-    // 避免管理员查看列表数秒后气泡自动消失而错过审核入口提示。
-    if (activeWelcome.pageKey === 'monitoring-alert-events' || activeWelcome.pageKey === 'monitoring-alert-pending-assign' || activeWelcome.pageKey === 'monitoring-alert-pending-review') return;
+    // 告警待办与「全部项目审计」态势都是持续处理入口，保留到用户点击机器人、
+    // 状态标签或关闭按钮，避免查看列表数秒后气泡自动消失。
+    if (
+      activeWelcome.pageKey === 'monitoring-alert-events' ||
+      activeWelcome.pageKey === 'monitoring-alert-pending-assign' ||
+      activeWelcome.pageKey === 'monitoring-alert-pending-review' ||
+      activeWelcome.pageKey === 'audit-project-all' ||
+      activeWelcome.pageKey === 'audit-project-draft' ||
+      activeWelcome.pageKey === 'audit-project-application'
+    ) return;
     welcomeTimerRef.current = setTimeout(() => {
       consumeWelcome();
     }, 8000);
@@ -890,11 +955,25 @@ const AgentAssistant = () => {
     if (!text) return;
     addMessage({ role: 'user', type: 'text', content: text });
     setInput('');
+    if (/^\/app\/project-application\/(?:create|edit\/[^/]+)$/.test(location.pathname)) {
+      window.dispatchEvent(new CustomEvent('project-application-assistant-input', {
+        detail: { text, source: 'text' },
+      }));
+      return;
+    }
     if (/^\/app\/resource-center\/applies\/[^/]+$/.test(location.pathname)) {
       addMessage({
         role: 'agent',
         type: 'text',
         content: answerResourceDetailQuestion(text, (window as any).__resourceApplyDetailContext),
+      });
+      return;
+    }
+    if (location.pathname === '/app/audit/project' && (window as any).__auditProjectDetailContext) {
+      addMessage({
+        role: 'agent',
+        type: 'text',
+        content: answerAuditProjectDetailQuestion(text, (window as any).__auditProjectDetailContext),
       });
       return;
     }
@@ -1041,6 +1120,11 @@ const AgentAssistant = () => {
       if (isResourcePermission) {
         window.dispatchEvent(new CustomEvent('resource-apply-ai-fill', { detail: { fields: result.fields } }));
       }
+      if (location.pathname === '/app/audit/project') {
+        window.dispatchEvent(new CustomEvent('audit-project-assistant-input', {
+          detail: { text: extra?.rawText || extra?.fileName || result.summary, source: extra?.fileName ? 'file' : 'text' },
+        }));
+      }
       setMood('happy');
       setTimeout(() => setMood('idle'), 1200);
     } catch (e) {
@@ -1069,6 +1153,26 @@ const AgentAssistant = () => {
       content: isDocument ? `上传文件：${file.name}` : `上传图片：${file.name}`,
       payload: { fileName: file.name, fileSize: size },
     });
+    if (/^\/app\/project-application\/(?:create|edit\/[^/]+)$/.test(location.pathname)) {
+      if (!/\.(pdf|doc|docx)$/i.test(file.name || '')) {
+        message.error('项目申报材料仅支持 PDF、DOC、DOCX 文件');
+        return false;
+      }
+      window.dispatchEvent(new CustomEvent('project-application-assistant-input', {
+        detail: { text: file.name, source: 'file' },
+      }));
+      return false;
+    }
+    if (location.pathname === '/app/audit/project') {
+      if (!/\.(pdf|doc|docx)$/i.test(file.name || '')) {
+        message.error('项目审计材料仅支持 PDF、DOC、DOCX 文件');
+        return false;
+      }
+      window.dispatchEvent(new CustomEvent('audit-project-assistant-input', {
+        detail: { text: file.name, source: 'file' },
+      }));
+      return false;
+    }
     // §3.1.1 同步到「备案材料」列表：仅 PDF（图片仅用于 OCR 识别，不入备案材料）。
     // 同 uid 走 store 内部去重，避免重复入列。
     if (isPdf) {
@@ -1118,6 +1222,8 @@ const AgentAssistant = () => {
       setRecording(false);
       const mockTranscript = location.pathname === '/app/monitoring/alert-rules'
         ? '有哪些安全监控告警规则'
+        : location.pathname === '/app/audit/project'
+        ? '项目建设完成度95%，已使用金额136.8万元，资金使用率76%，资金用于软硬件采购、实施服务、模型训练和系统测试。'
         : location.pathname === '/app/monitoring/alert-events'
         ? (new URLSearchParams(location.search).get('tab') === 'pending_assign'
           ? '把全部待分派事件分派给王建国'
@@ -1155,7 +1261,7 @@ const AgentAssistant = () => {
     message.info('开始录音…再次点击结束');
   };
 
-  // §3.1.1 新建注册页气泡直接操作：【上传材料】打开浮层并触发文件选择；【语音描述】打开浮层并开始录音
+  // §3.1.1 欢迎气泡直接操作：打开浮层后触发文件选择或开始语音描述
   useEffect(() => {
     const onTriggerUpload = () => {
       setOpen(true);
@@ -1168,9 +1274,13 @@ const AgentAssistant = () => {
     };
     window.addEventListener('agent-register-trigger-upload', onTriggerUpload);
     window.addEventListener('agent-register-trigger-voice', onTriggerVoice);
+    window.addEventListener('audit-project-trigger-upload', onTriggerUpload);
+    window.addEventListener('audit-project-trigger-voice', onTriggerVoice);
     return () => {
       window.removeEventListener('agent-register-trigger-upload', onTriggerUpload);
       window.removeEventListener('agent-register-trigger-voice', onTriggerVoice);
+      window.removeEventListener('audit-project-trigger-upload', onTriggerUpload);
+      window.removeEventListener('audit-project-trigger-voice', onTriggerVoice);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording]);
@@ -1340,7 +1450,15 @@ const AgentAssistant = () => {
           onClick={() => {
             // §4.1.1 文字汇报：点气泡展开对话窗口深入交流（不强制）
             setOpen(true);
-            consumeWelcome();
+            // 项目信息审计页还需要用 activeWelcome 锁定窗口内对应的预审欢迎语；
+            // 审计决策完成、页面离开时再由页面 effect 清理。
+            if (
+              activeWelcome.pageKey !== 'audit-project-audit' &&
+              activeWelcome.pageKey !== 'audit-project-all' &&
+              activeWelcome.pageKey !== 'audit-project-draft'
+            ) {
+              consumeWelcome();
+            }
           }}
           role="dialog"
           aria-label="医小管态势汇报"
@@ -1641,7 +1759,8 @@ const AgentAssistant = () => {
             </div>
           )}
           {/* §4.1.1 一键直达：按权限置灰；非 admin 看不到「准入评测沙盒」或置灰 */}
-          {activeWelcome.actions && activeWelcome.actions.length > 0 && (
+          {activeWelcome.pageKey !== 'audit-project-audit' &&
+            activeWelcome.actions && activeWelcome.actions.length > 0 && (
             <div
               style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}
               onClick={(e) => e.stopPropagation()}
@@ -1690,7 +1809,11 @@ const AgentAssistant = () => {
                   data-testid="status-bubble-mini-toggle"
                   onClick={() => {
                     setOpen(true);
-                    consumeWelcome();
+                    // 项目审计草稿窗口依赖 activeWelcome 判断当前清单；
+                    // 打开窗口时保留欢迎态，确保欢迎语下方能直接展示草稿列表。
+                    if (activeWelcome.pageKey !== 'audit-project-draft') {
+                      consumeWelcome();
+                    }
                   }}
                   style={{ padding: '0 10px' }}
                 >
@@ -2115,12 +2238,18 @@ const AgentAssistant = () => {
             )}
             <Space.Compact style={{ width: '100%' }}>
               <Upload
-                accept=".pdf,.png,.jpg,.jpeg"
+                accept={/^\/app\/project-application\/(?:create|edit\/[^/]+)$/.test(location.pathname) || location.pathname === '/app/audit/project'
+                  ? '.pdf,.doc,.docx'
+                  : '.pdf,.png,.jpg,.jpeg'}
                 showUploadList={false}
                 beforeUpload={(file) => handleUpload(file as any)}
                 maxCount={1}
               >
-                <Button icon={<PaperClipOutlined />} title="上传 PDF / 图片" />
+                <Button icon={<PaperClipOutlined />} title={
+                  /^\/app\/project-application\/(?:create|edit\/[^/]+)$/.test(location.pathname) || location.pathname === '/app/audit/project'
+                    ? '上传 PDF / DOC / DOCX'
+                    : '上传 PDF / 图片'
+                } />
               </Upload>
               <Button
                 icon={<LinkOutlined />}

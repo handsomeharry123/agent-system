@@ -373,6 +373,9 @@ const AgentMessageBubble = ({
 }: Props) => {
   const isAgent = msg.role === 'agent';
   const isNeedDraftWelcome = msg.id.startsWith('__welcome__:agent-needs-draft:');
+  const isProjectApplicationDraftWelcome = msg.id.startsWith('__welcome__:project-application-draft:');
+  const isProjectApplicationReviewingWelcome = msg.id.startsWith('__welcome__:project-application-reviewing:');
+  const isProjectApplicationRevokedWelcome = msg.id.startsWith('__welcome__:project-application-revoked:');
   const isResourceDraftWelcome = msg.id.startsWith('__welcome__:resource-center-draft:');
   const isResourceApplyDraftWelcome = msg.id.startsWith('__welcome__:resource-apply-draft:');
   const isResourceApplyReviewingWelcome = msg.id.startsWith('__welcome__:resource-apply-reviewing:');
@@ -380,10 +383,22 @@ const AgentMessageBubble = ({
   const isResourceApplyRevokedWelcome = msg.id.startsWith('__welcome__:resource-apply-revoked:');
   const isResourceApplyApprovedWelcome = msg.id.startsWith('__welcome__:resource-apply-approved:');
   const isResourceApplyRejectedWelcome = msg.id.startsWith('__welcome__:resource-apply-rejected:');
-  const isDirectExpandedDraftWelcome = isNeedDraftWelcome || isResourceDraftWelcome ||
+  const isAuditProjectWelcome = msg.id.startsWith('__welcome__:audit-project-all:');
+  const isAuditProjectApplicationWelcome = msg.id.startsWith('__welcome__:audit-project-application:');
+  const isAuditProjectDraftWelcome = msg.id.startsWith('__welcome__:audit-project-draft:');
+  const isAuditProjectPendingWelcome = msg.id.startsWith('__welcome__:audit-project-pending:');
+  const isAuditProjectReviewingWelcome = msg.id.startsWith('__welcome__:audit-project-reviewing:');
+  const isAuditProjectRevokedWelcome = msg.id.startsWith('__welcome__:audit-project-revoked:');
+  const isAuditProjectPassedWelcome = msg.id.startsWith('__welcome__:audit-project-passed:');
+  const isDirectExpandedDraftWelcome = isNeedDraftWelcome || isProjectApplicationDraftWelcome ||
+    isProjectApplicationReviewingWelcome || isProjectApplicationRevokedWelcome ||
+    isResourceDraftWelcome ||
     isResourceApplyDraftWelcome || isResourceApplyReviewingWelcome || isResourceApplyPendingWelcome ||
-    isResourceApplyRevokedWelcome || isResourceApplyApprovedWelcome || isResourceApplyRejectedWelcome;
-  // 建设需求、资源注册草稿欢迎语要求列表直接呈现在欢迎语下方；其他场景仍保持折叠，
+    isResourceApplyRevokedWelcome || isResourceApplyApprovedWelcome || isResourceApplyRejectedWelcome ||
+    isAuditProjectWelcome || isAuditProjectApplicationWelcome ||
+    isAuditProjectDraftWelcome || isAuditProjectPendingWelcome ||
+    isAuditProjectReviewingWelcome || isAuditProjectRevokedWelcome || isAuditProjectPassedWelcome;
+  // 建设需求、资源注册草稿及立项清单欢迎语要求列表直接呈现在欢迎语下方；其他场景仍保持折叠，
   // 避免较长的状态清单挤占对话窗口。
   const [welcomeMiniExpanded, setWelcomeMiniExpanded] = useState(
     () => isDirectExpandedDraftWelcome,

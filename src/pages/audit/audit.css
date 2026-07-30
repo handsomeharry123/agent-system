@@ -108,6 +108,55 @@
   margin: 18px 0;
 }
 
+.audit-ai-notice {
+  margin-bottom: 16px;
+  background: #f0f7ff;
+  color: #0958d9;
+}
+
+.audit-assistant-intake {
+  margin-bottom: 16px;
+  border: 1px solid #bae0ff;
+  background: linear-gradient(105deg, #f0f7ff 0%, #f7fbff 55%, #fff 100%);
+}
+
+.audit-assistant-intake .ant-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.audit-assistant-intake-copy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.audit-assistant-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  place-items: center;
+  border-radius: 14px;
+  background: #1677ff;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.audit-ai-notice .anticon {
+  margin-right: 8px;
+}
+
+.audit-ai-field,
+.audit-ai-field .ant-input,
+.audit-ai-field.ant-input {
+  background: #f0f7ff !important;
+  border-color: #69b1ff !important;
+}
+
 .pdf-preview {
   display: flex;
   min-height: 360px;
@@ -162,4 +211,5 @@
 @media (max-width: 640px) {
   .audit-page { padding: 12px; }
   .audit-stat-grid, .audit-stat-grid-three, .upload-grid, .form-grid, .filter-grid { grid-template-columns: 1fr; }
+  .audit-assistant-intake .ant-card-body { align-items: stretch; flex-direction: column; }
 }

@@ -37,6 +37,12 @@ export type WelcomePageKey =
   | 'agent-needs-complete'     // 需求字段完整后的提交确认
   | 'agent-needs-match-result' // 需求提交后的 TOP3 匹配结果
   | 'agent-needs-detail'       // 建设需求管理「需求详情」页
+  | 'project-application-draft' // 立项申报管理中心「草稿」Tab
+  | 'project-application-pending' // 立项申报管理中心「待审核」Tab
+  | 'project-application-reviewing' // 立项申报管理中心「审核中」Tab
+  | 'project-application-revoked' // 立项申报管理中心「撤销修改」Tab
+  | 'project-application-rejected' // 立项申报管理中心「立项不通过」Tab
+  | 'project-application-passed' // 立项申报管理中心「立项通过」Tab
   | 'resource-center-all'      // 医院资源管理中心「所有资源」Tab
   | 'resource-center-draft'    // 医院资源管理中心「草稿」Tab
   | 'resource-center-register' // 医院资源管理中心「注册资源」页
@@ -50,6 +56,21 @@ export type WelcomePageKey =
   | 'resource-apply-rejected'  // 医院资源管理中心「退回修改」Tab
   | 'resource-apply-detail'    // 医院资源管理中心「资源申请详情」页
   | 'resource-approval'        // 医院资源管理中心「资源审核」页
+  | 'project-application-all'  // 立项申报管理中心「全部立项」页
+  | 'project-application-form' // 立项申报管理中心「立项申报」页
+  | 'project-application-detail' // 立项申报管理中心「立项信息详情」页
+  | 'project-application-audit' // 立项申报管理中心「立项信息审核」页
+  | 'audit-project-all'        // 审计中心「全部项目审计」页
+  | 'audit-project-application' // 审计中心「待申请」Tab
+  | 'audit-project-form'       // 审计中心「项目审计信息填报」页
+  | 'audit-project-draft'      // 审计中心「项目审计草稿」Tab
+  | 'audit-project-pending'    // 审计中心「待审计」Tab
+  | 'audit-project-reviewing'  // 审计中心「审计中」Tab
+  | 'audit-project-revoked'    // 审计中心「撤销修改」Tab
+  | 'audit-project-passed'     // 审计中心「审计通过」Tab
+  | 'audit-project-rejected'   // 审计中心「审计不通过」Tab
+  | 'audit-project-detail'     // 审计中心「项目审计信息详情」页
+  | 'audit-project-audit'      // 审计中心「项目信息审计」页
   // 提供方侧列表 (各 Tab)
   | 'agent-center-all'          // 「全部」Tab — 提供方/管理方 文案不同
   | 'agent-center-draft'       // 「草稿」Tab
@@ -110,6 +131,286 @@ const smartRegisterBubbleCopy =
  *   其余页面两角色走同一句欢迎语。
  */
 const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>> = {
+  'project-application-pending': {
+    dept: {
+      bubble: '您好，我是医小管。目前立项申报待审核X项，我会帮你盯进度，有审核结果第一时间提醒你。',
+      window: '您好，我是医小管。目前立项申报待审核X项，我会帮你盯进度，有审核结果第一时间提醒你。',
+    },
+    provider: {
+      bubble: '您好，我是医小管。目前立项申报待审核X项，我会帮你盯进度，有审核结果第一时间提醒你。',
+      window: '您好，我是医小管。目前立项申报待审核X项，我会帮你盯进度，有审核结果第一时间提醒你。',
+    },
+    admin: {
+      bubble: '您好，我是医小管。目前立项信息待审核X项，要进行立项信息审核吗？',
+      window: '您好，我是医小管。目前立项信息待审核X项，要进行立项信息审核吗？',
+    },
+  },
+  'project-application-reviewing': {
+    dept: {
+      bubble: '您好，我是医小管。目前立项申报待审核X项，我会帮你盯进度，有审核结果第一时间提醒你。',
+      window: '您好，我是医小管。目前立项申报审核中X项，我会帮你盯进度，有审核结果第一时间提醒你。',
+    },
+    provider: {
+      bubble: '您好，我是医小管。目前立项申报待审核X项，我会帮你盯进度，有审核结果第一时间提醒你。',
+      window: '您好，我是医小管。目前立项申报审核中X项，我会帮你盯进度，有审核结果第一时间提醒你。',
+    },
+    admin: {
+      bubble: '您好，我是医小管。目前立项申报待审核X项，我会帮你盯进度，有审核结果第一时间提醒你。',
+      window: '您好，我是医小管。目前立项申报审核中X项，我会帮你盯进度，有审核结果第一时间提醒你。',
+    },
+  },
+  'project-application-revoked': {
+    dept: {
+      bubble: '您好，我是医小管。目前立项申报撤销修改X项，需要查看相关详情信息',
+      window: '您好，我是医小管。目前立项申报撤销修改X项，需要查看相关详情信息',
+    },
+    provider: {
+      bubble: '您好，我是医小管。目前立项申报撤销修改X项，需要查看相关详情信息',
+      window: '您好，我是医小管。目前立项申报撤销修改X项，需要查看相关详情信息',
+    },
+    admin: {
+      bubble: '您好，我是医小管。目前立项申报撤销修改X项，需要查看相关详情信息',
+      window: '您好，我是医小管。目前立项申报撤销修改X项，需要查看相关详情信息',
+    },
+  },
+  'project-application-rejected': {
+    dept: {
+      bubble: '您好，我是医小管。目前立项申报立项不通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前立项申报立项不通过X项，需要查看相关详情信息吗？',
+    },
+    provider: {
+      bubble: '您好，我是医小管。目前立项申报立项不通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前立项申报立项不通过X项，需要查看相关详情信息吗？',
+    },
+    admin: {
+      bubble: '您好，我是医小管。目前立项申报立项不通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前立项申报立项不通过X项，需要查看相关详情信息吗？',
+    },
+  },
+  'project-application-passed': {
+    dept: {
+      bubble: '您好，我是医小管。目前立项申报立项通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前立项申报立项通过X项，需要查看相关详情信息吗？',
+    },
+    provider: {
+      bubble: '您好，我是医小管。目前立项申报立项通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前立项申报立项通过X项，需要查看相关详情信息吗？',
+    },
+    admin: {
+      bubble: '您好，我是医小管。目前立项申报立项通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前立项申报立项通过X项，需要查看相关详情信息吗？',
+    },
+  },
+  'project-application-all': {
+    dept: {
+      bubble: '您好，我是医小管。当前已申请立项X个项目（待审核X项、立项通过X项、立项不通过X项），在气泡里点对应状态即可直接进入处理～',
+      window: '您好！我是医小管。您想要申报什么项目？点击【立项申报】，把项目申报书发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您申报项目~',
+    },
+    provider: {
+      bubble: '您好，我是医小管。当前已申请立项X个项目（待审核X项、立项通过X项、立项不通过X项），在气泡里点对应状态即可直接进入处理～',
+      window: '您好！我是医小管。您想要申报什么项目？点击【立项申报】，把项目申报书发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您申报项目~',
+    },
+    admin: {
+      bubble: '您好，我是医小管。当前已申请立项X个项目（待审核X项、立项通过X项、立项不通过X项），在气泡里点对应状态即可直接进入处理～',
+      window: '您好！我是医小管。您想要申报什么项目？点击【立项申报】，把项目申报书发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您申报项目~',
+    },
+  },
+  'project-application-form': {
+    dept: {
+      bubble: '您好！我是医小管。您想要申报什么项目？把项目申报书发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您申报项目~',
+      window: '您好！我是医小管。您想要申报什么项目？把项目申报书发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您申报项目~',
+    },
+    provider: {
+      bubble: '您好！我是医小管。您想要申报什么项目？把项目申报书发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您申报项目~',
+      window: '您好！我是医小管。您想要申报什么项目？把项目申报书发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您申报项目~',
+    },
+    admin: {
+      bubble: '您好！我是医小管。您想要申报什么项目？把项目申报书发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您申报项目~',
+      window: '您好！我是医小管。您想要申报什么项目？把项目申报书发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您申报项目~',
+    },
+  },
+  'project-application-detail': {
+    dept: {
+      bubble: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+      window: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+    },
+    provider: {
+      bubble: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+      window: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+    },
+    admin: {
+      bubble: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+      window: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+    },
+  },
+  'project-application-audit': {
+    dept: {
+      bubble: '您好，我是医小管。我已完成预审：您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。',
+      window: '您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。',
+    },
+    provider: {
+      bubble: '您好，我是医小管。我已完成预审：您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。',
+      window: '您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。',
+    },
+    admin: {
+      bubble: '您好，我是医小管。我已完成预审：您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。',
+      window: '您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。',
+    },
+  },
+  'audit-project-all': {
+    dept: {
+      bubble: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+      window: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+    },
+    provider: {
+      bubble: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+      window: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+    },
+    admin: {
+      bubble: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+      window: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+    },
+  },
+  'audit-project-application': {
+    dept: {
+      bubble: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+      window: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+    },
+    provider: {
+      bubble: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+      window: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+    },
+    admin: {
+      bubble: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+      window: '您好，我是医小管。当前待申请审计X个项目，点击【项目审计信息填报】，把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~',
+    },
+  },
+  'audit-project-form': {
+    dept: {
+      bubble: '您好！我是医小管。把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~【上传文件】【语音描述】',
+      window: '您好！我是医小管。把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~【上传文件】【语音描述】',
+    },
+    provider: {
+      bubble: '您好！我是医小管。把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~【上传文件】【语音描述】',
+      window: '您好！我是医小管。把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~【上传文件】【语音描述】',
+    },
+    admin: {
+      bubble: '您好！我是医小管。把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~【上传文件】【语音描述】',
+      window: '您好！我是医小管。把相关证明材料发给我（支持PDF、DOC、DOCX等文件格式），或文字、语音描述，我来帮您填写项目审计信息~【上传文件】【语音描述】',
+    },
+  },
+  'audit-project-draft': {
+    dept: {
+      bubble: '您好！我是医小管，您还有X条未完成的项目审计信息填报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有X条未完成的项目审计信息填报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+    provider: {
+      bubble: '您好！我是医小管，您还有X条未完成的项目审计信息填报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有X条未完成的项目审计信息填报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+    admin: {
+      bubble: '您好！我是医小管，您还有X条未完成的项目审计信息填报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有X条未完成的项目审计信息填报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+  },
+  'audit-project-pending': {
+    dept: {
+      bubble: '您好，我是医小管。目前项目信息待审计X项，要进行项目审计吗？',
+      window: '您好，我是医小管。目前项目审计信息待审计X项，要进行项目审计吗？',
+    },
+    provider: {
+      bubble: '您好，我是医小管。目前项目信息待审计X项，要进行项目审计吗？',
+      window: '您好，我是医小管。目前项目审计信息待审计X项，要进行项目审计吗？',
+    },
+    admin: {
+      bubble: '您好，我是医小管。目前项目信息待审计X项，要进行项目审计吗？',
+      window: '您好，我是医小管。目前项目审计信息待审计X项，要进行项目审计吗？',
+    },
+  },
+  'audit-project-reviewing': {
+    dept: {
+      bubble: '您好，我是医小管。目前项目信息审计中X项，我会帮你盯进度，有审计结果第一时间提醒你。',
+      window: '您好，我是医小管。目前项目信息审计中X项，我会帮你盯进度，有审计结果第一时间提醒你。',
+    },
+    provider: {
+      bubble: '您好，我是医小管。目前项目信息审计中X项，我会帮你盯进度，有审计结果第一时间提醒你。',
+      window: '您好，我是医小管。目前项目信息审计中X项，我会帮你盯进度，有审计结果第一时间提醒你。',
+    },
+    admin: {
+      bubble: '您好，我是医小管。目前项目信息审计中X项，我会帮你盯进度，有审计结果第一时间提醒你。',
+      window: '您好，我是医小管。目前项目信息审计中X项，我会帮你盯进度，有审计结果第一时间提醒你。',
+    },
+  },
+  'audit-project-revoked': {
+    dept: {
+      bubble: '您好，我是医小管。目前项目审计信息填报撤销修改X项，需要我帮你快速修改后重新提交吗？',
+      window: '您好，我是医小管。目前项目审计信息填报撤销修改X项，需要我帮你快速修改后重新提交吗？点开任意撤销修改列表项，我帮您快速修改。',
+    },
+    provider: {
+      bubble: '您好，我是医小管。目前项目审计信息填报撤销修改X项，需要我帮你快速修改后重新提交吗？',
+      window: '您好，我是医小管。目前项目审计信息填报撤销修改X项，需要我帮你快速修改后重新提交吗？点开任意撤销修改列表项，我帮您快速修改。',
+    },
+    admin: {
+      bubble: '您好，我是医小管。目前项目审计信息填报撤销修改X项，需要我帮你快速修改后重新提交吗？',
+      window: '您好，我是医小管。目前项目审计信息填报撤销修改X项，需要我帮你快速修改后重新提交吗？点开任意撤销修改列表项，我帮您快速修改。',
+    },
+  },
+  'audit-project-passed': {
+    dept: {
+      bubble: '您好，我是医小管。目前项目审计通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前项目审计通过X项，需要查看相关详情信息吗？',
+    },
+    provider: {
+      bubble: '您好，我是医小管。目前项目审计通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前项目审计通过X项，需要查看相关详情信息吗？',
+    },
+    admin: {
+      bubble: '您好，我是医小管。目前项目审计通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前项目审计通过X项，需要查看相关详情信息吗？',
+    },
+  },
+  'audit-project-rejected': {
+    dept: {
+      bubble: '您好，我是医小管。目前项目审计不通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前项目审计不通过X项，需要查看相关详情信息吗？',
+    },
+    provider: {
+      bubble: '您好，我是医小管。目前项目审计不通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前项目审计不通过X项，需要查看相关详情信息吗？',
+    },
+    admin: {
+      bubble: '您好，我是医小管。目前项目审计不通过X项，需要查看相关详情信息吗？',
+      window: '您好，我是医小管。目前项目审计不通过X项，需要查看相关详情信息吗？',
+    },
+  },
+  'audit-project-detail': {
+    dept: {
+      bubble: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的项目审计信息详情，有什么该项目相关问题可以直接问我~',
+      window: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+    },
+    provider: {
+      bubble: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的项目审计信息详情，有什么该项目相关问题可以直接问我~',
+      window: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+    },
+    admin: {
+      bubble: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的项目审计信息详情，有什么该项目相关问题可以直接问我~',
+      window: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+    },
+  },
+  'audit-project-audit': {
+    dept: {
+      bubble: '您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审计参考，最终以你的决策为准。',
+      window: '您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审计参考，最终以你的决策为准。',
+    },
+    provider: {
+      bubble: '您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审计参考，最终以你的决策为准。',
+      window: '您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审计参考，最终以你的决策为准。',
+    },
+    admin: {
+      bubble: '您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审计参考，最终以你的决策为准。',
+      window: '您好，我是医小管。我已完成预审：标注了X个疑似问题，预审结论为「XX」，供你二次审计参考，最终以你的决策为准。',
+    },
+  },
   'agent-center-eval-offer': {
     dept: { bubble: '该智能体已审核通过，是否需要立即创建评测任务？', window: '该智能体已审核通过，是否需要立即创建评测任务？' },
     provider: { bubble: '该智能体已审核通过，是否需要立即创建评测任务？', window: '该智能体已审核通过，是否需要立即创建评测任务？' },
@@ -323,6 +624,20 @@ const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>
     admin: {
       bubble: '您好！我是医小管，您还有 X 条未完成的需求登记草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
       window: '您好！我是医小管，您还有 X 条未完成的需求登记草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+  },
+  'project-application-draft': {
+    dept: {
+      bubble: '您好！我是医小管，您还有X条未完成的立项申报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有X条未完成的立项申报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+    provider: {
+      bubble: '您好！我是医小管，您还有X条未完成的立项申报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有X条未完成的立项申报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+    },
+    admin: {
+      bubble: '您好！我是医小管，您还有X条未完成的立项申报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
+      window: '您好！我是医小管，您还有X条未完成的立项申报草稿，需要我帮您继续补全吗？点开任意草稿，我接着帮您填。',
     },
   },
   'agent-needs-complete': {
@@ -941,6 +1256,16 @@ export const SmartDraftProvider = ({
           pageKey === 'agent-needs-detail' || pageKey === 'resource-center-draft' ||
           pageKey === 'resource-apply-draft' || pageKey === 'resource-apply-reviewing' ||
           pageKey === 'resource-apply-pending' || pageKey === 'resource-apply-revoked' ||
+          pageKey === 'project-application-pending' || pageKey === 'project-application-reviewing' ||
+          pageKey === 'project-application-revoked' || pageKey === 'project-application-rejected' ||
+          pageKey === 'project-application-passed' || pageKey === 'project-application-detail' ||
+          pageKey === 'project-application-audit' || pageKey === 'audit-project-all' ||
+          pageKey === 'audit-project-application' ||
+          pageKey === 'audit-project-form' ||
+          pageKey === 'audit-project-draft' || pageKey === 'audit-project-pending' ||
+          pageKey === 'audit-project-reviewing' || pageKey === 'audit-project-revoked' ||
+          pageKey === 'audit-project-passed' || pageKey === 'audit-project-rejected' ||
+          pageKey === 'audit-project-detail' || pageKey === 'audit-project-audit' ||
           pageKey === 'resource-apply-approved' || pageKey === 'resource-apply-rejected' ||
           pageKey === 'resource-apply-detail' || pageKey === 'resource-approval' ||
           pageKey === 'agent-center-eval-offer' ||

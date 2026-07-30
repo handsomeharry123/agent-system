@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   App,
   Button,
@@ -6,6 +6,7 @@ import {
   Checkbox,
   DatePicker,
   Descriptions,
+  Dropdown,
   Drawer,
   Empty,
   Form,
@@ -27,18 +28,22 @@ import {
 } from 'antd';
 import {
   ArrowLeftOutlined,
+  AudioOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   DownloadOutlined,
   EyeOutlined,
   FilePdfOutlined,
+  MoreOutlined,
   ReloadOutlined,
   SearchOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import { useLocation } from 'react-router-dom';
+import type { MenuProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
+import { useSmartDraft } from '../agent-center/smart/store';
 import './audit.css';
 
 const { Title, Text, Paragraph } = Typography;
@@ -65,6 +70,7 @@ const initialProjects = [
   { key: 'p4', name: '门诊病历智能生成与质量控制', dept: '医务科', track: '医院管理', owner: '李嘉', contact: '高原', phone: '137****9016', completion: 65, indicator: 58, fund: 71, status: '草稿' as ProjectStatus, time: '2026-07-22 09:18:33' },
   { key: 'p5', name: '急诊智能预检分诊系统', dept: '急诊科', track: '临床诊疗', owner: '郑涛', contact: '孙悦', phone: '135****0432', completion: 0, indicator: 0, fund: 0, status: '待申请' as ProjectStatus, time: '2026-07-20 11:30:08' },
   { key: 'p6', name: '病理切片辅助诊断系统', dept: '病理科', track: '智慧医技', owner: '何伟', contact: '许静', phone: '133****2140', completion: 72, indicator: 61, fund: 89, status: '审计不通过' as ProjectStatus, time: '2026-07-18 15:40:22' },
+  { key: 'p7', name: '住院患者跌倒风险智能预警平台', dept: '护理部', track: '医院管理', owner: '刘敏', contact: '唐悦', phone: '132****5816', completion: 80, indicator: 74, fund: 0, status: '撤销修改' as ProjectStatus, time: '2026-07-28 10:16:38' },
 ];
 
 const agentRows = [
@@ -131,18 +137,89 @@ const MetricCell = ({ value, empty }: { value: number; empty?: boolean }) => emp
 
 function ProjectFormView({ project, onBack, onSubmit }: { project: typeof initialProjects[number]; onBack: () => void; onSubmit: () => void }) {
   const { message } = App.useApp();
+  const { addMessage, pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
+  const [form] = Form.useForm();
+  const [aiFields, setAiFields] = useState<string[]>([]);
+  const applyAssistantInput = (input: string, source: 'text' | 'file' = 'text') => {
+    const currentValues = form.getFieldsValue(true);
+    const completion = input.match(/(?:完成度|建设完成率)[^\d]{0,6}(\d{1,3})\s*%/)?.[1];
+    const used = input.match(/(?:已使用金额|使用资金|支出)[^\d]{0,8}(\d+(?:\.\d+)?)\s*万/)?.[1];
+    const fund = input.match(/(?:资金使用率)[^\d]{0,6}(\d{1,3})\s*%/)?.[1];
+    const next: Record<string, unknown> = {
+      ...(!currentValues.completion && completion ? { completion: Number(completion) } : {}),
+      ...(!currentValues.used && used ? { used: Number(used) } : {}),
+      ...(!currentValues.fund && fund ? { fund: Number(fund) } : {}),
+      ...(!currentValues.completionNote && source === 'text' && input.length > 8 ? { completionNote: input } : {}),
+      ...(!currentValues.fundDetail && /采购|服务|训练|测试|资金|支出/.test(input) ? { fundDetail: input } : {}),
+      ...(!currentValues.completionNote && source === 'file' ? { completionNote: '项目核心功能已完成建设并进入院内试运行，相关证明材料已上传。' } : {}),
+      ...(!currentValues.used && source === 'file' ? { used: 136.8 } : {}),
+      ...(!currentValues.fundDetail && source === 'file' ? { fundDetail: '资金主要用于软硬件采购、实施服务、模型训练及系统测试。' } : {}),
+    };
+    const keys = Object.keys(next);
+    if (keys.length) {
+      form.setFieldsValue(next);
+      setAiFields((previous) => [...new Set([...previous, ...keys])]);
+      addMessage({ role: 'agent', type: 'text', content: `已识别并填充 ${keys.length} 个项目审计字段。缺失字段可继续在表单中填写，或通过文字、语音、文件补充。` });
+    } else {
+      addMessage({ role: 'agent', type: 'text', content: '已收到补充材料。请继续说明项目完成度、已使用金额、资金使用率或建设与资金使用情况。' });
+    }
+  };
+  useEffect(() => {
+    pushWelcomeGreeting('audit-project-form', 'provider', undefined, {
+      actions: [
+        { key: 'audit-upload', label: '上传文件', event: 'audit-project-trigger-upload', enabled: true },
+        { key: 'audit-voice', label: '语音描述', event: 'audit-project-trigger-voice', enabled: true },
+      ],
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, pushWelcomeGreeting]);
+  useEffect(() => {
+    const onAssistantInput = (event: Event) => {
+      const detail = (event as CustomEvent<{ text?: string; source?: 'text' | 'file' }>).detail;
+      if (detail?.text) applyAssistantInput(detail.text, detail.source);
+    };
+    window.addEventListener('audit-project-assistant-input', onAssistantInput);
+    return () => window.removeEventListener('audit-project-assistant-input', onAssistantInput);
+  });
+  const beforeUpload = (file: File) => {
+    if (!/\.(pdf|doc|docx)$/i.test(file.name)) {
+      message.error('上传失败，仅支持 PDF、DOC、DOCX 类型文件');
+      return Upload.LIST_IGNORE;
+    }
+    if (file.size > 30 * 1024 * 1024) {
+      message.error('上传失败，单文件超过最大限制 30M');
+      return Upload.LIST_IGNORE;
+    }
+    applyAssistantInput(file.name, 'file');
+    message.success('上传成功，医小管正在识别并填充可提取的信息');
+    return false;
+  };
+  const triggerVoice = () => window.dispatchEvent(new CustomEvent('audit-project-trigger-voice'));
   return <div>
     <Header title="项目审计信息填报" description="上传证明材料并核对项目建设、考核指标与资金使用情况。" extra={<Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回列表</Button>} />
-    <Form layout="vertical" initialValues={{ completion: project.completion || 80, indicator: project.indicator || 85, used: 118, fund: project.fund || 74, completionNote: '核心功能已经上线试运行，患者端随访提醒模块正在进行最终联调。', fundDetail: '软硬件采购 82 万元；实施服务 26 万元；模型训练与测试 10 万元。' }}>
-      <Card title="证明材料" className="audit-section-card"><div className="upload-grid">{['项目建设内容证明材料', '考核指标证明材料', '资金使用证明材料', '其他证明材料'].map((label) => <Form.Item key={label} label={label}><Upload beforeUpload={(file) => { if (file.type !== 'application/pdf') { message.error('上传失败，仅支持 PDF 类型文件'); return Upload.LIST_IGNORE; } if (file.size > 30 * 1024 * 1024) { message.error('上传失败，单文件超过最大限制 30M'); return Upload.LIST_IGNORE; } message.success('上传成功'); return false; }}><Button icon={<UploadOutlined />}>上传 PDF</Button></Upload></Form.Item>)}</div><Text type="secondary">仅支持 PDF，可上传多个文件，单文件不超过 30M。</Text></Card>
+    <Form form={form} layout="vertical" initialValues={{ completion: project.completion || undefined, indicator: project.indicator || undefined, used: undefined, fund: project.fund || undefined, completionNote: '', fundDetail: '' }}>
+      <Card className="audit-assistant-intake" bordered={false}>
+        <div className="audit-assistant-intake-copy">
+          <div className="audit-assistant-mark">医小管</div>
+          <div><Text strong>智能填写项目审计信息</Text><br /><Text type="secondary">上传或拖拽证明材料，也可通过文字、语音继续补充；识别结果会自动填入下方表单。</Text></div>
+        </div>
+        <Space>
+          <Upload accept=".pdf,.doc,.docx" beforeUpload={beforeUpload} showUploadList={false} multiple>
+            <Button type="primary" icon={<UploadOutlined />}>上传文件</Button>
+          </Upload>
+          <Button icon={<AudioOutlined />} onClick={triggerVoice}>语音描述</Button>
+        </Space>
+      </Card>
+      {aiFields.length > 0 && <Card className="audit-ai-notice" bordered={false}><CheckCircleOutlined /> 医小管已自动填充 {aiFields.length} 个字段，请核对高亮内容并补充缺失字段。</Card>}
+      <Card title="证明材料" className="audit-section-card"><div className="upload-grid">{['项目建设内容证明材料', '考核指标证明材料', '资金使用证明材料', '其他证明材料'].map((label) => <Form.Item key={label} label={label}><Upload accept=".pdf,.doc,.docx" beforeUpload={beforeUpload} multiple><Button icon={<UploadOutlined />}>上传文件</Button></Upload></Form.Item>)}</div><Text type="secondary">支持 PDF、DOC、DOCX，可上传多个文件，单文件不超过 30M。上传后医小管将自动识别并填充表单。</Text></Card>
       <Card title="项目基本信息" className="audit-section-card"><Descriptions column={3} items={[
         { key: '1', label: '项目名称', children: project.name }, { key: '2', label: '申报科室', children: project.dept }, { key: '3', label: '申报赛道', children: project.track },
         { key: '4', label: '项目负责人', children: project.owner }, { key: '5', label: '项目联系人', children: project.contact }, { key: '6', label: '联系方式', children: project.phone },
       ]} /></Card>
-      <Card title="项目建设内容完成情况" className="audit-section-card"><Form.Item label="项目计划完成形式"><Input value="建设院内一体化管理平台并完成临床科室试运行" readOnly /></Form.Item><Form.Item name="completion" label="完成度" rules={[{ required: true }]}><InputNumber min={0} max={100} addonAfter="%" style={{ width: 220 }} /></Form.Item><Form.Item name="completionNote" label="其他说明"><Input.TextArea rows={3} maxLength={500} showCount /></Form.Item></Card>
+      <Card title="项目建设内容完成情况" className="audit-section-card"><Form.Item label="项目计划完成形式"><Input value="建设院内一体化管理平台并完成临床科室试运行" readOnly /></Form.Item><Form.Item name="completion" label="完成度" rules={[{ required: true, message: '请填写完成度' }]}><InputNumber className={aiFields.includes('completion') ? 'audit-ai-field' : ''} min={0} max={100} addonAfter="%" style={{ width: 220 }} /></Form.Item><Form.Item name="completionNote" label="其他说明" rules={[{ required: true, message: '请填写建设完成情况说明' }]}><Input.TextArea className={aiFields.includes('completionNote') ? 'audit-ai-field' : ''} rows={3} maxLength={500} showCount /></Form.Item></Card>
       <Card title="考核指标达成情况" className="audit-section-card"><Table pagination={false} dataSource={[{ key: 1, name: '随访任务按时完成率', target: '≥ 90%' }, { key: 2, name: '临床使用满意度', target: '≥ 85 分' }]} columns={[{ title: '指标名称', dataIndex: 'name' }, { title: '目标值', dataIndex: 'target' }, { title: '实际完成值', render: () => <Input defaultValue="88%" /> }, { title: '达成率', render: () => <InputNumber defaultValue={92} min={0} max={100} addonAfter="%" /> }]} /></Card>
-      <Card title="资金使用情况" className="audit-section-card"><div className="form-grid"><Form.Item label="投资总预算"><Input value="180 万元" readOnly /></Form.Item><Form.Item name="used" label="已使用金额"><InputNumber min={0} addonAfter="万元" style={{ width: '100%' }} /></Form.Item><Form.Item name="fund" label="资金使用率"><InputNumber min={0} max={100} addonAfter="%" style={{ width: '100%' }} /></Form.Item></div><Form.Item name="fundDetail" label="资金使用明细"><Input.TextArea rows={3} /></Form.Item></Card>
-      <div className="sticky-actions"><Button onClick={() => message.success('项目审计信息填报表单填写记录已暂存至草稿状态列表页')}>暂存</Button><Button type="primary" onClick={() => { message.success('提交成功'); onSubmit(); }}>提交审计</Button></div>
+      <Card title="资金使用情况" className="audit-section-card"><div className="form-grid"><Form.Item label="投资总预算"><Input value="180 万元" readOnly /></Form.Item><Form.Item name="used" label="已使用金额" rules={[{ required: true, message: '请填写已使用金额' }]}><InputNumber className={aiFields.includes('used') ? 'audit-ai-field' : ''} min={0} addonAfter="万元" style={{ width: '100%' }} /></Form.Item><Form.Item name="fund" label="资金使用率" rules={[{ required: true, message: '请填写资金使用率' }]}><InputNumber className={aiFields.includes('fund') ? 'audit-ai-field' : ''} min={0} max={100} addonAfter="%" style={{ width: '100%' }} /></Form.Item></div><Form.Item name="fundDetail" label="资金使用明细" rules={[{ required: true, message: '请填写资金使用明细' }]}><Input.TextArea className={aiFields.includes('fundDetail') ? 'audit-ai-field' : ''} rows={3} /></Form.Item></Card>
+      <div className="sticky-actions"><Button onClick={() => message.success('项目审计信息填报表单填写记录已暂存至草稿状态列表页')}>暂存</Button><Button type="primary" onClick={() => form.validateFields().then(() => { message.success('提交成功'); onSubmit(); }).catch(() => message.error('请补充缺失字段并检查格式'))}>提交审计</Button></div>
     </Form>
   </div>;
 }
@@ -152,6 +229,53 @@ function ProjectDetail({ project, auditMode, onBack, onFinish }: { project: type
   const [note, setNote] = useState('');
   const [preview, setPreview] = useState(false);
   const { modal } = App.useApp();
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
+  const suspectedIssueCount = [
+    project.completion < 100,
+    project.indicator < 90,
+    project.fund < 70,
+  ].filter(Boolean).length;
+  const preliminaryConclusion = suspectedIssueCount > 0 ? '建议审计不通过' : '建议审计通过';
+  useEffect(() => {
+    if (auditMode) {
+      pushWelcomeGreeting(
+        'audit-project-audit',
+        'admin',
+        () => [suspectedIssueCount, preliminaryConclusion],
+        {
+          actions: [
+            { key: 'audit-project-pass', label: '审计通过', event: 'audit-project-decide-pass', enabled: true },
+            { key: 'audit-project-fail', label: '审计不通过', event: 'audit-project-decide-fail', enabled: true },
+          ],
+        },
+      );
+      return () => consumeWelcome();
+    }
+    const context = {
+      ...project,
+      materials: ['项目建设内容说明.pdf', '考核指标证明材料.pdf', '资金使用明细.pdf'],
+      completionDescription: '核心功能已上线试运行，患者端随访提醒模块正在进行最终联调。',
+      indicatorDescription: '两项核心指标中，一项已达标，一项接近目标值。',
+      fundDescription: '资金用于软硬件采购、实施服务、模型训练及测试。',
+    };
+    (window as any).__auditProjectDetailContext = context;
+    pushWelcomeGreeting('audit-project-detail', 'provider', () => [project.name]);
+    return () => {
+      delete (window as any).__auditProjectDetailContext;
+      consumeWelcome();
+    };
+  }, [auditMode, consumeWelcome, preliminaryConclusion, project, pushWelcomeGreeting, suspectedIssueCount]);
+  useEffect(() => {
+    if (!auditMode) return undefined;
+    const decidePass = () => onFinish?.(true);
+    const decideFail = () => onFinish?.(false);
+    window.addEventListener('audit-project-decide-pass', decidePass);
+    window.addEventListener('audit-project-decide-fail', decideFail);
+    return () => {
+      window.removeEventListener('audit-project-decide-pass', decidePass);
+      window.removeEventListener('audit-project-decide-fail', decideFail);
+    };
+  }, [auditMode, onFinish]);
   const submit = () => modal.confirm({ title: `确认是否审计${conclusion === 'pass' ? '通过' : '不通过'}？`, content: '提交后项目将进入对应审计结果列表。', okText: '是，确认提交', cancelText: '否', onOk: () => onFinish?.(conclusion === 'pass') });
   return <div>
     <Header title={auditMode ? '项目信息审计' : '项目审计信息详情'} description={project.name} extra={<Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>} />
@@ -167,19 +291,357 @@ function ProjectDetail({ project, auditMode, onBack, onFinish }: { project: type
 
 function ProjectAudit() {
   const { message, modal } = App.useApp();
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [projects, setProjects] = useState(initialProjects);
-  const [status, setStatus] = useState<ProjectStatus | '全部'>('全部');
+  const [status, setStatus] = useState<ProjectStatus | '全部'>('待申请');
   const [screen, setScreen] = useState<'list' | 'form' | 'detail' | 'audit'>('list');
   const [current, setCurrent] = useState(initialProjects[0]);
   const filtered = projects.filter((p) => status === '全部' || p.status === status);
+
+  useEffect(() => {
+    if (screen !== 'list' || status !== '全部') return undefined;
+    const count = (target: ProjectStatus) => projects.filter((project) => project.status === target).length;
+    const appliedCount = projects.filter((project) => !['待申请', '草稿'].includes(project.status)).length;
+    pushWelcomeGreeting(
+      'audit-project-all',
+      'admin',
+      () => [appliedCount, count('待审计'), count('审计通过'), count('审计不通过')],
+      {
+        chips: [
+          { key: 'pending-audit', label: `待审计 ${count('待审计')}项`, targetTab: '待审计', tone: 'warning' },
+          { key: 'audit-passed', label: `审计通过 ${count('审计通过')}项`, targetTab: '审计通过', tone: 'success' },
+          { key: 'audit-rejected', label: `审计不通过 ${count('审计不通过')}项`, targetTab: '审计不通过', tone: 'error' },
+        ],
+      },
+    );
+    return () => consumeWelcome();
+  }, [consumeWelcome, projects, pushWelcomeGreeting, screen, status]);
+
+  useEffect(() => {
+    if (screen !== 'list' || status !== '待申请') return undefined;
+    const pendingApplicationProjects = projects.filter((project) => project.status === '待申请');
+    pushWelcomeGreeting(
+      'audit-project-application',
+      'dept',
+      () => [pendingApplicationProjects.length],
+      {
+        miniList: {
+          toggleLabel: `待申请审计项目（${pendingApplicationProjects.length}）`,
+          targetTab: '待申请',
+          totalCount: pendingApplicationProjects.length,
+          rows: pendingApplicationProjects.map((project) => ({
+            recordId: project.key,
+            title: project.name,
+            subTitle: `申报科室：${project.dept}`,
+            meta: `申报赛道：${project.track}`,
+            actions: [{
+              key: `fill-application-${project.key}`,
+              label: '项目审计信息填报',
+              kind: 'navigate-edit',
+            }],
+          })),
+        },
+      },
+    );
+    return () => consumeWelcome();
+  }, [consumeWelcome, projects, pushWelcomeGreeting, screen, status]);
+
+  useEffect(() => {
+    if (screen !== 'list' || status !== '草稿') return undefined;
+    const count = (target: ProjectStatus) => projects.filter((project) => project.status === target).length;
+    const draftProjects = projects.filter((project) => project.status === '草稿');
+    pushWelcomeGreeting(
+      'audit-project-draft',
+      'dept',
+      () => [count('草稿')],
+      {
+        miniList: {
+          toggleLabel: `未完成的项目审计信息填报草稿（${draftProjects.length}）`,
+          targetTab: '草稿',
+          totalCount: draftProjects.length,
+          rows: draftProjects.map((project) => ({
+            recordId: project.key,
+            title: project.name,
+            subTitle: `申报科室：${project.dept}`,
+            meta: `申报赛道：${project.track}`,
+            actions: [{ key: 'fill-audit', label: '项目审计信息填报', kind: 'navigate-edit' }],
+          })),
+        },
+      },
+    );
+    return () => consumeWelcome();
+  }, [consumeWelcome, projects, pushWelcomeGreeting, screen, status]);
+
+  useEffect(() => {
+    if (screen !== 'list' || status !== '待审计') return undefined;
+    const pendingProjects = projects.filter((project) => project.status === '待审计');
+    pushWelcomeGreeting(
+      'audit-project-pending',
+      'admin',
+      () => [pendingProjects.length],
+      {
+        miniList: {
+          toggleLabel: `查看待审计项目信息（${pendingProjects.length}）`,
+          targetTab: '待审计',
+          totalCount: pendingProjects.length,
+          rows: pendingProjects.map((project) => ({
+            recordId: project.key,
+            title: project.name,
+            subTitle: `申报科室：${project.dept}`,
+            meta: `申报赛道：${project.track}`,
+            actions: [
+              {
+                key: `detail-audit-${project.key}`,
+                label: '查看详情',
+                kind: 'navigate-detail',
+              },
+              {
+                key: `audit-${project.key}`,
+                label: '审计',
+                kind: 'navigate-audit',
+              },
+            ],
+          })),
+        },
+      },
+    );
+    return () => consumeWelcome();
+  }, [consumeWelcome, projects, pushWelcomeGreeting, screen, status]);
+
+  useEffect(() => {
+    if (screen !== 'list' || status !== '审计中') return undefined;
+    const reviewingProjects = projects.filter((project) => project.status === '审计中');
+    pushWelcomeGreeting(
+      'audit-project-reviewing',
+      'dept',
+      () => [reviewingProjects.length],
+      {
+        miniList: {
+          toggleLabel: `查看这${reviewingProjects.length}项`,
+          targetTab: '审计中',
+          totalCount: reviewingProjects.length,
+          rows: reviewingProjects.map((project) => ({
+            recordId: project.key,
+            title: project.name,
+            subTitle: `申报科室：${project.dept}`,
+            meta: `当前进度：审计中 · 更新时间：${project.time}`,
+            actions: [
+              {
+                key: `detail-reviewing-${project.key}`,
+                label: '查看详情',
+                kind: 'navigate-detail',
+              },
+              {
+                key: `revoke-reviewing-${project.key}`,
+                label: '撤销',
+                kind: 'confirm-revoke',
+              },
+            ],
+          })),
+        },
+      },
+    );
+    return () => consumeWelcome();
+  }, [consumeWelcome, projects, pushWelcomeGreeting, screen, status]);
+
+  useEffect(() => {
+    if (screen !== 'list' || status !== '撤销修改') return undefined;
+    const revokedProjects = projects.filter((project) => project.status === '撤销修改');
+    pushWelcomeGreeting(
+      'audit-project-revoked',
+      'admin',
+      () => [revokedProjects.length],
+      {
+        miniList: {
+          toggleLabel: `查看撤销修改项目审计信息（${revokedProjects.length}）`,
+          targetTab: '撤销修改',
+          totalCount: revokedProjects.length,
+          rows: revokedProjects.map((project) => ({
+            recordId: project.key,
+            title: project.name,
+            subTitle: `申报科室：${project.dept}`,
+            meta: `申报赛道：${project.track}`,
+            actions: [{
+              key: `detail-revoked-${project.key}`,
+              label: '查看详情',
+              kind: 'navigate-detail',
+            }],
+          })),
+        },
+      },
+    );
+    return () => consumeWelcome();
+  }, [consumeWelcome, projects, pushWelcomeGreeting, screen, status]);
+
+  useEffect(() => {
+    if (screen !== 'list' || status !== '审计通过') return undefined;
+    const passedProjects = projects.filter((project) => project.status === '审计通过');
+    pushWelcomeGreeting(
+      'audit-project-passed',
+      'admin',
+      () => [passedProjects.length],
+      {
+        actions: [{
+          key: 'view-passed-detail',
+          label: '查看详情',
+          event: 'audit-project-view-passed-detail',
+          enabled: passedProjects.length > 0,
+          reason: passedProjects.length > 0 ? undefined : '当前暂无审计通过项目',
+        }],
+      },
+    );
+    return () => consumeWelcome();
+  }, [consumeWelcome, projects, pushWelcomeGreeting, screen, status]);
+
+  useEffect(() => {
+    const onViewPassedDetail = () => {
+      const project = projects.find((item) => item.status === '审计通过');
+      if (!project) return;
+      setCurrent(project);
+      setScreen('detail');
+    };
+    window.addEventListener('audit-project-view-passed-detail', onViewPassedDetail);
+    return () => window.removeEventListener('audit-project-view-passed-detail', onViewPassedDetail);
+  }, [projects]);
+
+  useEffect(() => {
+    if (screen !== 'list' || status !== '审计不通过') return undefined;
+    const rejectedProjects = projects.filter((project) => project.status === '审计不通过');
+    pushWelcomeGreeting(
+      'audit-project-rejected',
+      'provider',
+      () => [rejectedProjects.length],
+      {
+        actions: [{
+          key: 'view-rejected-detail',
+          label: '查看详情',
+          event: 'audit-project-rejected-view-detail',
+          enabled: rejectedProjects.length > 0,
+          reason: '当前没有审计不通过的项目',
+        }],
+      },
+    );
+    return () => consumeWelcome();
+  }, [consumeWelcome, projects, pushWelcomeGreeting, screen, status]);
+
+  useEffect(() => {
+    const onViewRejectedDetail = () => {
+      const project = projects.find((item) => item.status === '审计不通过');
+      if (!project) return;
+      setCurrent(project);
+      setScreen('detail');
+      consumeWelcome();
+    };
+    window.addEventListener('audit-project-rejected-view-detail', onViewRejectedDetail);
+    return () => window.removeEventListener('audit-project-rejected-view-detail', onViewRejectedDetail);
+  }, [consumeWelcome, projects]);
+
+  useEffect(() => {
+    const onJumpTab = (event: Event) => {
+      const target = (event as CustomEvent<string>).detail;
+      if (['待申请', '草稿', '待审计', '审计中', '撤销修改', '审计通过', '审计不通过'].includes(target)) {
+        setScreen('list');
+        setStatus(target as ProjectStatus);
+      }
+    };
+    window.addEventListener('agent-jump-tab', onJumpTab);
+    return () => window.removeEventListener('agent-jump-tab', onJumpTab);
+  }, []);
+
+  useEffect(() => {
+    const onRowAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind?: string; recordId?: string }>).detail;
+      if (!detail?.recordId) return;
+      const project = projects.find((item) => item.key === detail.recordId);
+      if (!project) return;
+      if (detail.kind === 'navigate-edit' && ['待申请', '草稿', '撤销修改'].includes(project.status)) {
+        setCurrent(project);
+        setScreen('form');
+      }
+      if (detail.kind === 'navigate-detail' && ['待审计', '审计中', '撤销修改', '审计通过', '审计不通过'].includes(project.status)) {
+        setCurrent(project);
+        setScreen('detail');
+      }
+      if (detail.kind === 'navigate-audit' && ['待审计', '审计中'].includes(project.status)) {
+        setCurrent(project);
+        setScreen('audit');
+      }
+      if (detail.kind === 'confirm-revoke' && ['待审计', '审计中'].includes(project.status)) {
+        modal.confirm({
+          title: '确认撤销该项目审计？',
+          content: `撤销后「${project.name}」将进入撤销修改列表。`,
+          okText: '确认撤销',
+          cancelText: '取消',
+          onOk: () => {
+            setProjects((rows) => rows.map((row) => (
+              row.key === project.key ? { ...row, status: '撤销修改' } : row
+            )));
+            message.success('已撤销至修改列表');
+          },
+        });
+      }
+    };
+    window.addEventListener('agent-bubble-row-action', onRowAction);
+    return () => window.removeEventListener('agent-bubble-row-action', onRowAction);
+  }, [message, modal, projects]);
+
   if (screen === 'form') return <ProjectFormView project={current} onBack={() => setScreen('list')} onSubmit={() => { setProjects((rows) => rows.map((r) => r.key === current.key ? { ...r, status: '待审计' } : r)); setStatus('待审计'); setScreen('list'); }} />;
   if (screen === 'detail' || screen === 'audit') return <ProjectDetail project={current} auditMode={screen === 'audit'} onBack={() => setScreen('list')} onFinish={(pass) => { setProjects((rows) => rows.map((r) => r.key === current.key ? { ...r, status: pass ? '审计通过' : '审计不通过' } : r)); message.success(`审计${pass ? '通过' : '不通过'}，记录已归档`); setStatus(pass ? '审计通过' : '审计不通过'); setScreen('list'); }} />;
   const actions = (record: typeof initialProjects[number]) => {
     const go = (target: 'form' | 'detail' | 'audit') => { setCurrent(record); setScreen(target); };
+    if (status === '全部') {
+      const moreItems: NonNullable<MenuProps['items']> = [];
+      if (record.status === '待申请') {
+        moreItems.push({ key: 'fill', label: '项目审计信息填报', onClick: () => go('form') });
+      }
+      if (record.status === '草稿') {
+        moreItems.push(
+          { key: 'edit', label: '编辑', onClick: () => go('form') },
+          {
+            key: 'delete',
+            label: '删除',
+            danger: true,
+            onClick: () => modal.confirm({
+              title: '确认是否删除？',
+              onOk: () => {
+                setProjects((rows) => rows.filter((item) => item.key !== record.key));
+                message.success('删除成功');
+              },
+            }),
+          },
+        );
+      }
+      if (['待审计', '审计中'].includes(record.status)) {
+        moreItems.push(
+          { key: 'audit', label: '审计', onClick: () => go('audit') },
+          {
+            key: 'revoke',
+            label: '撤销',
+            onClick: () => {
+              setProjects((rows) => rows.map((item) => (
+                item.key === record.key ? { ...item, status: '撤销修改' } : item
+              )));
+              message.success('已撤销至修改列表');
+            },
+          },
+        );
+      }
+      if (moreItems.length === 0) {
+        moreItems.push({ key: 'empty', label: '暂无更多操作', disabled: true });
+      }
+      return (
+        <Space size={4}>
+          <Button type="link" size="small" onClick={() => go('detail')}>查看详情</Button>
+          <Dropdown menu={{ items: moreItems }} trigger={['click']}>
+            <Button type="link" size="small" icon={<MoreOutlined />}>更多</Button>
+          </Dropdown>
+        </Space>
+      );
+    }
     if (record.status === '待申请') return <Button type="link" onClick={() => go('form')}>项目审计信息填报</Button>;
-    if (record.status === '草稿') return <Space size={0}><Button type="link" onClick={() => go('form')}>编辑</Button><Button type="link" danger onClick={() => modal.confirm({ title: '确认是否删除？', onOk: () => { setProjects((r) => r.filter((x) => x.key !== record.key)); message.success('删除成功'); } })}>删除</Button></Space>;
+    if (record.status === '草稿') return <Space size={0}><Button type="link" onClick={() => go('detail')}>详情</Button><Button type="link" onClick={() => go('form')}>编辑</Button><Button type="link" danger onClick={() => modal.confirm({ title: '确认是否删除？', onOk: () => { setProjects((r) => r.filter((x) => x.key !== record.key)); message.success('删除成功'); } })}>删除</Button></Space>;
     if (['待审计', '审计中'].includes(record.status)) return <Space size={0}><Button type="link" onClick={() => go('detail')}>查看详情</Button><Button type="link" onClick={() => go('audit')}>审计</Button><Button type="link" onClick={() => { setProjects((rows) => rows.map((r) => r.key === record.key ? { ...r, status: '撤销修改' } : r)); message.success('已撤销至修改列表'); }}>撤销</Button></Space>;
-    if (record.status === '撤销修改') return <Space size={0}><Button type="link" onClick={() => go('detail')}>查看详情</Button><Button type="link" onClick={() => go('form')}>编辑</Button></Space>;
+    if (record.status === '撤销修改') return <Button type="link" onClick={() => go('detail')}>查看详情</Button>;
     return <Button type="link" onClick={() => go('detail')}>查看详情</Button>;
   };
   const columns: ColumnsType<(typeof initialProjects)[number]> = [
@@ -190,7 +652,7 @@ function ProjectAudit() {
     { title: '资金使用情况', dataIndex: 'fund', width: 190, render: (v, r) => <MetricCell value={v} empty={r.status === '待申请'} /> },
     { title: '审计状态', dataIndex: 'status', width: 105, render: (v: ProjectStatus) => <Tag color={statusColor[v]}>{v}</Tag> },
     { title: '更新时间', dataIndex: 'time', width: 175 },
-    { title: '操作', fixed: 'right', width: 230, render: (_, r) => actions(r) },
+    { title: '操作', fixed: 'right', width: status === '全部' ? 170 : 230, render: (_, r) => actions(r) },
   ];
   return <div><Header title="项目审计" description="覆盖项目填报、提交、两级审计、撤销修改与结果归档全流程。" extra={<Button icon={<DownloadOutlined />} onClick={() => exportMessage(message, filtered.length)}>批量导出</Button>} />
     <Card bordered={false} className="audit-status-card"><Tabs activeKey={status} onChange={(x) => setStatus(x as typeof status)} items={(['全部', '待申请', '草稿', '待审计', '审计中', '撤销修改', '审计通过', '审计不通过'] as const).map((x) => ({ key: x, label: <span>{x}<span className="tab-count">{x === '全部' ? projects.length : projects.filter((p) => p.status === x).length}</span></span> }))} /></Card>
