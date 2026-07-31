@@ -20,15 +20,15 @@ const AssignRole = () => {
         </Descriptions>
         <Form
           layout="vertical"
-          initialValues={{ role: user.role }}
+          initialValues={{ roles: user.roles }}
           onFinish={() => {
             message.success('角色分配成功');
             setTimeout(() => navigate('/app/user-center'), 500);
           }}
           style={{ maxWidth: 560 }}
         >
-          <Form.Item name="role" label="用户角色" rules={[{ required: true, message: '请选择用户角色' }]}>
-            <Select options={systemRoles.map((value) => ({ label: value, value }))} />
+          <Form.Item name="roles" label="用户角色" rules={[{ required: true, message: '请至少选择一个用户角色' }]}>
+            <Select mode="multiple" placeholder="请选择用户角色（可多选）" options={systemRoles.map((value) => ({ label: value, value }))} />
           </Form.Item>
           <Form.Item><Space><Button onClick={() => navigate(-1)}>取消</Button><Button type="primary" htmlType="submit">提交</Button></Space></Form.Item>
         </Form>

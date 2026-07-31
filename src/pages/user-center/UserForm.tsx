@@ -3,19 +3,22 @@ import { Button, Card, Form, Input, Modal, Select, Space, message } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import { departmentOptions } from '../../mock/departments';
-import type { UserRole } from '../../types/user';
 import { systemRoles } from './constants';
 import { initialCenterUsers, type CenterUser } from './UserList';
 
-type UserFormValues = Pick<CenterUser, 'name' | 'employeeId' | 'department' | 'phone' | 'role' | 'authMethod' | 'dataScope' | 'status'>;
+type UserFormValues = Pick<CenterUser, 'name' | 'employeeId' | 'department' | 'phone' | 'roles' | 'dataScope' | 'status'>;
 
 const loadUsers = (): CenterUser[] => {
   const saved = sessionStorage.getItem('user-center-users');
-  return saved ? JSON.parse(saved) : initialCenterUsers;
+  if (!saved) return initialCenterUsers;
+  return JSON.parse(saved).map((user: CenterUser & { role?: CenterUser['roles'][number] }) => {
+    const { role, ...rest } = user;
+    return { ...rest, roles: rest.roles?.length ? rest.roles : role ? [role] : [] };
+  });
 };
 
-const scopeForRole = (role?: UserRole): CenterUser['dataScope'] | undefined =>
-  role ? (role === '科室管理员' ? '本科室数据' : '全院数据') : undefined;
+const scopeForRoles = (roles?: CenterUser['roles']): CenterUser['dataScope'] | undefined =>
+  roles?.length ? (roles.some((role) => role !== '科室管理员') ? '全院数据' : '本科室数据') : undefined;
 
 const UserFormPage = () => {
   const navigate = useNavigate();
@@ -67,7 +70,7 @@ const UserFormPage = () => {
     <div className="user-center-page">
       <PageHeader
         title={isEditing ? '用户信息编辑' : '新增用户'}
-        subTitle={isEditing ? '修改用户基础信息、角色及帐号状态' : '录入平台用户信息并配置登录与数据权限'}
+        subTitle={isEditing ? '修改用户基础信息、角色及帐号状态' : '录入平台用户信息并配置角色与数据权限'}
         showBack
         onBack={() => navigate('/app/user-center')}
       />
@@ -76,9 +79,9 @@ const UserFormPage = () => {
           form={form}
           layout="vertical"
           className="user-center-form"
-          initialValues={editingUser || { authMethod: '密码认证', status: '正常' }}
+          initialValues={editingUser || { status: '正常' }}
           onValuesChange={(changed) => {
-            if (changed.role) form.setFieldValue('dataScope', scopeForRole(changed.role));
+            if ('roles' in changed) form.setFieldValue('dataScope', scopeForRoles(changed.roles));
           }}
         >
           <div className="user-center-form-grid">
@@ -104,14 +107,16 @@ const UserFormPage = () => {
                 <Input disabled value="系统自动生成" />
               </Form.Item>
             )}
-            <Form.Item name="authMethod" label="登录认证方式" rules={[{ required: true, message: '请选择登录认证方式' }]}>
-              <Select options={['密码认证', '短信验证码认证'].map((value) => ({ label: value, value }))} />
-            </Form.Item>
             <Form.Item name="department" label="所属组织" rules={[{ required: true, message: '请选择所属组织' }]}>
               <Select showSearch optionFilterProp="label" placeholder="请选择所属组织" options={organizationOptions} />
             </Form.Item>
-            <Form.Item name="role" label="用户角色" rules={[{ required: true, message: '请选择用户角色' }]}>
-              <Select placeholder="请选择用户角色" options={systemRoles.map((value) => ({ label: value, value }))} />
+            <Form.Item name="roles" label="用户角色" rules={[{ required: true, message: '请至少选择一个用户角色' }]}>
+              <Select
+                mode="multiple"
+                maxTagCount="responsive"
+                placeholder="请选择用户角色（可多选）"
+                options={systemRoles.map((value) => ({ label: value, value }))}
+              />
             </Form.Item>
             <Form.Item
               name="phone"

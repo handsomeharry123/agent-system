@@ -58,6 +58,19 @@ interface RecognizeResult {
   summary: string;
 }
 
+const recognizeAuditProjectFile = async (fileName: string): Promise<RecognizeResult> => {
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  return {
+    fields: [
+      { fieldKey: 'completion', value: '95%', confidence: 0.96, source: `${fileName} 项目建设内容` },
+      { fieldKey: 'completionNote', value: '项目核心功能已完成建设并进入院内试运行，相关证明材料已上传。', confidence: 0.93, source: `${fileName} 项目建设内容` },
+      { fieldKey: 'used', value: '136.8 万元', confidence: 0.95, source: `${fileName} 资金使用情况` },
+      { fieldKey: 'fundDetail', value: '资金主要用于软硬件采购、实施服务、模型训练及系统测试。', confidence: 0.91, source: `${fileName} 资金使用情况` },
+    ],
+    summary: `已从「${fileName}」识别并预填 4 个项目审计字段。请单选或多选字段后确认采纳。`,
+  };
+};
+
 const recognizeResourceRegistration = (
   input: string,
   source: string,
@@ -1147,30 +1160,36 @@ const AgentAssistant = () => {
       message.error('上传失败，单文件超过最大限制 30M');
       return false;
     }
+    if (/^\/app\/project-application\/(?:create|edit\/[^/]+)$/.test(location.pathname)) {
+      if (!/\.(pdf|doc|docx)$/i.test(file.name || '')) {
+        message.error('项目申报材料仅支持 PDF、DOC、DOCX 文件');
+        return false;
+      }
+      const rawFile = (file.originFileObj || file) as File;
+      window.dispatchEvent(new CustomEvent('project-application-assistant-input', {
+        detail: { text: file.name, source: 'file', file: rawFile },
+      }));
+      return false;
+    }
     addMessage({
       role: 'user',
       type: 'text',
       content: isDocument ? `上传文件：${file.name}` : `上传图片：${file.name}`,
       payload: { fileName: file.name, fileSize: size },
     });
-    if (/^\/app\/project-application\/(?:create|edit\/[^/]+)$/.test(location.pathname)) {
-      if (!/\.(pdf|doc|docx)$/i.test(file.name || '')) {
-        message.error('项目申报材料仅支持 PDF、DOC、DOCX 文件');
-        return false;
-      }
-      window.dispatchEvent(new CustomEvent('project-application-assistant-input', {
-        detail: { text: file.name, source: 'file' },
-      }));
-      return false;
-    }
     if (location.pathname === '/app/audit/project') {
       if (!/\.(pdf|doc|docx)$/i.test(file.name || '')) {
         message.error('项目审计材料仅支持 PDF、DOC、DOCX 文件');
         return false;
       }
-      window.dispatchEvent(new CustomEvent('audit-project-assistant-input', {
-        detail: { text: file.name, source: 'file' },
+      window.dispatchEvent(new CustomEvent('audit-project-material-uploaded', {
+        detail: { fileName: file.name, fileSize: size, file },
       }));
+      runRecognitionFlow(() => recognizeAuditProjectFile(file.name), {
+        fileName: file.name,
+        fileSize: size,
+        label: `正在解析 ${file.name}…`,
+      });
       return false;
     }
     // §3.1.1 同步到「备案材料」列表：仅 PDF（图片仅用于 OCR 识别，不入备案材料）。
@@ -1286,6 +1305,27 @@ const AgentAssistant = () => {
   }, [recording]);
 
   useEffect(() => {
+    const onAuditMaterialUploaded = (event: Event) => {
+      const detail = (event as CustomEvent<{ fileName?: string; fileSize?: number }>).detail;
+      if (!detail?.fileName) return;
+      addMessage({
+        role: 'user',
+        type: 'text',
+        content: `上传文件：${detail.fileName}`,
+        payload: { fileName: detail.fileName, fileSize: detail.fileSize },
+      });
+      setOpen(true);
+      runRecognitionFlow(() => recognizeAuditProjectFile(detail.fileName!), {
+        fileName: detail.fileName,
+        fileSize: detail.fileSize,
+        label: `正在解析 ${detail.fileName}…`,
+      });
+    };
+    window.addEventListener('audit-project-material-uploaded', onAuditMaterialUploaded);
+    return () => window.removeEventListener('audit-project-material-uploaded', onAuditMaterialUploaded);
+  });
+
+  useEffect(() => {
     const onRefreshNeedMatch = () => {
       message.success('已刷新智能化匹配结果');
     };
@@ -1311,6 +1351,20 @@ const AgentAssistant = () => {
       if (/^\/app\/resource-center\/resources\/(?:new|edit\/[^/]+)$/.test(location.pathname)) {
         window.setTimeout(() => {
           window.dispatchEvent(new CustomEvent('resource-center-prefill-acknowledged', {
+            detail: { fieldKeys },
+          }));
+        }, 0);
+      }
+      if (/^\/app\/project-application\/(?:create|edit\/[^/]+)$/.test(location.pathname)) {
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('project-application-prefill-acknowledged', {
+            detail: { fieldKeys },
+          }));
+        }, 0);
+      }
+      if (location.pathname === '/app/audit/project') {
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('audit-project-prefill-acknowledged', {
             detail: { fieldKeys },
           }));
         }, 0);
@@ -1341,6 +1395,20 @@ const AgentAssistant = () => {
         }));
       }, 0);
     }
+    if (/^\/app\/project-application\/(?:create|edit\/[^/]+)$/.test(location.pathname)) {
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('project-application-prefill-acknowledged', {
+          detail: { fieldKeys: [k] },
+        }));
+      }, 0);
+    }
+    if (location.pathname === '/app/audit/project') {
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('audit-project-prefill-acknowledged', {
+          detail: { fieldKeys: [k] },
+        }));
+      }, 0);
+    }
   };
 
   // 当前 mood 注入 hover 变体
@@ -1357,6 +1425,17 @@ const AgentAssistant = () => {
     );
     return bubbleActualH ?? (tall ? 420 : hasChipsOrActions ? 280 : 80);
   };
+  const shouldRetainWelcomeForChat = Boolean(
+    activeWelcome && (
+      activeWelcome.pageKey === 'audit-project-audit' ||
+      activeWelcome.pageKey === 'audit-project-all' ||
+      (
+        activeWelcome.pageKey.startsWith('audit-project-') &&
+        activeWelcome.miniList &&
+        activeWelcome.miniList.rows.length > 0
+      )
+    ),
+  );
 
   // V2.6 修复(2026-07-03):台账页面(/app/ledger 与 /app/ledger/*)由 AgentFloatHost
   //   独家负责机器人 icon + 气泡 + 对话窗口,接入中心 AgentAssistant 在该路径家族下
@@ -1452,11 +1531,7 @@ const AgentAssistant = () => {
             setOpen(true);
             // 项目信息审计页还需要用 activeWelcome 锁定窗口内对应的预审欢迎语；
             // 审计决策完成、页面离开时再由页面 effect 清理。
-            if (
-              activeWelcome.pageKey !== 'audit-project-audit' &&
-              activeWelcome.pageKey !== 'audit-project-all' &&
-              activeWelcome.pageKey !== 'audit-project-draft'
-            ) {
+            if (!shouldRetainWelcomeForChat) {
               consumeWelcome();
             }
           }}
@@ -1809,9 +1884,9 @@ const AgentAssistant = () => {
                   data-testid="status-bubble-mini-toggle"
                   onClick={() => {
                     setOpen(true);
-                    // 项目审计草稿窗口依赖 activeWelcome 判断当前清单；
-                    // 打开窗口时保留欢迎态，确保欢迎语下方能直接展示草稿列表。
-                    if (activeWelcome.pageKey !== 'audit-project-draft') {
+                    // 项目审计窗口依赖 activeWelcome 锁定当前 Tab 的欢迎消息；
+                    // 打开清单时保留欢迎态，避免消息过滤后窗口为空。
+                    if (!shouldRetainWelcomeForChat) {
                       consumeWelcome();
                     }
                   }}

@@ -2,54 +2,125 @@ import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button, Card, Checkbox, Select, Space, Typography, message } from 'antd';
 import type { DataNode } from 'antd/es/tree';
-import { DownOutlined, FolderFilled, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { DownOutlined, FolderFilled, ReloadOutlined, RightOutlined, SaveOutlined } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
 import { systemRoles } from './constants';
 
 const { Text } = Typography;
 const leaves = (prefix: string, titles: string[]) => titles.map((title, i) => ({ key: `${prefix}:${i}`, title }));
+const page = (key: string, title: string, actions: string[] = []): DataNode => ({
+  key,
+  title,
+  children: actions.length ? leaves(`${key}:action`, actions) : undefined,
+});
 
 const permissionTree: DataNode[] = [
   { key: 'home', title: '首页' },
   { key: 'assistant', title: '医小管' },
-  { key: 'needs', title: '智能体建设需求管理', children: leaves('needs', ['需求管理列表页', '草稿列表页', '生成需求页']) },
   {
-    key: 'access', title: '智能体接入中心', children: [
-      { key: 'access:list', title: '注册管理列表页', children: leaves('access:list', ['操作：审核', '操作：撤销']) },
-      { key: 'access:tab:0', title: '草稿 tab 页' },
-      { key: 'access:tab:1', title: '待审核 tab 页', children: leaves('access:tab:1', ['操作：审核', '操作：撤销']) },
-      { key: 'access:tab:2', title: '审核中 tab 页', children: leaves('access:tab:2', ['操作：审核', '操作：撤销']) },
-      { key: 'access:tab:3', title: '撤销修改 tab 页' },
-      { key: 'access:tab:4', title: '退回修改 tab 页' },
-      { key: 'access:tab:5', title: '审核通过 tab 页' },
-      ...leaves('access:page', ['新建注册页', '审核注册页', '注册信息详情页']),
+    key: 'needs', title: '智能体建设需求管理', children: [
+      page('needs:list', '需求管理列表页', ['需求标题下钻至需求详情', '生成需求', '查看详情', '智能化匹配']),
+      page('needs:draft', '草稿列表页', ['需求标题下钻至需求详情', '生成需求', '查看详情', '编辑', '删除']),
     ],
   },
-  { key: 'ledger', title: '统一台账中心', children: leaves('ledger', ['台账总览页', '台账列表页']) },
+  {
+    key: 'project', title: '立项申报管理中心', children: [
+      page('project:all', '全部立项申报项目列表页', ['项目名称下钻至立项信息详情', '立项申报', '查看详情', '审核', '撤销', '编辑', '删除']),
+      page('project:draft', '草稿列表页', ['项目名称下钻至立项信息详情', '立项申报', '查看详情', '编辑', '删除']),
+      page('project:pending', '待审核列表页', ['项目名称下钻至立项信息详情', '立项申报', '查看详情', '审核', '撤销']),
+      page('project:reviewing', '审核中列表页', ['项目名称下钻至立项信息详情', '立项申报', '查看详情', '审核']),
+      page('project:revoke', '撤销修改列表页', ['项目名称下钻至立项信息详情', '立项申报', '查看详情', '编辑', '删除']),
+      page('project:rejected', '立项不通过列表页', ['项目名称下钻至立项信息详情', '立项申报', '查看详情']),
+      page('project:approved', '立项通过列表页', ['项目名称下钻至立项信息详情', '立项申报', '查看详情']),
+    ],
+  },
+  {
+    key: 'access', title: '智能体接入中心', children: [
+      page('access:list', '注册管理列表页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '审核', '撤销', '编辑', '删除']),
+      page('access:draft', '注册管理草稿 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '编辑', '删除']),
+      page('access:pending', '注册管理待审核 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '审核', '撤销']),
+      page('access:reviewing', '注册管理审核中 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '审核', '撤销']),
+      page('access:revoke', '注册管理撤销修改 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '编辑', '删除']),
+      page('access:returned', '注册管理退回修改 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情']),
+      page('access:approved', '注册管理审核通过 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情']),
+    ],
+  },
+  { key: 'ledger', title: '统一台账中心', children: [page('ledger:overview', '台账总览页'), page('ledger:list', '台账列表页')] },
   {
     key: 'resource', title: '医院资源管理中心', children: [
-      { key: 'resource:manage', title: '资源管理', children: leaves('resource:manage', ['资源管理页', '注册资源草稿页', '注册资源页']) },
-      { key: 'resource:apply', title: '资源申请管理', children: leaves('resource:apply', ['全部列表页', '草稿 tab 页', '待审核 tab 页（审核、撤销）', '审核中 tab 页（审核、撤销）', '撤销修改 tab 页', '退回修改 tab 页', '审核通过 tab 页', '申请权限页', '权限审批页', '权限申请详情页']) },
+      { key: 'resource:manage', title: '资源管理', children: [
+        page('resource:manage:all', '全部注册资源列表页', ['注册资源', '编辑', '删除']),
+        page('resource:manage:draft', '注册资源草稿页', ['注册资源', '编辑', '删除']),
+      ] },
+      { key: 'resource:apply', title: '申请管理', children: [
+        page('resource:apply:all', '资源申请管理全部列表页', ['权限申请', '查看详情', '审核', '撤销', '编辑', '删除']),
+        page('resource:apply:draft', '资源申请管理草稿 tab 页', ['权限申请', '编辑', '删除']),
+        page('resource:apply:pending', '资源申请管理待审核 tab 页', ['权限申请', '查看详情', '审核', '撤销']),
+        page('resource:apply:reviewing', '资源申请管理审核中 tab 页', ['权限申请', '查看详情', '审核', '撤销']),
+        page('resource:apply:revoke', '资源申请管理撤销修改 tab 页', ['权限申请', '查看详情', '编辑', '删除']),
+        page('resource:apply:returned', '资源申请管理退回修改 tab 页', ['权限申请', '查看详情']),
+        page('resource:apply:approved', '资源申请管理审核通过 tab 页', ['权限申请', '查看详情']),
+      ] },
     ],
   },
   {
     key: 'evaluation', title: '统一准入评测沙盒', children: [
-      { key: 'evaluation:index', title: '指标列表' },
-      { key: 'evaluation:data', title: '数据集管理', children: leaves('evaluation:data', ['数据集管理页', '导入数据集页', '数据集详情页', '导入题集页']) },
-      { key: 'evaluation:task', title: '评测任务管理', children: leaves('evaluation:task', ['全部列表页（审核、撤销）', '草稿列表页', '待评测列表页', '评测中列表页（撤销）', '撤销列表页', '评测完成列表页（审核）', '审核中列表页（审核）', '审核通过列表页', '退回修改列表页', '新建评测任务页', '评测结果详情页', '评测结果审核页']) },
+      { key: 'evaluation:task', title: '评测任务管理', children: [
+        page('evaluation:task:all', '评测任务管理全部列表页', ['新建评测任务', '重新评测', '查看详情', '审核', '撤销', '编辑', '删除']),
+        page('evaluation:task:draft', '评测任务管理草稿列表页', ['新建评测任务', '查看详情', '编辑', '删除']),
+        page('evaluation:task:running', '评测任务管理评测中列表页', ['新建评测任务', '查看详情', '撤销']),
+        page('evaluation:task:revoke', '评测任务管理撤销列表页', ['新建评测任务', '查看详情', '编辑', '删除']),
+        page('evaluation:task:finished', '评测任务管理评测完成列表页', ['新建评测任务', '查看详情', '审核']),
+        page('evaluation:task:reviewing', '评测任务管理审核中列表页', ['新建评测任务', '查看详情', '审核']),
+        page('evaluation:task:approved', '评测任务管理审核通过列表页', ['新建评测任务', '查看详情']),
+        page('evaluation:task:returned', '评测任务管理退回修改列表页', ['新建评测任务', '查看详情']),
+      ] },
+      page('evaluation:index', '指标列表', ['查看评分规则', '前往任务管理']),
+      page('evaluation:data', '数据集管理', ['点击数据集名称下钻至对应数据集详情', '上传数据集', '查看详情', '编辑', '删除']),
     ],
   },
   {
     key: 'monitor', title: '统一运行监控中心', children: [
-      ...leaves('monitor:overview', ['监控告警总览页', '业务监控页', '状态监控页', '成本监控页']),
-      { key: 'monitor:rules', title: '告警规则管理', children: leaves('monitor:rules', ['告警规则管理页', '新建告警规则页', '告警规则详情页']) },
-      { key: 'monitor:event', title: '告警事件处置', children: leaves('monitor:event', ['全部告警事件页', '待分派告警事件页', '待处理告警事件页（处理）', '处理中告警事件页', '待审核告警事件页（审核）', '审核中告警事件页（审核）', '已关闭告警事件页', '已忽略告警事件页', '告警事件分派页', '告警事件处理页', '告警事件处理审核页', '告警事件详情页']) },
+      page('monitor:overview', '监控告警总览页'), page('monitor:business', '业务监控页'), page('monitor:status', '状态监控页'), page('monitor:cost', '成本监控页'),
+      { key: 'monitor:rules', title: '告警规则管理', children: [page('monitor:rules:list', '告警规则管理页', ['新建规则', '查看详情', '编辑', '删除'])] },
+      { key: 'monitor:event', title: '告警事件处置', children: [
+        page('monitor:event:all', '全部告警事件页', ['查看详情', '分派', '处理', '审核']),
+        page('monitor:event:assign', '待分派告警事件页', ['查看详情', '分派']),
+        page('monitor:event:handle', '待处理告警事件页', ['查看详情', '处理']),
+        page('monitor:event:handling', '处理中告警事件页'),
+        page('monitor:event:pending', '待审核告警事件页', ['查看详情', '审核']),
+        page('monitor:event:reviewing', '审核中告警事件页', ['查看详情', '审核']),
+        page('monitor:event:closed', '已关闭告警事件页'), page('monitor:event:ignored', '已忽略告警事件页'),
+      ] },
+    ],
+  },
+  {
+    key: 'user', title: '用户中心', children: [
+      page('user:list', '用户列表页', ['新建用户', '编辑', '停用', '批量启用', '批量停用', '导出列表']),
+      page('user:role', '角色管理页', ['新增角色', '查看详情', '编辑', '停用']),
+      page('user:function', '功能权限配置页'),
+    ],
+  },
+  {
+    key: 'audit', title: '审计中心', children: [
+      page('audit:economic', '经济审计'),
+      { key: 'audit:project', title: '项目审计', children: [
+        page('audit:project:all', '全部项目审计列表页', ['批量导出', '项目审计信息填报', '查看详情', '审计', '撤销', '编辑', '删除']),
+        page('audit:project:pending', '待申请列表页', ['批量导出', '项目审计信息填报']),
+        page('audit:project:draft', '草稿列表页', ['批量导出', '编辑', '删除']),
+        page('audit:project:audit', '待审计列表页', ['批量导出', '查看详情', '审计', '撤销']),
+        page('audit:project:auditing', '审计中列表页', ['批量导出', '查看详情', '审计', '撤销']),
+        page('audit:project:revoke', '撤销修改列表页', ['批量导出', '查看详情', '编辑']),
+        page('audit:project:approved', '审计通过列表页', ['批量导出', '查看详情']),
+        page('audit:project:rejected', '审计不通过列表页', ['批量导出', '查看详情']),
+      ] },
+      page('audit:agent', '智能体行为审计'), page('audit:log', '操作日志页'),
     ],
   },
   {
     key: 'system', title: '系统配置', children: [
-      { key: 'system:dict', title: '数据字典', children: leaves('system:dict', ['字典管理页', '创建字典页', '导入字典页', '字典项管理页', '创建字典项页', '导入字典项页']) },
-      { key: 'system:model', title: '模型配置', children: leaves('system:model', ['模型管理页', '模型配置页']) },
+      page('system:dict', '数据字典', ['查看字典项', '编辑', '导出字典']),
+      page('system:model', '模型配置', ['模型配置', '测试联通', '编辑', '删除']),
     ],
   },
 ];
@@ -66,6 +137,7 @@ const FunctionPermission = () => {
   const [role, setRole] = useState(initialRole);
   const [checked, setChecked] = useState<React.Key[]>(defaults[initialRole] || []);
   const [activeModule, setActiveModule] = useState(String(permissionTree[0].key));
+  const [collapsed, setCollapsed] = useState<React.Key[]>([]);
   const roles = useMemo(() => [...systemRoles, ...(!systemRoles.includes(initialRole as never) ? [initialRole] : [])], [initialRole]);
   const currentModule = permissionTree.find((item) => String(item.key) === activeModule) || permissionTree[0];
   const currentNodes = useMemo(() => currentModule.children || [currentModule], [currentModule]);
@@ -92,6 +164,9 @@ const FunctionPermission = () => {
   };
 
   const resetRole = () => setChecked(defaults[role] || []);
+  const toggleNode = (key: React.Key) => setCollapsed((previous) => (
+    previous.includes(key) ? previous.filter((item) => item !== key) : [...previous, key]
+  ));
 
   const renderPermissionNode = (node: DataNode, depth = 0, standalonePage = false) => {
     const nodeKeys = flattenKeys([node]);
@@ -101,6 +176,7 @@ const FunctionPermission = () => {
     const children = node.children || [];
     const leafChildren = children.filter((child) => !child.children?.length);
     const groupChildren = children.filter((child) => child.children?.length);
+    const isCollapsed = collapsed.includes(node.key);
 
     if (!children.length) {
       if (standalonePage) {
@@ -132,7 +208,9 @@ const FunctionPermission = () => {
     return (
       <div className={`permission-group permission-group-depth-${depth}`} key={node.key}>
         <div className="permission-group-heading">
-          <DownOutlined className="permission-expand-icon" />
+          <button type="button" className="permission-expand-button" onClick={() => toggleNode(node.key)} aria-label={isCollapsed ? '展开' : '收起'}>
+            {isCollapsed ? <RightOutlined /> : <DownOutlined />}
+          </button>
           <FolderFilled className="permission-folder-icon" />
           <Checkbox
             checked={fullyChecked}
@@ -142,12 +220,12 @@ const FunctionPermission = () => {
             <Text strong>{String(node.title)}</Text>
           </Checkbox>
         </div>
-        {leafChildren.length > 0 && (
+        {!isCollapsed && leafChildren.length > 0 && (
           <div className="permission-action-list">
             {leafChildren.map((child) => renderPermissionNode(child, depth + 1))}
           </div>
         )}
-        {groupChildren.map((child) => renderPermissionNode(child, depth + 1))}
+        {!isCollapsed && groupChildren.map((child) => renderPermissionNode(child, depth + 1))}
       </div>
     );
   };

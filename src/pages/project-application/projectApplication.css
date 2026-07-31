@@ -11,25 +11,68 @@
   min-width: 0;
 }
 
-.project-upload-compact .ant-upload-drag {
-  min-height: 128px;
+.project-material-switcher {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-.project-upload-compact .ant-upload-drag-icon {
+.project-material-switcher-label,
+.project-material-category {
+  font-size: 12px;
+}
+
+.project-material-category {
+  padding: 2px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+}
+
+.project-material-required {
+  margin-left: 4px;
+  color: #ff4d4f;
+}
+
+.project-material-count {
+  margin-left: 6px;
+  color: #999;
+}
+
+.project-upload-unified .ant-upload-drag {
+  min-height: 164px;
+  padding: 8px 0;
+}
+
+.project-upload-unified .ant-upload-drag-icon {
   margin-bottom: 4px !important;
 }
 
-.project-upload-compact .ant-upload-drag-icon .anticon {
-  font-size: 30px;
+.project-upload-unified .ant-upload-drag-icon .anticon {
+  font-size: 36px;
 }
 
-.project-upload-compact .ant-upload-text {
+.project-upload-unified .ant-upload-text {
   font-size: 13px !important;
 }
 
-.project-upload-compact .ant-upload-hint {
+.project-upload-unified .ant-upload-hint {
   margin-top: 2px !important;
   font-size: 11px !important;
+}
+
+.project-material-files {
+  margin-top: 12px;
+}
+
+.project-material-file-group {
+  margin-bottom: 8px;
+}
+
+.project-material-file-label {
+  margin-right: 8px;
+  font-size: 12px;
 }
 
 .project-option-buttons {
@@ -116,4 +159,28 @@
 .project-ai-preaudit-textarea:focus {
   border-color: #95de64;
   background: #fcfff8;
+}
+
+.project-ai-prefill-field {
+  margin-bottom: 18px;
+  padding: 10px 12px 2px;
+  border: 1px solid #b7eb8f;
+  border-radius: 8px;
+  background: #f6ffed;
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+.project-ai-prefill-field .ant-input,
+.project-ai-prefill-field .ant-input-number,
+.project-ai-prefill-field .ant-select-selector,
+.project-ai-prefill-field textarea {
+  border-color: #95de64 !important;
+  background: #fcfff8 !important;
+}
+
+.project-ai-prefill-tag {
+  margin-inline-end: 0;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 18px;
 }

@@ -9,7 +9,6 @@ import type { UserRole } from '../../types/user';
 import { roleColorMap, systemRoles } from './constants';
 
 type AccountStatus = '正常' | '停用';
-type AuthMethod = '密码认证' | '短信验证码认证';
 
 export interface CenterUser {
   id: string;
@@ -17,8 +16,7 @@ export interface CenterUser {
   employeeId: string;
   department: string;
   phone: string;
-  role: UserRole;
-  authMethod: AuthMethod;
+  roles: UserRole[];
   dataScope: '全院数据' | '本科室数据';
   status: AccountStatus;
   createdAt: string;
@@ -26,28 +24,33 @@ export interface CenterUser {
 }
 
 export const initialCenterUsers: CenterUser[] = mockUsers.slice(0, 12).map((user, index) => {
-  const role: UserRole = index === 0 ? '医院领导' : user.roles[0] || '科室管理员';
+  const roles: UserRole[] = index === 0 ? ['医院领导'] : user.roles.length ? user.roles : ['科室管理员'];
   return {
     id: user.id,
     name: index === 0 ? '周建国' : user.name,
     employeeId: index === 0 ? 'LD0001' : user.employeeId,
     department: index === 0 ? '院领导' : user.department,
     phone: index === 0 ? '13900001001' : user.phone.replace(/\*/g, String((index + 3) % 10)),
-    role,
-    authMethod: index % 3 === 0 ? '短信验证码认证' : '密码认证',
-    dataScope: role === '科室管理员' ? '本科室数据' : '全院数据',
+    roles,
+    dataScope: roles.some((role) => role !== '科室管理员') ? '全院数据' : '本科室数据',
     status: user.status === '已停用' ? '停用' : '正常',
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt || '-',
   };
 });
 
+const normalizeCenterUsers = (users: Array<CenterUser & { role?: UserRole }>): CenterUser[] =>
+  users.map(({ role, ...user }) => ({
+    ...user,
+    roles: user.roles?.length ? user.roles : role ? [role] : ['科室管理员'],
+  }));
+
 const UserList = () => {
   const navigate = useNavigate();
   const [filterForm] = Form.useForm();
   const [users, setUsers] = useState<CenterUser[]>(() => {
     const saved = sessionStorage.getItem('user-center-users');
-    return saved ? JSON.parse(saved) : initialCenterUsers;
+    return saved ? normalizeCenterUsers(JSON.parse(saved)) : initialCenterUsers;
   });
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [filters, setFilters] = useState<{ department?: string; role?: UserRole; status?: AccountStatus }>({});
@@ -59,7 +62,7 @@ const UserList = () => {
   const filteredUsers = useMemo(
     () => users.filter((user) =>
       (!filters.department || user.department === filters.department)
-      && (!filters.role || user.role === filters.role)
+      && (!filters.role || user.roles.includes(filters.role))
       && (!filters.status || user.status === filters.status)),
     [filters, users],
   );
@@ -88,10 +91,10 @@ const UserList = () => {
   };
 
   const exportList = () => {
-    const headers = ['用户姓名', '用户工号', '所属组织', '联系方式', '用户角色', '登录认证方式', '数据权限', '帐号状态', '帐号创建时间', '最后登录时间'];
+    const headers = ['用户姓名', '用户工号', '所属组织', '联系方式', '用户角色', '数据权限', '帐号状态', '帐号创建时间', '最后登录时间'];
     const rows = filteredUsers.map((user) => [
-      user.name, user.employeeId, user.department, user.phone, user.role, user.authMethod,
-      user.dataScope, user.status, user.createdAt, user.lastLoginAt,
+      user.name, user.employeeId, user.department, user.phone, user.roles.join('、'), user.dataScope,
+      user.status, user.createdAt, user.lastLoginAt,
     ]);
     const html = `<table><tr>${headers.map((item) => `<th>${item}</th>`).join('')}</tr>${rows
       .map((row) => `<tr>${row.map((item) => `<td>${item}</td>`).join('')}</tr>`).join('')}</table>`;
@@ -110,10 +113,13 @@ const UserList = () => {
     { title: '所属组织', dataIndex: 'department', width: 120 },
     { title: '联系方式', dataIndex: 'phone', width: 130 },
     {
-      title: '用户角色', dataIndex: 'role', width: 130,
-      render: (role: UserRole) => <Tag color={roleColorMap[role]}>{role}</Tag>,
+      title: '用户角色', dataIndex: 'roles', width: 130,
+      render: (roles: UserRole[]) => (
+        <Space size={[0, 4]} wrap>
+          {roles.map((role) => <Tag key={role} color={roleColorMap[role]}>{role}</Tag>)}
+        </Space>
+      ),
     },
-    { title: '登录认证方式', dataIndex: 'authMethod', width: 140 },
     { title: '数据权限', dataIndex: 'dataScope', width: 110 },
     {
       title: '帐号状态', dataIndex: 'status', width: 90,
@@ -168,7 +174,7 @@ const UserList = () => {
           columns={columns}
           dataSource={filteredUsers}
           rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-          scroll={{ x: 1450 }}
+          scroll={{ x: 1310 }}
           pagination={{ pageSize: 8, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         />
       </Card>

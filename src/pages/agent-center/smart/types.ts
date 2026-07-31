@@ -32,6 +32,8 @@ export type AgentMessageType =
   | 'conn-test-result'
   // 信息完整且连通测试通过后，询问用户是否授权系统代提交
   | 'register-submit-confirm'
+  // 项目审计信息与必需材料齐全后，询问用户是否提交
+  | 'audit-submit-confirm'
   // §4.3 自动生成产品与技术说明书：必填信息已完成但备案材料缺失时主动提示
   | 'material-generation-offer'
   // §3.4.1.2 注册信息详情页：进度+核心指标 由 Agent 对话窗口呈现, 详情页本身不再嵌入卡片

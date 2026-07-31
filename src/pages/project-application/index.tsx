@@ -27,27 +27,38 @@ import type { UploadFile } from 'antd';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import {
+  CloudUploadOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
   EyeOutlined,
   FilePdfOutlined,
+  FileWordOutlined,
   MoreOutlined,
   PlusOutlined,
   SaveOutlined,
   SearchOutlined,
   SendOutlined,
   ThunderboltFilled,
-  UploadOutlined,
 } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
 import { departmentOptions } from '../../mock/departments';
 import { useAuth } from '../../hooks/useAuth';
 import { useSmartDraft } from '../agent-center/smart/store';
+import {
+  classifyProjectMaterial,
+  extractProjectFileText,
+  recognizeProjectText,
+  type ProjectMaterialKind,
+  type ProjectRecognizedValues,
+} from './fileRecognition';
 import './projectApplication.css';
 
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
+const PROJECT_APPLICATION_TEMPLATE_NAME = '市一人工智能体工程建设方案申报书.docx';
+const PROJECT_APPLICATION_TEMPLATE_URL = encodeURI(`/${PROJECT_APPLICATION_TEMPLATE_NAME}`);
+const PROJECT_APPLICATION_TEMPLATE_PREVIEW_URL = encodeURI('/市一人工智能体工程建设方案申报书预览.html');
 
 type ProjectStatus = '草稿' | '待审核' | '审核中' | '撤销修改' | '立项不通过' | '立项通过';
 
@@ -81,13 +92,20 @@ interface ProjectRecord {
   files: string[];
 }
 
-type IndicatorItem = { content: string };
+type IndicatorItem = {
+  name: string;
+  targetValue: string;
+  /** 兼容修复前保存的旧版单输入框草稿。 */
+  content?: string;
+};
 type AssessmentIndicators = {
   technical: IndicatorItem[];
   intellectualProperty: IndicatorItem[];
   economicSocial: IndicatorItem[];
-  other: IndicatorItem[];
+  /** 兼容旧草稿；当前申报页不再展示其他指标。 */
+  other?: IndicatorItem[];
 };
+type IndicatorDimensionKey = Exclude<keyof AssessmentIndicators, 'other'>;
 
 const STORAGE_KEY = 'project-application-demo-v1';
 const now = () => new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-');
@@ -152,6 +170,15 @@ const buildApplicationHtml = (record: ProjectRecord) => `
     <p><b>使用明细：</b>${escapeHtml(record.spendingDetail)}</p>
   </div>`;
 
+const downloadProjectApplicationTemplate = () => {
+  const anchor = document.createElement('a');
+  anchor.href = PROJECT_APPLICATION_TEMPLATE_URL;
+  anchor.download = PROJECT_APPLICATION_TEMPLATE_NAME;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+};
+
 const downloadApplication = async (record: ProjectRecord, fileName?: string) => {
   const targetName = fileName || `${record.name}项目申报书.pdf`;
   if (/\.docx?$/i.test(targetName)) {
@@ -204,28 +231,46 @@ const supportOptions = ['资金支持', '算力支持', '数据要素支持', '�
 const technologyOptions = ['计算机视觉', '智能语音', '多模态', '边缘计算', '数字孪生', '自然语言处理', '知识图谱', '机器学习', '隐私计算', '高性能计算', '其他'];
 const modelOptions = ['GPT模型', 'Claude模型', 'LLaMa模型', 'Gemini模型', 'Deepseek模型', 'Qwen模型', '豆包模型', 'Kimi模型', 'Grok模型', '其他'];
 const indicatorDimensions: Array<{
-  key: keyof AssessmentIndicators;
+  key: IndicatorDimensionKey;
   title: string;
   placeholder: string;
 }> = [
   { key: 'technical', title: '技术性能', placeholder: '例如：核心场景识别准确率不低于 95%' },
   { key: 'intellectualProperty', title: '知识产权', placeholder: '例如：申请软件著作权 2 项' },
   { key: 'economicSocial', title: '经济和社会效益', placeholder: '例如：业务处理效率提升 30%' },
-  { key: 'other', title: '其他', placeholder: '请输入其他考核指标' },
 ];
 
 const emptyAssessmentIndicators = (): AssessmentIndicators => ({
-  technical: [{ content: '' }],
-  intellectualProperty: [{ content: '' }],
-  economicSocial: [{ content: '' }],
-  other: [{ content: '' }],
+  technical: [{ name: '', targetValue: '' }],
+  intellectualProperty: [{ name: '', targetValue: '' }],
+  economicSocial: [{ name: '', targetValue: '' }],
 });
+
+const normalizeAssessmentIndicators = (indicators?: AssessmentIndicators): AssessmentIndicators => {
+  const empty = emptyAssessmentIndicators();
+  if (!indicators) return empty;
+  return Object.fromEntries(
+    indicatorDimensions.map(({ key }) => [
+      key,
+      (indicators[key]?.length ? indicators[key] : empty[key]).map((item) => ({
+        name: item.name || item.content || '',
+        targetValue: item.targetValue || '',
+      })),
+    ]),
+  ) as AssessmentIndicators;
+};
 
 const indicatorsToText = (indicators?: AssessmentIndicators) => {
   if (!indicators) return '';
   return indicatorDimensions
     .map(({ key, title }) => {
-      const items = indicators[key].map((item) => item?.content?.trim()).filter(Boolean);
+      const items = indicators[key]
+        .map((item) => {
+          const name = (item?.name || item?.content || '').trim();
+          const target = item?.targetValue?.trim();
+          return name ? `${name}${target ? `：${target}` : ''}` : '';
+        })
+        .filter(Boolean);
       return items.length ? `${title}：${items.join('；')}` : '';
     })
     .filter(Boolean)
@@ -288,59 +333,82 @@ export default function ProjectApplication() {
 
   useEffect(() => {
     if (active === '立项不通过') {
-      const firstRejectedRecord = rejectedRecords[0];
       pushWelcomeGreeting(
         'project-application-rejected',
         isAdmin ? 'admin' : 'dept',
         () => [rejectedRecords.length],
         {
-          actions: [{
-            key: 'view-rejected-project-detail',
-            label: '查看详情',
-            path: firstRejectedRecord
-              ? `/app/project-application/detail/${firstRejectedRecord.id}`
-              : undefined,
-            enabled: Boolean(firstRejectedRecord),
-            reason: firstRejectedRecord ? undefined : '当前暂无立项不通过的申报',
-          }],
+          miniList: {
+            toggleLabel: `查看这${rejectedRecords.length}项`,
+            targetTab: '立项不通过',
+            totalCount: rejectedRecords.length,
+            rows: rejectedRecords.map((record) => ({
+              recordId: record.id,
+              title: record.name,
+              subTitle: `申报科室：${record.department || '--'}`,
+              meta: `希望获取支持：${record.supports.join('、') || '--'}`,
+              actions: [{
+                key: `detail-rejected-project-${record.id}`,
+                label: '查看详情',
+                kind: 'navigate-detail',
+                path: `/app/project-application/detail/${record.id}`,
+              }],
+            })),
+          },
         },
       );
       return () => consumeWelcome();
     }
     if (active === '立项通过') {
-      const firstPassedRecord = passedRecords[0];
       pushWelcomeGreeting(
         'project-application-passed',
         isAdmin ? 'admin' : 'dept',
         () => [passedRecords.length],
         {
-          actions: [{
-            key: 'view-passed-project-detail',
-            label: '查看详情',
-            path: firstPassedRecord
-              ? `/app/project-application/detail/${firstPassedRecord.id}`
-              : undefined,
-            enabled: Boolean(firstPassedRecord),
-            reason: firstPassedRecord ? undefined : '当前暂无立项通过的申报',
-          }],
+          miniList: {
+            toggleLabel: `查看这${passedRecords.length}项`,
+            targetTab: '立项通过',
+            totalCount: passedRecords.length,
+            rows: passedRecords.map((record) => ({
+              recordId: record.id,
+              title: record.name,
+              subTitle: `申报科室：${record.department || '--'}`,
+              meta: `希望获取支持：${record.supports.join('、') || '--'}`,
+              actions: [{
+                key: `detail-passed-project-${record.id}`,
+                label: '查看详情',
+                kind: 'navigate-detail',
+                path: `/app/project-application/detail/${record.id}`,
+              }],
+            })),
+          },
         },
       );
       return () => consumeWelcome();
     }
     if (active === '撤销修改') {
-      const detailRecord = revokedRecords[0];
       pushWelcomeGreeting(
         'project-application-revoked',
         isAdmin ? 'admin' : 'dept',
         () => [revokedRecords.length],
         {
-          actions: [{
-            key: 'view-revoked-project-detail',
-            label: '查看详情',
-            path: detailRecord ? `/app/project-application/detail/${detailRecord.id}` : undefined,
-            enabled: Boolean(detailRecord),
-            reason: '当前没有撤销修改的立项申报',
-          }],
+          miniList: {
+            toggleLabel: `查看这${revokedRecords.length}项`,
+            targetTab: '撤销修改',
+            totalCount: revokedRecords.length,
+            rows: revokedRecords.map((record) => ({
+              recordId: record.id,
+              title: record.name,
+              subTitle: `申报科室：${record.department || '--'}`,
+              meta: `希望获取支持：${record.supports.join('、') || '--'}`,
+              actions: [{
+                key: `detail-revoked-project-${record.id}`,
+                label: '查看详情',
+                kind: 'navigate-detail',
+                path: `/app/project-application/detail/${record.id}`,
+              }],
+            })),
+          },
         },
       );
       return () => consumeWelcome();
@@ -506,7 +574,7 @@ export default function ProjectApplication() {
         navigate(detail.path);
       }
       if (
-        (active === '待审核' || active === '审核中') &&
+        (active === '待审核' || active === '审核中' || active === '撤销修改' || active === '立项通过' || active === '立项不通过') &&
         (detail?.kind === 'navigate-detail' || detail?.kind === 'navigate-audit') &&
         detail.path
       ) {
@@ -561,10 +629,13 @@ export default function ProjectApplication() {
     { title: '申报赛道', dataIndex: 'track', width: 100 },
     { title: '项目负责人', dataIndex: 'leader', width: 110 },
     { title: '项目联系人', dataIndex: 'contact', width: 110 },
-    { title: '联系方式', dataIndex: 'phone', width: 125, render: (v: string) => `${v.slice(0, 3)}****${v.slice(7)}` },
     { title: '希望获取的支持', dataIndex: 'supports', width: 190, ellipsis: true, render: (v: string[]) => v.join('、') || '--' },
     ...(active === '立项不通过' || active === '立项通过' ? [{ title: '具体说明', dataIndex: 'reviewNote', width: 220, ellipsis: true }] : []),
-    { title: active === '草稿' ? '最后编辑时间' : active === '撤销修改' ? '撤销时间' : active === '立项不通过' || active === '立项通过' ? '审核完成时间' : '提交审核时间', width: 175, render: (_, row) => active === '草稿' ? row.updateTime : active === '撤销修改' ? row.revokeTime : active === '立项不通过' || active === '立项通过' ? row.finishTime : row.submitTime || '--' },
+    ...(active !== '全部立项' ? [{
+      title: active === '草稿' ? '最后编辑时间' : active === '撤销修改' ? '撤销时间' : active === '立项不通过' || active === '立项通过' ? '审核完成时间' : '提交审核时间',
+      width: 175,
+      render: (_: unknown, row: ProjectRecord) => active === '草稿' ? row.updateTime : active === '撤销修改' ? row.revokeTime : active === '立项不通过' || active === '立项通过' ? row.finishTime : row.submitTime || '--',
+    }] : []),
     { title: '立项状态', dataIndex: 'status', width: 105, render: (v: ProjectStatus) => <Tag color={statusColor[v]}>{v}</Tag> },
     {
       title: '操作', fixed: 'right', width: active === '全部立项' ? 150 : 210,
@@ -639,7 +710,7 @@ export default function ProjectApplication() {
         <Button onClick={() => { setKeyword(''); setDepartment(''); setTrack(''); }}>重置筛选</Button>
       </Space>
       <Tabs activeKey={active} onChange={(key) => setSearchParams(key === '全部立项' ? {} : { status: key })} items={statuses.map((status) => ({ key: status, label: <span>{status} <Tag bordered={false}>{records.filter((r) => status === '全部立项' || r.status === status).length}</Tag></span> }))} />
-      <Table rowKey="id" columns={columns} dataSource={scopedRecords} scroll={{ x: 1450 }} pagination={{ pageSize: 8, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }} />
+      <Table rowKey="id" columns={columns} dataSource={scopedRecords} scroll={{ x: 1325 }} pagination={{ pageSize: 8, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }} />
     </Card>
   </Space>;
 }
@@ -657,13 +728,17 @@ export function ProjectApplicationForm() {
   const [form] = Form.useForm<ProjectFormValues>();
   const { pushWelcomeGreeting, consumeWelcome, addMessage } = useSmartDraft();
   const [submitting, setSubmitting] = useState(false);
+  const [aiPrefillFields, setAiPrefillFields] = useState<Set<string>>(new Set());
+  const [activeMaterialKind, setActiveMaterialKind] = useState<ProjectMaterialKind>('application');
 
   const initialValues: Partial<ProjectFormValues> = editing ? {
     ...editing,
-    assessmentIndicators: editing.assessmentIndicators || {
-      ...emptyAssessmentIndicators(),
-      technical: [{ content: editing.indicators || '' }],
-    },
+    assessmentIndicators: editing.assessmentIndicators
+      ? normalizeAssessmentIndicators(editing.assessmentIndicators)
+      : {
+          ...emptyAssessmentIndicators(),
+          technical: [{ name: editing.indicators || '', targetValue: '' }],
+        },
     applicationFiles: editing.files.slice(0, 1).map((name, i) => ({ uid: `${i}`, name, status: 'done' })),
     evidenceFiles: editing.files.slice(1).map((name, i) => ({ uid: `e${i}`, name, status: 'done' })),
   } : {
@@ -674,51 +749,113 @@ export function ProjectApplicationForm() {
     assessmentIndicators: emptyAssessmentIndicators(),
     totalBudget: 0,
   };
-  const normFile = (e: { fileList?: UploadFile[] } | UploadFile[]) => Array.isArray(e) ? e : e?.fileList;
-  const beforeUpload = (file: File) => {
+  const applicationFiles = Form.useWatch('applicationFiles', form) || [];
+  const evidenceFiles = Form.useWatch('evidenceFiles', form) || [];
+  const materialConfig: Record<ProjectMaterialKind, { label: string; max: number; required: boolean }> = {
+    application: { label: '项目申报书', max: 1, required: true },
+    evidence: { label: '其他证明材料', max: 5, required: false },
+  };
+  const applyRecognizedValues = (
+    recognized: ProjectRecognizedValues,
+    source: string,
+  ) => {
+    const next = recognized as Partial<ProjectFormValues>;
+    form.setFieldsValue(next);
+    const fieldKeys = Object.keys(next);
+    setAiPrefillFields((current) => new Set([...current, ...fieldKeys]));
+    return fieldKeys;
+  };
+
+  const attachAssistantFile = (file: File, kind: ProjectMaterialKind) => {
+    const fieldName = kind === 'application' ? 'applicationFiles' : 'evidenceFiles';
+    const current = form.getFieldValue(fieldName) as UploadFile[] | undefined;
+    const uploadFile: UploadFile = {
+      uid: String((file as File & { uid?: string }).uid || `${file.name}-${file.size}-${file.lastModified}`),
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      status: 'done',
+    };
+    const withoutDuplicate = (current || []).filter((item) => item.uid !== uploadFile.uid && item.name !== uploadFile.name);
+    form.setFieldValue(fieldName, kind === 'application' ? [uploadFile] : [...withoutDuplicate, uploadFile]);
+    form.setFields([{ name: fieldName, errors: [] }]);
+    return kind === 'application' ? '项目申报书' : '其他证明材料';
+  };
+
+  const beforeUpload = async (file: File, attachToForm = false) => {
     if (!/\.(pdf|doc|docx)$/i.test(file.name)) { message.error('上传失败，仅支持PDF、DOC、DOCX类型文件'); return Upload.LIST_IGNORE; }
     if (file.size / 1024 / 1024 > 30) { message.error('上传失败，单文件超过最大限制30M'); return Upload.LIST_IGNORE; }
-    applyAssistantInput(file.name, 'file');
-    message.success('上传成功，医小管已识别并填充可提取的信息'); return false;
+    addMessage({
+      role: 'user',
+      type: 'text',
+      content: `上传文件：${file.name}`,
+      payload: { fileName: file.name, fileSize: file.size },
+    });
+    addMessage({
+      role: 'agent',
+      type: 'detecting',
+      content: `正在解析 ${file.name} 正文…`,
+      payload: { fileName: file.name, fileSize: file.size },
+    });
+    try {
+      const text = await extractProjectFileText(file);
+      const { values, fields } = recognizeProjectText(text, file.name);
+      const materialKind = classifyProjectMaterial(file.name, values);
+      const materialLabel = attachToForm ? attachAssistantFile(file, materialKind) : undefined;
+      const filled = applyRecognizedValues(values, file.name);
+      addMessage({
+        role: 'agent',
+        type: 'file-detect',
+        content: `${materialLabel ? `已自动归入“${materialLabel}”，` : ''}已从文件正文识别并预填 ${filled.length} 个字段。请勾选需要采纳的字段后确认。`,
+        payload: { fileName: file.name, fileSize: file.size, detectedFields: fields },
+      });
+      message.success(`${materialLabel ? `文件已归入“${materialLabel}”，` : ''}医小管已从正文识别并预填 ${filled.length} 个字段`);
+    } catch (error) {
+      const materialLabel = attachToForm
+        ? attachAssistantFile(file, classifyProjectMaterial(file.name))
+        : undefined;
+      addMessage({
+        role: 'agent',
+        type: 'error',
+        content: `${materialLabel ? `文件已自动归入“${materialLabel}”。` : ''}${error instanceof Error ? error.message : '文件正文解析失败，请重试。'}`,
+        payload: { fileName: file.name, errorCode: 'PROJECT_FILE_PARSE_FAILED' },
+      });
+      if (materialLabel) {
+        message.warning(`文件已归入“${materialLabel}”，但正文解析失败`);
+      } else {
+        message.error(error instanceof Error ? error.message : '文件正文解析失败');
+      }
+    }
+    return false;
+  };
+  const beforeMaterialUpload = (file: File) => beforeUpload(file, false);
+  const handleMaterialChange = ({ fileList }: { fileList: UploadFile[] }) => {
+    const config = materialConfig[activeMaterialKind];
+    const validFiles = fileList
+      .filter((file) => /\.(pdf|doc|docx)$/i.test(file.name) && (file.size || 0) <= 30 * 1024 * 1024)
+      .slice(-config.max);
+    const fieldName = activeMaterialKind === 'application' ? 'applicationFiles' : 'evidenceFiles';
+    form.setFieldValue(fieldName, validFiles);
+    if (activeMaterialKind === 'application' && validFiles.length) {
+      form.setFields([{ name: fieldName, errors: [] }]);
+    }
+  };
+
+  const removeMaterialFile = (kind: ProjectMaterialKind, uid: string) => {
+    const fieldName = kind === 'application' ? 'applicationFiles' : 'evidenceFiles';
+    const files = (form.getFieldValue(fieldName) || []) as UploadFile[];
+    form.setFieldValue(fieldName, files.filter((file) => file.uid !== uid));
   };
 
   const applyAssistantInput = (input: string, source: 'text' | 'file' = 'text') => {
-    const current = form.getFieldsValue(true);
-    const cleanName = input.replace(/\.(pdf|docx?)$/i, '').replace(/项目申报书/g, '').trim();
-    const projectName = input.match(/(?:项目名称[：:]?|申报)([^，。；\n]{4,40})/)?.[1]?.trim()
-      || (source === 'file' && cleanName.length >= 4 ? cleanName : undefined);
-    const department = departmentOptions.find((option) => input.includes(String(option.label)))?.value;
-    const track = tracks.find((item) => input.includes(item));
-    const phone = input.match(/1[3-9]\d{9}/)?.[0];
-    const budget = input.match(/(?:预算|经费)[^\d]{0,6}(\d+(?:\.\d+)?)\s*万/)?.[1];
-    const leader = input.match(/(?:项目负责人|负责人)[：:]?\s*([\u4e00-\u9fa5]{2,10})/)?.[1];
-    const contact = input.match(/(?:项目联系人|联系人)[：:]?\s*([\u4e00-\u9fa5]{2,10})/)?.[1];
-    const superiorDepartment = ['数智发展处', '科研处', '临床研究中心', '医务处']
-      .find((item) => input.includes(item));
-    const next: Partial<ProjectFormValues> = {
-      ...(!current.name && projectName ? { name: projectName } : {}),
-      ...(!current.department && department ? { department: String(department) } : {}),
-      ...(!current.superiorDepartment && superiorDepartment ? { superiorDepartment } : {}),
-      ...(!current.track && track ? { track } : {}),
-      ...(!current.leader && leader ? { leader } : {}),
-      ...(!current.contact && contact ? { contact } : {}),
-      ...(!current.phone && phone ? { phone } : {}),
-      ...(!current.totalBudget && budget ? { totalBudget: Number(budget) } : {}),
-      ...(!current.overview && source === 'text' && input.length > 8 ? { overview: input } : {}),
-      ...(source === 'file' && !current.applicationFiles?.length ? {
-        applicationFiles: [{
-          uid: `assistant-${Date.now()}`,
-          name: input,
-          status: 'done',
-        }],
-      } : {}),
-    };
-    if (Object.keys(next).length) {
-      form.setFieldsValue(next);
+    const { values, fields } = recognizeProjectText(input, source === 'file' ? input : undefined);
+    const filled = applyRecognizedValues(values, source);
+    if (filled.length) {
       addMessage({
         role: 'agent',
-        type: 'text',
-        content: `已识别并填充 ${Object.keys(next).length} 个字段。缺失字段可继续在表单中填写，或通过文字、语音、文件补充。`,
+        type: source === 'file' ? 'file-detect' : 'text-detect',
+        content: `已识别并预填 ${filled.length} 个字段，请在智能体窗口勾选确认。`,
+        payload: { fileName: source === 'file' ? input : undefined, detectedFields: fields },
       });
     } else {
       addMessage({ role: 'agent', type: 'text', content: '已收到补充信息。暂未识别出新的字段，请说明项目名称、申报科室、联系人、电话、预算或项目概述等信息。' });
@@ -748,12 +885,24 @@ export function ProjectApplicationForm() {
       },
     );
     const onInput = (event: Event) => {
-      const detail = (event as CustomEvent<{ text?: string; source?: 'text' | 'file' }>).detail;
-      if (detail?.text) applyAssistantInput(detail.text, detail.source);
+      const detail = (event as CustomEvent<{ text?: string; source?: 'text' | 'file'; file?: File }>).detail;
+      if (detail?.file) void beforeUpload(detail.file, true);
+      else if (detail?.text) applyAssistantInput(detail.text, detail.source);
+    };
+    const onAcknowledged = (event: Event) => {
+      const detail = (event as CustomEvent<{ fieldKeys?: string[] }>).detail;
+      if (!detail?.fieldKeys?.length) return;
+      setAiPrefillFields((current) => {
+        const next = new Set(current);
+        detail.fieldKeys?.forEach((key) => next.delete(key));
+        return next;
+      });
     };
     window.addEventListener('project-application-assistant-input', onInput);
+    window.addEventListener('project-application-prefill-acknowledged', onAcknowledged);
     return () => {
       window.removeEventListener('project-application-assistant-input', onInput);
+      window.removeEventListener('project-application-prefill-acknowledged', onAcknowledged);
       consumeWelcome();
     };
   }, [consumeWelcome, currentUser?.roles, pushWelcomeGreeting]);
@@ -805,6 +954,13 @@ export function ProjectApplicationForm() {
   };
 
   const required = { required: true, message: '此项为必填项' };
+  const aiLabel = (fieldKey: string, label: string) => (
+    <Space size={6}>
+      <span>{label}</span>
+      {aiPrefillFields.has(fieldKey) && <Tag color="green" className="project-ai-prefill-tag">AI预填</Tag>}
+    </Space>
+  );
+  const aiClass = (fieldKey: string) => aiPrefillFields.has(fieldKey) ? 'project-ai-prefill-field' : undefined;
   return <div className="project-form-page">
     <PageHeader
       showBack
@@ -820,55 +976,114 @@ export function ProjectApplicationForm() {
       <main className="project-form-main">
         <Form form={form} layout="vertical" initialValues={initialValues} scrollToFirstError requiredMark>
           <Card id="materials" title="① 立项材料上传" style={{ marginBottom: 16 }}>
-            <Row gutter={[20, 16]}>
-              <Col xs={24} md={12}><Form.Item label="项目申报书" name="applicationFiles" valuePropName="fileList" getValueFromEvent={normFile} rules={[required]}>
-                <Upload.Dragger accept=".pdf,.doc,.docx" beforeUpload={beforeUpload} maxCount={1} className="project-upload-compact">
-                  <p className="ant-upload-drag-icon"><FilePdfOutlined /></p>
-                  <p className="ant-upload-text">点击或拖拽项目申报书</p>
-                  <p className="ant-upload-hint">支持 PDF、DOC、DOCX · 必填 · 单文件 ≤ 30M · 限 1 份</p>
-                </Upload.Dragger>
-              </Form.Item></Col>
-              <Col xs={24} md={12}><Form.Item label="其他证明材料" name="evidenceFiles" valuePropName="fileList" getValueFromEvent={normFile}>
-                <Upload.Dragger beforeUpload={beforeUpload} multiple className="project-upload-compact">
-                  <p className="ant-upload-drag-icon"><UploadOutlined /></p>
-                  <p className="ant-upload-text">点击或拖拽 PDF（其他证明材料）</p>
-                  <p className="ant-upload-hint">选填 · 单文件 ≤ 30M · 支持多份</p>
-                </Upload.Dragger>
-              </Form.Item></Col>
-            </Row>
+            <Form.Item name="applicationFiles" rules={[{ required: true, message: '请上传项目申报书' }]} hidden>
+              <Input />
+            </Form.Item>
+            <Form.Item name="evidenceFiles" hidden><Input /></Form.Item>
+            <div className="project-material-switcher">
+              <Text type="secondary" className="project-material-switcher-label">当前上传至：</Text>
+              {(['application', 'evidence'] as ProjectMaterialKind[]).map((kind) => {
+                const config = materialConfig[kind];
+                const count = kind === 'application' ? applicationFiles.length : evidenceFiles.length;
+                return (
+                  <Tag.CheckableTag
+                    key={kind}
+                    checked={activeMaterialKind === kind}
+                    onChange={(checked) => checked && setActiveMaterialKind(kind)}
+                    className="project-material-category"
+                  >
+                    {config.label}
+                    {config.required && <span className="project-material-required">*</span>}
+                    <span className="project-material-count">{count}/{config.max}份</span>
+                  </Tag.CheckableTag>
+                );
+              })}
+            </div>
+            <Upload.Dragger
+              accept=".pdf,.doc,.docx"
+              multiple={materialConfig[activeMaterialKind].max > 1}
+              beforeUpload={beforeMaterialUpload}
+              onChange={handleMaterialChange}
+              fileList={activeMaterialKind === 'application' ? applicationFiles : evidenceFiles}
+              showUploadList={false}
+              className="project-upload-unified"
+            >
+              <p className="ant-upload-drag-icon"><CloudUploadOutlined /></p>
+              <p className="ant-upload-text">
+                点击或拖拽文件（{materialConfig[activeMaterialKind].label}）
+              </p>
+              <p className="ant-upload-hint">
+                支持 PDF、DOC、DOCX · {materialConfig[activeMaterialKind].required ? '必填' : '选填'} · 单文件 ≤ 30M ·
+                {materialConfig[activeMaterialKind].max === 1 ? ' 限 1 份' : ` 最多 ${materialConfig[activeMaterialKind].max} 份`}
+              </p>
+            </Upload.Dragger>
+            <div className="project-material-files">
+              {(['application', 'evidence'] as ProjectMaterialKind[]).map((kind) => {
+                const files = kind === 'application' ? applicationFiles : evidenceFiles;
+                if (!files.length) return null;
+                return (
+                  <div key={kind} className="project-material-file-group">
+                    <Text type="secondary" className="project-material-file-label">
+                      {materialConfig[kind].label}（{files.length}/{materialConfig[kind].max}）：
+                    </Text>
+                    {files.map((file) => (
+                      <Tag
+                        key={file.uid}
+                        color="blue"
+                        closable
+                        onClose={(event) => {
+                          event.preventDefault();
+                          removeMaterialFile(kind, file.uid);
+                        }}
+                      >
+                        {file.name}
+                      </Tag>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
             <Space direction="vertical" size={4}>
-              <Button icon={<DownloadOutlined />} onClick={() => message.success('项目申报书模板已开始下载')}>模板下载</Button>
-              <Text type="secondary" style={{ fontSize: 12 }}>限定 PDF 格式 · 单文件不超过 30M · 支持多文件上传</Text>
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={() => {
+                  downloadProjectApplicationTemplate();
+                  message.success('项目申报书模板已开始下载');
+                }}
+              >
+                模板下载
+              </Button>
+              <Text type="secondary" style={{ fontSize: 12 }}>支持 PDF、DOC、DOCX · 单文件不超过 30M</Text>
             </Space>
           </Card>
 
           <Card id="basic" title="② 项目基本信息" style={{ marginBottom: 16 }}>
             <Row gutter={16}>
-              <Col xs={24} lg={12}><Form.Item label="项目名称" name="name" rules={[required, { min: 2, max: 50 }]}><Input showCount maxLength={50} placeholder="请输入 2-50 个字符的项目名称" /></Form.Item></Col>
-              <Col xs={24} lg={12}><Form.Item label="申报赛道" name="track" rules={[required]}><Radio.Group className="project-option-buttons" options={tracks} optionType="button" buttonStyle="solid" /></Form.Item></Col>
-              <Col xs={24} sm={12}><Form.Item label="申报科室" name="department" rules={[required]}><Select showSearch options={departmentOptions} placeholder="请选择申报科室" /></Form.Item></Col>
-              <Col xs={24} sm={12}><Form.Item label="上级部门" name="superiorDepartment" rules={[required]}><Select options={['数智发展处', '科研处', '临床研究中心', '医务处'].map((v) => ({ label: v, value: v }))} placeholder="请选择上级部门" /></Form.Item></Col>
-              <Col xs={24} sm={8}><Form.Item label="项目负责人" name="leader" rules={[required, { min: 2, max: 10 }]}><Input showCount maxLength={10} placeholder="请输入姓名" /></Form.Item></Col>
-              <Col xs={24} sm={8}><Form.Item label="项目联系人" name="contact" rules={[required, { min: 2, max: 10 }]}><Input showCount maxLength={10} placeholder="请输入姓名" /></Form.Item></Col>
-              <Col xs={24} sm={8}><Form.Item label="联系方式" name="phone" rules={[required, { pattern: /^1\d{10}$/, message: '请输入正确的11位手机号' }]}><Input maxLength={11} placeholder="11 位手机号" /></Form.Item></Col>
-              <Col span={24}><Form.Item label="希望获得的支持" name="supports" rules={[required]}><Select mode="multiple" allowClear showSearch options={supportOptions.map((value) => ({ label: value, value }))} placeholder="请选择希望获得的支持（可多选）" /></Form.Item></Col>
+              <Col xs={24} lg={12}><Form.Item className={aiClass('name')} label={aiLabel('name', '项目名称')} name="name" rules={[required, { min: 2, max: 50 }]}><Input showCount maxLength={50} placeholder="请输入 2-50 个字符的项目名称" /></Form.Item></Col>
+              <Col xs={24} lg={12}><Form.Item className={aiClass('track')} label={aiLabel('track', '申报赛道')} name="track" rules={[required]}><Radio.Group className="project-option-buttons" options={tracks} optionType="button" buttonStyle="solid" /></Form.Item></Col>
+              <Col xs={24} sm={12}><Form.Item className={aiClass('department')} label={aiLabel('department', '申报科室')} name="department" rules={[required]}><Select showSearch options={departmentOptions} placeholder="请选择申报科室" /></Form.Item></Col>
+              <Col xs={24} sm={12}><Form.Item className={aiClass('superiorDepartment')} label={aiLabel('superiorDepartment', '上级部门')} name="superiorDepartment" rules={[required]}><Select options={['数智发展处', '科研处', '临床研究中心', '医务处'].map((v) => ({ label: v, value: v }))} placeholder="请选择上级部门" /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item className={aiClass('leader')} label={aiLabel('leader', '项目负责人')} name="leader" rules={[required, { min: 2, max: 10 }]}><Input showCount maxLength={10} placeholder="请输入姓名" /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item className={aiClass('contact')} label={aiLabel('contact', '项目联系人')} name="contact" rules={[required, { min: 2, max: 10 }]}><Input showCount maxLength={10} placeholder="请输入姓名" /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item className={aiClass('phone')} label={aiLabel('phone', '联系方式')} name="phone" rules={[required, { pattern: /^1\d{10}$/, message: '请输入正确的11位手机号' }]}><Input maxLength={11} placeholder="11 位手机号" /></Form.Item></Col>
+              <Col span={24}><Form.Item className={aiClass('supports')} label={aiLabel('supports', '希望获得的支持')} name="supports" rules={[required]}><Select mode="multiple" allowClear showSearch options={supportOptions.map((value) => ({ label: value, value }))} placeholder="请选择希望获得的支持（可多选）" /></Form.Item></Col>
             </Row>
           </Card>
 
           <Card id="content" title="③ 项目内容信息" style={{ marginBottom: 16 }}>
             <Row gutter={[16, 0]}>
-              <Col span={24}><Form.Item label="项目概述" name="overview" rules={[required]}><TextArea rows={4} showCount maxLength={300} placeholder="说明立项背景、项目目标、技术方案与预期成效" /></Form.Item></Col>
-              <Col span={24}><Form.Item label="项目解决的痛点" name="painPoints" rules={[required]}><TextArea rows={4} showCount maxLength={200} placeholder="描述项目拟解决的效率、成本、质量或流程问题" /></Form.Item></Col>
-              <Col xs={24} lg={12}><Form.Item label="项目运用的核心技术" name="technologies" rules={[required]}><Select mode="multiple" allowClear showSearch maxTagCount="responsive" options={technologyOptions.map((value) => ({ label: value, value }))} placeholder="请选择核心技术（可多选）" /></Form.Item></Col>
-              <Col xs={24} lg={12}><Form.Item label="项目运用的大模型" name="models" rules={[required]}><Select mode="multiple" allowClear showSearch maxTagCount="responsive" options={modelOptions.map((value) => ({ label: value, value }))} placeholder="请选择大模型（可多选）" /></Form.Item></Col>
-              <Col span={24}><Form.Item label="项目完成形式" name="deliverables" rules={[required]}><TextArea rows={4} placeholder="说明智能体、知识库、模型训练等具体产出物" /></Form.Item></Col>
+              <Col span={24}><Form.Item className={aiClass('overview')} label={aiLabel('overview', '项目概述')} name="overview" rules={[required]}><TextArea rows={4} showCount maxLength={300} placeholder="说明立项背景、项目目标、技术方案与预期成效" /></Form.Item></Col>
+              <Col span={24}><Form.Item className={aiClass('painPoints')} label={aiLabel('painPoints', '项目解决的痛点')} name="painPoints" rules={[required]}><TextArea rows={4} showCount maxLength={200} placeholder="描述项目拟解决的效率、成本、质量或流程问题" /></Form.Item></Col>
+              <Col xs={24} lg={12}><Form.Item className={aiClass('technologies')} label={aiLabel('technologies', '项目运用的核心技术')} name="technologies" rules={[required]}><Select mode="multiple" allowClear showSearch maxTagCount="responsive" options={technologyOptions.map((value) => ({ label: value, value }))} placeholder="请选择核心技术（可多选）" /></Form.Item></Col>
+              <Col xs={24} lg={12}><Form.Item className={aiClass('models')} label={aiLabel('models', '项目运用的大模型')} name="models" rules={[required]}><Select mode="multiple" allowClear showSearch maxTagCount="responsive" options={modelOptions.map((value) => ({ label: value, value }))} placeholder="请选择大模型（可多选）" /></Form.Item></Col>
+              <Col span={24}><Form.Item className={aiClass('deliverables')} label={aiLabel('deliverables', '项目完成形式')} name="deliverables" rules={[required]}><TextArea rows={4} placeholder="说明智能体、知识库、模型训练等具体产出物" /></Form.Item></Col>
               <Col span={24}>
-                <div className="project-indicators">
-                  <div className="project-indicators-title"><span className="project-required-mark">*</span>考核指标</div>
-                  <div className="project-indicators-hint">请按以下 4 个维度填写，每个维度支持添加多条指标</div>
+                <div className={`project-indicators ${aiPrefillFields.has('assessmentIndicators') ? 'project-ai-prefill-field' : ''}`}>
+                  <div className="project-indicators-title"><span className="project-required-mark">*</span>{aiLabel('assessmentIndicators', '考核指标')}</div>
+                  <div className="project-indicators-hint">请按以下 3 个维度填写，每个维度支持添加多条指标</div>
                   <Row gutter={[16, 16]}>
                     {indicatorDimensions.map((dimension) => (
-                      <Col xs={24} xl={12} key={dimension.key}>
+                      <Col xs={24} lg={8} key={dimension.key}>
                         <div className="project-indicator-dimension">
                           <div className="project-indicator-dimension-title">{dimension.title}</div>
                           <Form.List name={['assessmentIndicators', dimension.key]}>
@@ -877,17 +1092,23 @@ export function ProjectApplicationForm() {
                                 {fields.map((field, index) => (
                                   <div className="project-indicator-row" key={field.key}>
                                     <Form.Item
-                                      {...field}
-                                      name={[field.name, 'content']}
-                                      rules={[{ required: true, whitespace: true, message: `请填写${dimension.title}指标` }]}
+                                      name={[field.name, 'name']}
+                                      rules={[{ required: true, whitespace: true, message: '请填写指标名称' }]}
                                       style={{ flex: 1, marginBottom: 0 }}
                                     >
-                                      <Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} placeholder={dimension.placeholder} />
+                                      <Input placeholder="指标名称" aria-label={`${dimension.title}指标名称${index + 1}`} />
+                                    </Form.Item>
+                                    <Form.Item
+                                      name={[field.name, 'targetValue']}
+                                      rules={[{ required: true, whitespace: true, message: '请填写需达成目标值' }]}
+                                      style={{ flex: 1, marginBottom: 0 }}
+                                    >
+                                      <Input placeholder="需达成目标值" aria-label={`${dimension.title}需达成目标值${index + 1}`} />
                                     </Form.Item>
                                     <Button type="text" danger icon={<DeleteOutlined />} aria-label={`删除${dimension.title}指标`} disabled={fields.length === 1} onClick={() => remove(field.name)} />
                                   </div>
                                 ))}
-                                <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({ content: '' })}>添加{dimension.title}指标</Button>
+                                <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({ name: '', targetValue: '' })}>添加{dimension.title}指标</Button>
                               </Space>
                             )}
                           </Form.List>
@@ -902,8 +1123,9 @@ export function ProjectApplicationForm() {
 
           <Card id="budget" title="④ 项目经费预算" style={{ marginBottom: 16 }}>
             <Row gutter={16}>
-              <Col xs={24} sm={12} lg={8}><Form.Item label="已有经费来源合计" name="totalBudget" rules={[required]}><InputNumber min={0} precision={2} addonAfter="万元" style={{ width: '100%' }} /></Form.Item></Col>
-              <Col span={24}><Form.Item label="具体来源明细" name="fundingDetail" rules={[required]}><TextArea rows={3} placeholder="例如：医院资助 20 万元；其他渠道资助 10 万元" /></Form.Item></Col>
+              <Col xs={24} sm={12} lg={8}><Form.Item className={aiClass('totalBudget')} label={aiLabel('totalBudget', '已有经费来源合计')} name="totalBudget" rules={[required]}><InputNumber min={0} precision={2} addonAfter="万元" style={{ width: '100%' }} /></Form.Item></Col>
+              <Col span={24}><Form.Item className={aiClass('fundingDetail')} label={aiLabel('fundingDetail', '具体来源明细')} name="fundingDetail" rules={[required]}><TextArea rows={3} placeholder="例如：医院资助 20 万元；其他渠道资助 10 万元" /></Form.Item></Col>
+              <Col span={24}><Form.Item className={aiClass('spendingDetail')} label={aiLabel('spendingDetail', '具体使用明细')} name="spendingDetail" rules={[required]}><TextArea rows={3} placeholder="请填写软硬件购置、研发设计、系统集成等费用明细" /></Form.Item></Col>
             </Row>
           </Card>
 
@@ -927,10 +1149,82 @@ export function ProjectApplicationForm() {
 }
 
 function RecordContent({ record }: { record: ProjectRecord }) {
+  const [applicationPreviewOpen, setApplicationPreviewOpen] = useState(false);
   return <Space direction="vertical" size={16} style={{ width: '100%' }}>
     <Card title="立项材料" bordered={false}>
-      <Space direction="vertical">{record.files.map((file) => <Space key={file}><FilePdfOutlined style={{ color: '#ff4d4f' }} /><Button type="link" onClick={() => message.info(`正在预览：${file}`)}>{file}</Button><Button type="link" icon={<DownloadOutlined />} onClick={() => void downloadApplication(record, file)}>下载</Button></Space>)}</Space>
+      <Space direction="vertical">
+        {record.files.map((file, index) => {
+          const isApplication = index === 0;
+          return (
+            <Space key={`${file}-${index}`}>
+              {isApplication
+                ? <FileWordOutlined style={{ color: '#1677ff' }} />
+                : <FilePdfOutlined style={{ color: '#ff4d4f' }} />}
+              <Button
+                type="link"
+                onClick={() => {
+                  if (isApplication) setApplicationPreviewOpen(true);
+                  else message.info(`正在预览：${file}`);
+                }}
+              >
+                {file}
+              </Button>
+              <Button
+                type="link"
+                icon={<EyeOutlined />}
+                onClick={() => {
+                  if (isApplication) setApplicationPreviewOpen(true);
+                  else message.info(`正在预览：${file}`);
+                }}
+              >
+                预览
+              </Button>
+              <Button
+                type="link"
+                icon={<DownloadOutlined />}
+                onClick={() => {
+                  if (isApplication) {
+                    downloadProjectApplicationTemplate();
+                    message.success('项目申报书已开始下载');
+                  } else {
+                    void downloadApplication(record, file);
+                  }
+                }}
+              >
+                下载
+              </Button>
+            </Space>
+          );
+        })}
+      </Space>
     </Card>
+    <Modal
+      title="项目申报书预览"
+      open={applicationPreviewOpen}
+      onCancel={() => setApplicationPreviewOpen(false)}
+      width="min(1000px, 92vw)"
+      styles={{ body: { height: '72vh', padding: 0, background: '#f0f2f5' } }}
+      footer={[
+        <Button key="close" onClick={() => setApplicationPreviewOpen(false)}>关闭</Button>,
+        <Button
+          key="download"
+          type="primary"
+          icon={<DownloadOutlined />}
+          onClick={() => {
+            downloadProjectApplicationTemplate();
+            message.success('项目申报书已开始下载');
+          }}
+        >
+          下载项目申报书
+        </Button>,
+      ]}
+    >
+      <iframe
+        title="市一人工智能体工程建设方案申报书预览"
+        src={PROJECT_APPLICATION_TEMPLATE_PREVIEW_URL}
+        style={{ width: '100%', height: '100%', border: 0, background: '#fff' }}
+      />
+    </Modal>
     <Card title="项目基本信息" bordered={false}><Descriptions column={3} labelStyle={{ color: '#8c8c8c' }}>
       <Descriptions.Item label="项目名称" span={2}>{record.name}</Descriptions.Item><Descriptions.Item label="立项状态"><Tag color={statusColor[record.status]}>{record.status}</Tag></Descriptions.Item>
       <Descriptions.Item label="申报科室">{record.department}</Descriptions.Item><Descriptions.Item label="上级部门">{record.superiorDepartment}</Descriptions.Item><Descriptions.Item label="申报赛道">{record.track}</Descriptions.Item>
@@ -947,8 +1241,8 @@ function RecordContent({ record }: { record: ProjectRecord }) {
             {indicatorDimensions.map(({ key, title }) => (
               <div key={key}>
                 <Text strong>{title}：</Text>
-                {record.assessmentIndicators?.[key].map((item, index) => (
-                  <div key={`${key}-${index}`}>{index + 1}. {item.content}</div>
+                {normalizeAssessmentIndicators(record.assessmentIndicators)[key].map((item, index) => (
+                  <div key={`${key}-${index}`}>{index + 1}. {item.name}：{item.targetValue || '--'}</div>
                 ))}
               </div>
             ))}
@@ -971,9 +1265,8 @@ export function ProjectApplicationDetail() {
   useEffect(() => {
     if (!record) return undefined;
     const onDownload = () => {
-      void downloadApplication(record, record.files[0])
-        .then(() => message.success('项目申报书已开始下载'))
-        .catch(() => message.error('项目申报书下载失败，请稍后重试'));
+      downloadProjectApplicationTemplate();
+      message.success('项目申报书已开始下载');
     };
     window.addEventListener('project-application-download', onDownload);
     pushWelcomeGreeting(

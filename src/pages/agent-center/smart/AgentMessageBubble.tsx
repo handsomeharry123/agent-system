@@ -96,6 +96,33 @@ const APPLY_FIELD_LABELS: Record<string, string> = {
   reason: '申请理由',
 };
 
+const PROJECT_FIELD_LABELS: Record<string, string> = {
+  name: '项目名称',
+  department: '申报科室',
+  superiorDepartment: '上级部门',
+  track: '申报赛道',
+  leader: '项目负责人',
+  contact: '项目联系人',
+  phone: '联系方式',
+  supports: '希望获得的支持',
+  overview: '项目概述',
+  painPoints: '项目解决的痛点',
+  technologies: '项目运用的核心技术',
+  models: '项目运用的大模型',
+  deliverables: '项目完成形式',
+  assessmentIndicators: '考核指标',
+  totalBudget: '已有经费来源合计',
+  fundingDetail: '具体来源明细',
+  spendingDetail: '具体使用明细',
+};
+
+const AUDIT_PROJECT_FIELD_LABELS: Record<string, string> = {
+  completion: '完成度',
+  completionNote: '建设完成情况说明',
+  used: '已使用金额',
+  fundDetail: '资金使用明细',
+};
+
 const isNeedDetectedFields = (fields?: Array<{ fieldKey: string }>) =>
   Boolean(fields?.some((field) => ['reason', 'proposer', 'resources', 'urgency'].includes(field.fieldKey)));
 
@@ -106,6 +133,12 @@ const getDetectedFieldLabel = (
   fieldKey: string,
   fields?: Array<{ fieldKey: string; value?: string }>,
 ) => {
+  if (fields?.some((field) => ['completion', 'completionNote', 'used', 'fundDetail'].includes(field.fieldKey))) {
+    return AUDIT_PROJECT_FIELD_LABELS[fieldKey] || fieldKey;
+  }
+  if (fields?.some((field) => ['superiorDepartment', 'leader', 'fundingDetail', 'spendingDetail'].includes(field.fieldKey))) {
+    return PROJECT_FIELD_LABELS[fieldKey] || fieldKey;
+  }
   if (fields?.some((field) => field.fieldKey === 'agentId' || field.fieldKey === 'resourceIds')) {
     return APPLY_FIELD_LABELS[fieldKey] || fieldKey;
   }
@@ -376,6 +409,8 @@ const AgentMessageBubble = ({
   const isProjectApplicationDraftWelcome = msg.id.startsWith('__welcome__:project-application-draft:');
   const isProjectApplicationReviewingWelcome = msg.id.startsWith('__welcome__:project-application-reviewing:');
   const isProjectApplicationRevokedWelcome = msg.id.startsWith('__welcome__:project-application-revoked:');
+  const isProjectApplicationPassedWelcome = msg.id.startsWith('__welcome__:project-application-passed:');
+  const isProjectApplicationRejectedWelcome = msg.id.startsWith('__welcome__:project-application-rejected:');
   const isResourceDraftWelcome = msg.id.startsWith('__welcome__:resource-center-draft:');
   const isResourceApplyDraftWelcome = msg.id.startsWith('__welcome__:resource-apply-draft:');
   const isResourceApplyReviewingWelcome = msg.id.startsWith('__welcome__:resource-apply-reviewing:');
@@ -390,14 +425,17 @@ const AgentMessageBubble = ({
   const isAuditProjectReviewingWelcome = msg.id.startsWith('__welcome__:audit-project-reviewing:');
   const isAuditProjectRevokedWelcome = msg.id.startsWith('__welcome__:audit-project-revoked:');
   const isAuditProjectPassedWelcome = msg.id.startsWith('__welcome__:audit-project-passed:');
+  const isAuditProjectRejectedWelcome = msg.id.startsWith('__welcome__:audit-project-rejected:');
   const isDirectExpandedDraftWelcome = isNeedDraftWelcome || isProjectApplicationDraftWelcome ||
     isProjectApplicationReviewingWelcome || isProjectApplicationRevokedWelcome ||
+    isProjectApplicationPassedWelcome || isProjectApplicationRejectedWelcome ||
     isResourceDraftWelcome ||
     isResourceApplyDraftWelcome || isResourceApplyReviewingWelcome || isResourceApplyPendingWelcome ||
     isResourceApplyRevokedWelcome || isResourceApplyApprovedWelcome || isResourceApplyRejectedWelcome ||
     isAuditProjectWelcome || isAuditProjectApplicationWelcome ||
     isAuditProjectDraftWelcome || isAuditProjectPendingWelcome ||
-    isAuditProjectReviewingWelcome || isAuditProjectRevokedWelcome || isAuditProjectPassedWelcome;
+    isAuditProjectReviewingWelcome || isAuditProjectRevokedWelcome ||
+    isAuditProjectPassedWelcome || isAuditProjectRejectedWelcome;
   // 建设需求、资源注册草稿及立项清单欢迎语要求列表直接呈现在欢迎语下方；其他场景仍保持折叠，
   // 避免较长的状态清单挤占对话窗口。
   const [welcomeMiniExpanded, setWelcomeMiniExpanded] = useState(
@@ -972,6 +1010,37 @@ const AgentMessageBubble = ({
               onClick={() => window.dispatchEvent(new Event('agent-register-confirm-submit'))}
             >
               确认提交
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    case 'audit-submit-confirm': {
+      return (
+        <div style={wrap}>
+          <div
+            data-testid="audit-submit-confirm-msg"
+            style={{
+              ...bubble,
+              borderColor: '#91CAFF',
+              background: 'linear-gradient(90deg,#F0F8FF 0%,#FFFFFF 100%)',
+            }}
+          >
+            <Space size={6} style={{ marginBottom: 6 }}>
+              <CheckCircleOutlined style={{ color: '#52C41A' }} />
+              <Tag color="success">信息完整 · 材料齐全</Tag>
+            </Space>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+              {msg.content}
+            </div>
+            <Button
+              type="primary"
+              size="small"
+              icon={<RocketOutlined />}
+              onClick={() => window.dispatchEvent(new Event('audit-project-confirm-submit'))}
+            >
+              提交审计
             </Button>
           </div>
         </div>
