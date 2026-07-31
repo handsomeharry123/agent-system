@@ -46,7 +46,6 @@ import {
   ToolOutlined,
   ThunderboltOutlined,
   WalletOutlined,
-  UploadOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { MenuProps } from 'antd';
