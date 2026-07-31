@@ -837,7 +837,8 @@ const LedgerList = () => {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                             <Avatar
                               className="ledger-agent-avatar"
-                              size={56}
+                              shape="square"
+                              size={64}
                               src={getAgentAvatarImage(agent)}
                               icon={avatar.icon}
                               style={{

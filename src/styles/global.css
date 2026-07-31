@@ -1466,12 +1466,38 @@ body[data-app-theme='tech'] ::-webkit-scrollbar-track { background: transparent;
 }
 
 .ledger-agent-avatar {
+  overflow: hidden !important;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 17px !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 7px 16px rgba(22, 119, 255, 0.16) !important;
   transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 260ms ease;
 }
 
 .ledger-agent-card:hover .ledger-agent-avatar {
-  transform: scale(1.08) rotate(-3deg);
-  box-shadow: 0 10px 24px rgba(22, 119, 255, 0.28) !important;
+  transform: translateY(-2px) scale(1.06) rotate(-2deg);
+  filter: drop-shadow(0 8px 10px rgba(22, 119, 255, 0.18));
+}
+
+.ledger-agent-card.is-selected .ledger-agent-avatar {
+  animation: ledgerAvatarSelected 1.8s ease-in-out infinite;
+}
+
+@keyframes ledgerAvatarSelected {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.45),
+      0 7px 16px rgba(22, 119, 255, 0.16);
+  }
+  50% {
+    transform: translateY(-3px) scale(1.055);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.58),
+      0 11px 24px rgba(22, 119, 255, 0.28);
+  }
 }
 
 .ledger-agent-keywords {

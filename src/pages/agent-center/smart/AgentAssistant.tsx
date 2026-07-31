@@ -1192,7 +1192,7 @@ const AgentAssistant = () => {
         return false;
       }
       window.dispatchEvent(new CustomEvent('audit-project-material-uploaded', {
-        detail: { fileName: file.name, fileSize: size, file },
+        detail: { fileName: file.name, fileSize: size, file, source: 'assistant' },
       }));
       runRecognitionFlow(() => recognizeAuditProjectFile(file.name), {
         fileName: file.name,
@@ -1315,8 +1315,13 @@ const AgentAssistant = () => {
 
   useEffect(() => {
     const onAuditMaterialUploaded = (event: Event) => {
-      const detail = (event as CustomEvent<{ fileName?: string; fileSize?: number }>).detail;
-      if (!detail?.fileName) return;
+      const detail = (event as CustomEvent<{
+        fileName?: string;
+        fileSize?: number;
+        source?: 'form' | 'assistant';
+      }>).detail;
+      // 医小管入口已在 handleUpload 中启动识别，只监听表单上传，避免生成两份识别结果。
+      if (!detail?.fileName || detail.source === 'assistant') return;
       addMessage({
         role: 'user',
         type: 'text',

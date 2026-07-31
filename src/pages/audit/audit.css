@@ -392,9 +392,9 @@
 
 .audit-ai-control {
   padding: 14px;
-  border: 1px solid #c9ecd3;
+  border: 1px solid #b7eb8f;
   border-radius: 8px;
-  background: #f2fbf5;
+  background: #f6ffed;
 }
 
 .audit-ai-field-label {
@@ -404,15 +404,22 @@
   margin-bottom: 10px;
 }
 
+.audit-ai-preaudit-tag {
+  margin-inline-start: 2px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .audit-ai-review-textarea.ant-input {
-  border-color: #9fdbb0;
-  background: #f2fbf5;
+  border-color: #95de64;
+  background: #fcfff8;
 }
 
 .audit-ai-review-textarea.ant-input:hover,
 .audit-ai-review-textarea.ant-input:focus {
-  border-color: #52b975;
-  background: #f7fff9;
+  border-color: #73d13d;
+  background: #fcfff8;
 }
 
 .audit-ai-notice {

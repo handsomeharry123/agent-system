@@ -1,8 +1,11 @@
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&inline';
 import type { DetectedField } from '../agent-center/smart/types';
 
-GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+// 将 worker 打进应用 bundle，以 Blob URL 启动。线上 CDN 对独立的 .mjs worker
+// 支持不一致时，使用 ?url 会触发 PDF.js 的 fake worker 回退，并再次动态导入
+// 同一个不可用资源，最终导致所有 PDF 识别失败。
+GlobalWorkerOptions.workerPort = new PdfWorker();
 
 export type ProjectRecognizedValues = {
   name?: string;
@@ -160,14 +163,20 @@ export async function extractProjectFileText(file: File) {
     throw new Error('当前浏览器端完整正文识别仅支持 PDF，请将 DOC/DOCX 转为 PDF 后重试');
   }
   const data = new Uint8Array(await file.arrayBuffer());
-  const pdf = await getDocument({ data }).promise;
-  const pages: string[] = [];
-  for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
-    const page = await pdf.getPage(pageNo);
-    const content = await page.getTextContent();
-    pages.push(content.items.map((item) => ('str' in item ? item.str : '')).join(' '));
+  const loadingTask = getDocument({ data });
+  const pdf = await loadingTask.promise;
+  try {
+    const pages: string[] = [];
+    for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
+      const page = await pdf.getPage(pageNo);
+      const content = await page.getTextContent();
+      pages.push(content.items.map((item) => ('str' in item ? item.str : '')).join(' '));
+      page.cleanup();
+    }
+    return normalize(pages.join('\n'));
+  } finally {
+    await pdf.destroy();
   }
-  return normalize(pages.join('\n'));
 }
 
 export function recognizeProjectText(text: string, fileName?: string) {

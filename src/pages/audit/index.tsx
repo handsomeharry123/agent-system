@@ -44,6 +44,7 @@ import {
   RobotOutlined,
   SearchOutlined,
   ToolOutlined,
+  ThunderboltFilled,
   ThunderboltOutlined,
   WalletOutlined,
 } from '@ant-design/icons';
@@ -61,12 +62,22 @@ const { RangePicker } = DatePicker;
 type AuditSection = 'economic' | 'project' | 'behavior' | 'logs';
 
 const departments = ['全部科室', '0301 心内科', '0302 影像科', '0303 药剂科', '0304 医务科'];
+const MARKET_TOKEN_PRICE_PER_TOKEN = 1.8 / 1_000_000;
+const TOTAL_INVESTMENT_BUDGET_IN_TEN_THOUSAND_YUAN = 2780;
+const CURRENT_MONTH_TOKEN_CONSUMPTION = 70_466_667;
+const calculateTokenCost = (tokens: number) => tokens * MARKET_TOKEN_PRICE_PER_TOKEN;
+const calculateInvestmentRatio = (tokenCost: number, budgetInTenThousandYuan: number) => (
+  budgetInTenThousandYuan > 0 ? (tokenCost / (budgetInTenThousandYuan * 10_000)) * 100 : 0
+);
 const economicRows = [
-  { key: '1', id: '0301-0007', name: '心血管疾病智能随访助手', version: 'V2.1', dept: '0301 心内科', budget: 180, tokens: 3284000, cost: 5.91, ratio: 30456.85, updated: '2026-07-28 09:42:16' },
-  { key: '2', id: '0302-0012', name: '胸部CT影像智能分析平台', version: 'V3.0', dept: '0302 影像科', budget: 320, tokens: 8926000, cost: 16.07, ratio: 19912.88, updated: '2026-07-28 09:39:05' },
-  { key: '3', id: '0303-0004', name: '合理用药智能审核助手', version: 'V1.8', dept: '0303 药剂科', budget: 95, tokens: 2145000, cost: 3.86, ratio: 24611.40, updated: '2026-07-28 09:35:32' },
-  { key: '4', id: '0304-0009', name: '病案首页智能质控智能体', version: 'V2.4', dept: '0304 医务科', budget: 150, tokens: 4762000, cost: 8.57, ratio: 17502.92, updated: '2026-07-28 09:31:48' },
-];
+  { key: '1', id: '0301-0007', name: '心血管疾病智能随访助手', version: 'V2.1', dept: '0301 心内科', budget: 180, tokens: 3284000, updated: '2026-07-28 09:42:16' },
+  { key: '2', id: '0302-0012', name: '胸部CT影像智能分析平台', version: 'V3.0', dept: '0302 影像科', budget: 320, tokens: 8926000, updated: '2026-07-28 09:39:05' },
+  { key: '3', id: '0303-0004', name: '合理用药智能审核助手', version: 'V1.8', dept: '0303 药剂科', budget: 95, tokens: 2145000, updated: '2026-07-28 09:35:32' },
+  { key: '4', id: '0304-0009', name: '病案首页智能质控智能体', version: 'V2.4', dept: '0304 医务科', budget: 150, tokens: 4762000, updated: '2026-07-28 09:31:48' },
+].map((row) => {
+  const cost = calculateTokenCost(row.tokens);
+  return { ...row, cost, ratio: calculateInvestmentRatio(cost, row.budget) };
+});
 
 type ProjectStatus = '待申请' | '草稿' | '待审计' | '审计中' | '撤销修改' | '审计通过' | '审计不通过';
 const statusColor: Record<ProjectStatus, string> = {
@@ -178,6 +189,11 @@ function EconomicAudit() {
   const [dept, setDept] = useState('全部科室');
   const [selected, setSelected] = useState<React.Key[]>([]);
   const data = economicRows.filter((r) => dept === '全部科室' || r.dept === dept);
+  const currentMonthTokenCost = calculateTokenCost(CURRENT_MONTH_TOKEN_CONSUMPTION);
+  const overallInvestmentRatio = calculateInvestmentRatio(
+    currentMonthTokenCost,
+    TOTAL_INVESTMENT_BUDGET_IN_TEN_THOUSAND_YUAN,
+  );
   const columns: ColumnsType<(typeof economicRows)[number]> = [
     { title: '智能体编号', dataIndex: 'id', width: 120, fixed: 'left' },
     { title: '智能体名称', dataIndex: 'name', width: 190, ellipsis: true },
@@ -186,7 +202,7 @@ function EconomicAudit() {
     { title: '投资预算金额', dataIndex: 'budget', width: 145, sorter: (a, b) => a.budget - b.budget, render: (v) => `${v.toFixed(2)} 万元` },
     { title: 'Token 消耗量', dataIndex: 'tokens', width: 145, sorter: (a, b) => a.tokens - b.tokens, render: (v) => v.toLocaleString() },
     { title: 'Token 使用金额', dataIndex: 'cost', width: 150, sorter: (a, b) => a.cost - b.cost, render: (v) => `¥ ${v.toFixed(2)}` },
-    { title: '投入产出比', dataIndex: 'ratio', width: 130, sorter: (a, b) => a.ratio - b.ratio, render: (v) => <Text strong>{v.toLocaleString()}%</Text> },
+    { title: '投入产出比', dataIndex: 'ratio', width: 150, sorter: (a, b) => a.ratio - b.ratio, render: (v) => <Text strong>{v.toFixed(6)}%</Text> },
     { title: '最后更新时间', dataIndex: 'updated', width: 175 },
   ];
   const metrics = [
@@ -201,7 +217,7 @@ function EconomicAudit() {
     {
       key: 'budget',
       title: '总投资预算',
-      value: 2780,
+      value: TOTAL_INVESTMENT_BUDGET_IN_TEN_THOUSAND_YUAN,
       suffix: '万元',
       icon: <WalletOutlined />,
       bars: [70, 58, 78, 66, 82, 74, 91, 84],
@@ -209,7 +225,7 @@ function EconomicAudit() {
     {
       key: 'token',
       title: '本月 Token 使用金额',
-      value: 126.84,
+      value: currentMonthTokenCost,
       prefix: '¥',
       precision: 2,
       icon: <ThunderboltOutlined />,
@@ -218,9 +234,9 @@ function EconomicAudit() {
     {
       key: 'roi',
       title: '平均投入产出比',
-      value: 21927.46,
+      value: overallInvestmentRatio,
       suffix: '%',
-      precision: 2,
+      precision: 6,
       icon: <RiseOutlined />,
       bars: [38, 45, 42, 58, 64, 61, 76, 92],
     },
@@ -406,14 +422,20 @@ function ProjectFormView({ project, onBack, onSubmit }: { project: typeof initia
     }
     saveMaterial({ uid: (file as File & { uid?: string }).uid || '', name: file.name, size: file.size, type: file.type }, kind);
     window.dispatchEvent(new CustomEvent('audit-project-material-uploaded', {
-      detail: { fileName: file.name, fileSize: file.size, file },
+      detail: { fileName: file.name, fileSize: file.size, file, source: 'form' },
     }));
     return false;
   };
   useEffect(() => {
     const onMaterialUploaded = (event: Event) => {
-      const detail = (event as CustomEvent<{ fileName?: string; fileSize?: number; file?: UploadFile }>).detail;
-      if (!detail?.fileName || detail.file instanceof File) return;
+      const detail = (event as CustomEvent<{
+        fileName?: string;
+        fileSize?: number;
+        file?: UploadFile;
+        source?: 'form' | 'assistant';
+      }>).detail;
+      // 表单入口已经在 beforeUpload 中保存；医小管入口则由这里同步到证明材料。
+      if (!detail?.fileName || detail.source === 'form') return;
       saveMaterial({
         uid: detail.file?.uid || `assistant-${detail.fileName}-${detail.fileSize || 0}`,
         name: detail.fileName,
@@ -635,20 +657,20 @@ function ProjectDetail({ project, auditMode, onBack, onFinish }: { project: type
     ]} /></Card>
     <div className="audit-stat-grid audit-stat-grid-three"><Card title="建设内容完成情况"><Progress type="dashboard" percent={project.completion || 80} /><Paragraph>{project.completionDescription}</Paragraph></Card><Card title="考核指标达成情况"><Progress type="dashboard" percent={project.indicator || 85} /><Paragraph>{project.indicatorDescription}</Paragraph></Card><Card title="资金使用情况"><Progress type="dashboard" percent={project.fund || 74} /><Paragraph>{project.fundDescription}</Paragraph></Card></div>
     {auditMode && <Card
-      title={<Space><span>审计结论</span><Tag color="success" bordered={false}>AI预审</Tag></Space>}
+      title={<Space><span>审计结论</span><Tag color="green" icon={<ThunderboltFilled />} className="audit-ai-preaudit-tag">AI 预审</Tag></Space>}
       className="audit-section-card audit-ai-review-card"
       extra={<Text type="secondary">已根据页面信息与 3 份证明材料自动生成</Text>}
     >
       <div className="audit-ai-review-hint"><CheckCircleOutlined /><span>AI预审已完成，以下结论与说明可直接提交，也可由审计人员修改后确认。</span></div>
       <div className="audit-ai-control">
-        <div className="audit-ai-field-label"><Text strong>预审结论</Text><Tag color="success" bordered={false}>AI预审</Tag></div>
+        <div className="audit-ai-field-label"><Text strong>预审结论</Text><Tag color="green" icon={<ThunderboltFilled />} className="audit-ai-preaudit-tag">AI 预审</Tag></div>
         <Radio.Group value={conclusion} onChange={(e) => setConclusion(e.target.value)}>
           <Radio.Button value="pass">通过</Radio.Button>
           <Radio.Button value="fail">不通过</Radio.Button>
         </Radio.Group>
       </div>
-      <div className="audit-note">
-        <div className="audit-ai-field-label"><Text strong>具体说明</Text><Tag color="success" bordered={false}>AI预审</Tag></div>
+      <div className="audit-note audit-ai-control">
+        <div className="audit-ai-field-label"><Text strong>具体说明</Text><Tag color="green" icon={<ThunderboltFilled />} className="audit-ai-preaudit-tag">AI 预审</Tag></div>
         <Input.TextArea className="audit-ai-review-textarea" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} showCount rows={5} placeholder={conclusion === 'pass' ? '请填写项目达到审计要求的具体说明' : '请填写未通过原因及整改建议'} />
       </div>
       <Button danger={conclusion === 'fail'} type="primary" disabled={!note.trim()} onClick={submit}>提交审计结论</Button>
@@ -662,9 +684,26 @@ function ProjectAudit() {
   const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [projects, setProjects] = useState(initialProjects);
   const [status, setStatus] = useState<ProjectStatus | '全部'>('待申请');
+  const [keyword, setKeyword] = useState('');
+  const [department, setDepartment] = useState('');
+  const [track, setTrack] = useState('');
   const [screen, setScreen] = useState<'list' | 'form' | 'detail' | 'audit'>('list');
   const [current, setCurrent] = useState(initialProjects[0]);
-  const filtered = projects.filter((p) => status === '全部' || p.status === status);
+  const departmentOptions = useMemo(
+    () => [...new Set(projects.map((project) => project.dept))].map((value) => ({ label: value, value })),
+    [projects],
+  );
+  const trackOptions = useMemo(
+    () => [...new Set(projects.map((project) => project.track))].map((value) => ({ label: value, value })),
+    [projects],
+  );
+  const normalizedKeyword = keyword.trim().toLocaleLowerCase();
+  const filtered = projects.filter((project) =>
+    (status === '全部' || project.status === status) &&
+    (!normalizedKeyword || project.name.toLocaleLowerCase().includes(normalizedKeyword)) &&
+    (!department || project.dept === department) &&
+    (!track || project.track === track)
+  );
 
   useEffect(() => {
     if (screen !== 'list' || status !== '全部') return undefined;
@@ -1023,6 +1062,14 @@ function ProjectAudit() {
     { title: '操作', fixed: 'right', width: status === '全部' ? 170 : 230, render: (_, r) => actions(r) },
   ];
   return <div><Header title="项目审计" description="覆盖项目填报、提交、两级审计、撤销修改与结果归档全流程。" />
+    <Toolbar>
+      <Space wrap>
+        <Input allowClear prefix={<SearchOutlined />} placeholder="搜索项目名称" style={{ width: 280 }} value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+        <Select allowClear placeholder="申报科室" options={departmentOptions} style={{ width: 180 }} value={department || undefined} onChange={(value) => setDepartment(value || '')} />
+        <Select allowClear placeholder="申报赛道" options={trackOptions} style={{ width: 160 }} value={track || undefined} onChange={(value) => setTrack(value || '')} />
+        <Button onClick={() => { setKeyword(''); setDepartment(''); setTrack(''); }}>重置筛选</Button>
+      </Space>
+    </Toolbar>
     <Card bordered={false} className="audit-status-card"><Tabs activeKey={status} onChange={(x) => setStatus(x as typeof status)} items={(['全部', '待申请', '草稿', '待审计', '审计中', '撤销修改', '审计通过', '审计不通过'] as const).map((x) => ({ key: x, label: <span>{x}<span className="tab-count">{x === '全部' ? projects.length : projects.filter((p) => p.status === x).length}</span></span> }))} /></Card>
     <Card bordered={false} className="audit-table-card"><Table columns={columns} dataSource={filtered} scroll={{ x: 1765 }} pagination={{ pageSize: 8, showTotal: (n) => `共 ${n} 条` }} /></Card></div>;
 }
@@ -1108,14 +1155,14 @@ function BehaviorAudit() {
   const [agent, setAgent] = useState<(typeof agentRows)[number] | null>(null);
   const [session, setSession] = useState<(typeof sessions)[number] | null>(null);
   const [query, setQuery] = useState('');
-  const [department, setDepartment] = useState('全部科室');
+  const [department, setDepartment] = useState<string>();
   const [lastCalledRange, setLastCalledRange] = useState<[string, string] | null>(null);
   const [selected, setSelected] = useState<React.Key[]>([]);
   const agents = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     return agentRows.filter((item) => {
       const matchesKeyword = !keyword || `${item.id} ${item.name}`.toLowerCase().includes(keyword);
-      const matchesDepartment = department === '全部科室' || item.dept === department;
+      const matchesDepartment = !department || item.dept === department;
       const matchesLastCalled = !lastCalledRange
         || (item.last >= lastCalledRange[0] && item.last <= lastCalledRange[1]);
       return matchesKeyword && matchesDepartment && matchesLastCalled;
@@ -1124,7 +1171,7 @@ function BehaviorAudit() {
   if (agent) return <div><Header title="智能体会话记录" description={`${agent.id} · ${agent.name}`} extra={<><Button icon={<ReloadOutlined />} onClick={() => message.success('会话数据已刷新')}>刷新</Button><Button icon={<ArrowLeftOutlined />} onClick={() => { setAgent(null); setSession(null); navigate('/app/audit/behavior'); }}>返回智能体列表</Button></>} />
     <Toolbar><Space wrap><Input prefix={<SearchOutlined />} placeholder="搜索会话标题或摘要" style={{ width: 280 }} /><RangePicker showTime /></Space></Toolbar>
     <Card bordered={false} className="audit-table-card"><Table dataSource={sessions} columns={[
-      { title: '会话标题', dataIndex: 'title', width: 190 }, { title: '首轮输入摘要', dataIndex: 'input', ellipsis: true, render: truncate }, { title: '末轮输出摘要', dataIndex: 'output', ellipsis: true, render: truncate }, { title: '会话时长', dataIndex: 'duration', width: 110, sorter: (a, b) => a.duration - b.duration, render: (v) => `${Math.floor(v / 60)} 分 ${v % 60} 秒` }, { title: '会话开始时间', dataIndex: 'start', width: 175 }, { title: '会话结束时间', dataIndex: 'end', width: 175 }, { title: '操作', width: 90, render: (_, r) => <Button type="link" onClick={() => setSession(r)}>查看详情</Button> },
+      { title: '会话标题', dataIndex: 'title', width: 190 }, { title: '首轮输入摘要', dataIndex: 'input', ellipsis: true, render: truncate }, { title: '末轮输出摘要', dataIndex: 'output', ellipsis: true, render: truncate }, { title: '会话时长', dataIndex: 'duration', width: 110, sorter: (a, b) => a.duration - b.duration, render: (v) => `${Math.floor(v / 60)} 分 ${v % 60} 秒` }, { title: '会话开始时间', dataIndex: 'start', width: 175 }, { title: '会话结束时间', dataIndex: 'end', width: 175 }, { title: '操作', width: 90, fixed: 'right', render: (_, r) => <Button type="link" onClick={() => setSession(r)}>查看详情</Button> },
     ]} scroll={{ x: 1250 }} /></Card>
     <Drawer
       title={session?.title}
@@ -1138,7 +1185,7 @@ function BehaviorAudit() {
     </Drawer>
   </div>;
   return <div><Header title="智能体行为审计" description="按智能体查看会话规模、最近调用时间并下钻追溯完整交互。" />
-    <Toolbar><Space wrap><Input value={query} onChange={(e) => setQuery(e.target.value)} prefix={<SearchOutlined />} placeholder="搜索智能体编号或名称" allowClear style={{ width: 280 }} /><Select value={department} onChange={setDepartment} options={departments.map((x) => ({ label: x, value: x }))} style={{ width: 190 }} /><RangePicker onChange={(dates) => setLastCalledRange(dates?.[0] && dates[1] ? [dates[0].startOf('day').format('YYYY-MM-DD HH:mm:ss'), dates[1].endOf('day').format('YYYY-MM-DD HH:mm:ss')] : null)} placeholder={['最近调用开始', '最近调用结束']} /></Space></Toolbar>
+    <Toolbar><Space wrap><Input value={query} onChange={(e) => setQuery(e.target.value)} prefix={<SearchOutlined />} placeholder="搜索智能体编号或名称" allowClear style={{ width: 280 }} /><Select value={department} onChange={setDepartment} options={departments.slice(1).map((x) => ({ label: x, value: x }))} placeholder="所属科室" allowClear style={{ width: 190 }} /><RangePicker onChange={(dates) => setLastCalledRange(dates?.[0] && dates[1] ? [dates[0].startOf('day').format('YYYY-MM-DD HH:mm:ss'), dates[1].endOf('day').format('YYYY-MM-DD HH:mm:ss')] : null)} placeholder={['最近调用开始', '最近调用结束']} /></Space></Toolbar>
     <Card bordered={false} className="audit-table-card"><Table rowSelection={{ selectedRowKeys: selected, onChange: setSelected }} dataSource={agents} columns={[
       { title: '智能体编号', dataIndex: 'id', render: (v, r) => <Button type="link" onClick={() => setAgent(r)}>{v}</Button> }, { title: '智能体名称', dataIndex: 'name' }, { title: '版本', dataIndex: 'version', width: 90 }, { title: '所属科室', dataIndex: 'dept' }, { title: '会话数', dataIndex: 'sessions', sorter: (a, b) => a.sessions - b.sessions, render: (v) => v.toLocaleString() }, { title: '最近调用时间', dataIndex: 'last', sorter: (a, b) => a.last.localeCompare(b.last) }, { title: '操作', render: (_, r) => <Button type="link" onClick={() => setAgent(r)}>查看所有会话记录</Button> },
     ]} /></Card></div>;
