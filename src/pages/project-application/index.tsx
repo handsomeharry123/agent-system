@@ -705,8 +705,8 @@ export default function ProjectApplication() {
     <Card bordered={false}>
       <Space wrap style={{ marginBottom: 18 }}>
         <Input allowClear prefix={<SearchOutlined />} placeholder="搜索项目名称" style={{ width: 280 }} value={keyword} onChange={(e) => setKeyword(e.target.value)} />
-        <Select allowClear placeholder="申报科室" options={departmentOptions} style={{ width: 180 }} onChange={(v) => setDepartment(v || '')} />
-        <Select allowClear placeholder="申报赛道" options={tracks.map((v) => ({ label: v, value: v }))} style={{ width: 160 }} onChange={(v) => setTrack(v || '')} />
+        <Select allowClear placeholder="申报科室" options={departmentOptions} style={{ width: 180 }} value={department || undefined} onChange={(v) => setDepartment(v || '')} />
+        <Select allowClear placeholder="申报赛道" options={tracks.map((v) => ({ label: v, value: v }))} style={{ width: 160 }} value={track || undefined} onChange={(v) => setTrack(v || '')} />
         <Button onClick={() => { setKeyword(''); setDepartment(''); setTrack(''); }}>重置筛选</Button>
       </Space>
       <Tabs activeKey={active} onChange={(key) => setSearchParams(key === '全部立项' ? {} : { status: key })} items={statuses.map((status) => ({ key: status, label: <span>{status} <Tag bordered={false}>{records.filter((r) => status === '全部立项' || r.status === status).length}</Tag></span> }))} />

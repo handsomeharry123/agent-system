@@ -260,6 +260,76 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.audit-material-switcher {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.audit-material-switcher-label,
+.audit-material-category {
+  font-size: 12px;
+}
+
+.audit-material-category {
+  padding: 2px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+}
+
+.audit-material-required {
+  margin-left: 4px;
+  color: #ff4d4f;
+}
+
+.audit-material-count {
+  margin-left: 6px;
+  color: #999;
+}
+
+.audit-material-dragger .ant-upload-drag {
+  min-height: 164px;
+  padding: 8px 0;
+}
+
+.audit-material-dragger .ant-upload-drag-icon {
+  margin-bottom: 4px !important;
+}
+
+.audit-material-dragger .ant-upload-drag-icon .anticon {
+  font-size: 36px;
+}
+
+.audit-material-dragger .ant-upload-text {
+  font-size: 13px !important;
+}
+
+.audit-material-dragger .ant-upload-hint {
+  margin: 2px 24px 0 !important;
+  font-size: 11px !important;
+}
+
+.audit-material-files {
+  margin-top: 12px;
+}
+
+.audit-material-file-group {
+  margin-bottom: 8px;
+}
+
+.audit-material-file-label {
+  margin-right: 8px;
+  font-size: 12px;
+}
+
+.audit-material-footnote {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+}
+
 .audit-fund-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

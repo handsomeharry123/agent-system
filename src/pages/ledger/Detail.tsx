@@ -39,6 +39,7 @@ import {
   Result,
   Flex,
   Segmented,
+  Upload,
 } from 'antd';
 import { Radar } from '@ant-design/charts';
 import {
@@ -59,12 +60,20 @@ import {
   LinkOutlined,
   SafetyCertificateOutlined,
   HistoryOutlined,
-  RobotOutlined,
   PlusOutlined,
   LockOutlined,
+  UploadOutlined,
+  BgColorsOutlined,
+  UndoOutlined,
 } from '@ant-design/icons';
 import ProfileView360 from './ProfileView360';
 import { useAuth } from '../../hooks/useAuth';
+import {
+  generateAgentAvatar,
+  getAgentAvatar,
+  resetAgentAvatar,
+  saveAgentAvatar,
+} from '../../utils/agentAvatar';
 import {
   ledgerAgents,
   currentUser,
@@ -125,73 +134,30 @@ const RiskTag: React.FC<{
 };
 
 // ============== 头像（智能体虚拟形象）==============
-const AVATAR_GRADIENT: Record<string, [string, string]> = {
-  辅助诊断: ['#1677FF', '#13C2C2'],
-  影像分析: ['#722ED1', '#F5222D'],
-  病历生成: ['#4FACFE', '#00F2FE'],
-  用药审核: ['#43E97B', '#38F9D7'],
-  导诊分诊: ['#FA709A', '#FEE140'],
-  智能问诊: ['#5B86E5', '#36D1DC'],
-  健康评估: ['#A1C4FD', '#C2E9FB'],
-};
-const AgentAvatar: React.FC<{ agent: LedgerAgent; size?: number }> = ({ agent, size = 80 }) => {
-  const [hover, setHover] = useState(false);
-  const [g0, g1] = AVATAR_GRADIENT[agent.type] || ['#1677FF', '#13C2C2'];
+const AgentAvatar: React.FC<{ agent: LedgerAgent; size?: number; src?: string }> = ({ agent, size = 80, src }) => {
   return (
     <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
       style={{
-        position: 'relative',
         width: size,
         height: size,
         margin: '0 auto',
-        cursor: 'pointer',
-        transition: 'transform 0.5s',
-        transform: hover ? 'rotate(360deg)' : 'rotate(0deg)',
+        padding: Math.max(3, size * 0.035),
+        borderRadius: '28%',
+        background: 'linear-gradient(135deg, rgba(22,119,255,.28), rgba(54,207,201,.24))',
+        boxShadow: '0 10px 28px rgba(22,119,255,.18)',
       }}
     >
-      <div
+      <img
+        src={src || getAgentAvatar(agent)}
+        alt={`${agent.name}头像`}
         style={{
           width: '100%',
           height: '100%',
-          borderRadius: '50%',
-          background: `linear-gradient(135deg, ${g0} 0%, ${g1} 100%)`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff',
-          fontSize: size * 0.45,
-          boxShadow: '0 4px 14px rgba(0,0,0,0.15)',
+          display: 'block',
+          borderRadius: '25%',
+          objectFit: 'cover',
         }}
-      >
-        {agent.type === '影像分析' ? (
-          <FileSearchOutlined />
-        ) : (
-          <RobotOutlined />
-        )}
-      </div>
-      {hover && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: -10,
-            borderRadius: '50%',
-            background: 'rgba(0,0,0,0.6)',
-            color: '#fff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 12,
-            fontWeight: 500,
-            padding: '0 8px',
-            textAlign: 'center',
-            lineHeight: 1.2,
-          }}
-        >
-          {agent.name}
-        </div>
-      )}
+      />
     </div>
   );
 };
@@ -530,6 +496,7 @@ const LedgerDetail = () => {
   //  才与 BasicLayout + List 列表的可见性基线一致。
   const auth = useAuth();
   const isPlatformAdmin = auth?.currentUser?.roles.includes('信息科管理员') ?? false;
+  const isHospitalLeader = auth?.currentUser?.roles.includes('医院领导') ?? false;
 
   const agent: LedgerAgent | undefined = useMemo(
     () => ledgerAgents.find((a) => a.id === id),
@@ -549,6 +516,13 @@ const LedgerDetail = () => {
   const [activeTab, setActiveTab] = useState('basic');
   // 360 画像视图 / 信息详情页 切换(PRD §3.2.2:详情页默认展示本次新增的「360 画像视图」)
   const [view, setView] = useState<'profile' | 'detail'>('profile');
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const [avatarPrompt, setAvatarPrompt] = useState('');
+  const [avatarSrc, setAvatarSrc] = useState('');
+
+  useEffect(() => {
+    if (agent) setAvatarSrc(getAgentAvatar(agent));
+  }, [agent]);
 
   useEffect(() => {
     const handleViewDetail = (event: Event) => {
@@ -733,6 +707,41 @@ const LedgerDetail = () => {
 
   const handleGoRiskLevel = () => {
     navigate(`/app/ledger/risk/${agent.id}`);
+  };
+
+  const handleGenerateAvatar = () => {
+    const next = generateAgentAvatar(agent, avatarPrompt.trim());
+    setAvatarSrc(next);
+    saveAgentAvatar(agent.id, next);
+    message.success(avatarPrompt.trim() ? '已根据提示词生成头像' : '已根据功能描述生成头像');
+  };
+
+  const handleUploadAvatar = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      message.error('请选择图片文件');
+      return false;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      message.error('头像图片不能超过 2MB');
+      return false;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const next = String(reader.result);
+      setAvatarSrc(next);
+      saveAgentAvatar(agent.id, next);
+      message.success('头像上传成功');
+    };
+    reader.readAsDataURL(file);
+    return false;
+  };
+
+  const handleResetAvatar = () => {
+    resetAgentAvatar(agent.id);
+    const next = generateAgentAvatar(agent);
+    setAvatarSrc(next);
+    setAvatarPrompt('');
+    message.success('已恢复根据功能描述生成的默认头像');
   };
 
   // 智能体编号复制
@@ -1682,7 +1691,7 @@ exporter = OTLPSpanExporter(
                   启用
                 </Button>
               )}
-              {!editing && (
+              {!editing && !isHospitalLeader && (
                 <Button icon={<SafetyCertificateOutlined />} onClick={handleGoRiskLevel}>
                   风险分级
                 </Button>
@@ -1719,7 +1728,16 @@ exporter = OTLPSpanExporter(
         >
           <Card bordered={false} bodyStyle={{ padding: 16 }} style={{ marginBottom: 12 }}>
             <div style={{ textAlign: 'center' }}>
-              <AgentAvatar agent={agent} size={120} />
+              <AgentAvatar agent={agent} size={120} src={avatarSrc} />
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => setAvatarOpen(true)}
+                style={{ marginTop: 8 }}
+              >
+                设置智能体头像
+              </Button>
               <div style={{ marginTop: 12 }}>
                 <Tag style={{ fontFamily: 'monospace' }}>{agent.version}</Tag>
                 <Tag color="default">{agent.type}</Tag>
@@ -1834,6 +1852,48 @@ exporter = OTLPSpanExporter(
       </Row>
         </>
       )}
+
+      <Modal
+        open={avatarOpen}
+        title="设置智能体头像"
+        onCancel={() => setAvatarOpen(false)}
+        footer={<Button type="primary" onClick={() => setAvatarOpen(false)}>完成</Button>}
+        width={600}
+      >
+        <div style={{ display: 'flex', gap: 24, alignItems: 'center', marginBottom: 20 }}>
+          <AgentAvatar agent={agent} size={132} src={avatarSrc} />
+          <div style={{ flex: 1 }}>
+            <Text strong>当前头像</Text>
+            <Paragraph type="secondary" style={{ margin: '6px 0 12px' }}>
+              未设置时，系统会根据智能体名称、类型和功能描述自动生成默认头像。
+            </Paragraph>
+            <Space wrap>
+              <Upload showUploadList={false} accept="image/png,image/jpeg,image/webp" beforeUpload={handleUploadAvatar}>
+                <Button icon={<UploadOutlined />}>上传头像</Button>
+              </Upload>
+              <Button icon={<UndoOutlined />} onClick={handleResetAvatar}>恢复默认</Button>
+            </Space>
+            <div style={{ marginTop: 6 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>支持 PNG、JPG、WebP，文件不超过 2MB</Text>
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: 16, borderRadius: 12, background: '#f7faff', border: '1px solid #e6f4ff' }}>
+          <Text strong><BgColorsOutlined style={{ color: '#1677ff', marginRight: 6 }} />通过提示词生成</Text>
+          <Input.TextArea
+            value={avatarPrompt}
+            onChange={(event) => setAvatarPrompt(event.target.value)}
+            rows={3}
+            maxLength={120}
+            showCount
+            placeholder="例如：专业温暖的医疗问诊机器人，蓝绿色，简洁科技感"
+            style={{ marginTop: 10 }}
+          />
+          <Button type="primary" icon={<BgColorsOutlined />} onClick={handleGenerateAvatar} style={{ marginTop: 12 }}>
+            生成并应用头像
+          </Button>
+        </div>
+      </Modal>
 
       {/* 禁用弹窗 */}
       <Modal

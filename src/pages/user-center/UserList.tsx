@@ -14,6 +14,7 @@ export interface CenterUser {
   id: string;
   name: string;
   employeeId: string;
+  password: string;
   department: string;
   phone: string;
   roles: UserRole[];
@@ -29,6 +30,7 @@ export const initialCenterUsers: CenterUser[] = mockUsers.slice(0, 12).map((user
     id: user.id,
     name: index === 0 ? '周建国' : user.name,
     employeeId: index === 0 ? 'LD0001' : user.employeeId,
+    password: user.password || '123456',
     department: index === 0 ? '院领导' : user.department,
     phone: index === 0 ? '13900001001' : user.phone.replace(/\*/g, String((index + 3) % 10)),
     roles,
@@ -42,6 +44,7 @@ export const initialCenterUsers: CenterUser[] = mockUsers.slice(0, 12).map((user
 const normalizeCenterUsers = (users: Array<CenterUser & { role?: UserRole }>): CenterUser[] =>
   users.map(({ role, ...user }) => ({
     ...user,
+    password: user.password || initialCenterUsers.find((initialUser) => initialUser.id === user.id)?.password || '123456',
     roles: user.roles?.length ? user.roles : role ? [role] : ['科室管理员'],
   }));
 

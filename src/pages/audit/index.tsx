@@ -31,6 +31,7 @@ import {
   ArrowLeftOutlined,
   ApiOutlined,
   CheckCircleOutlined,
+  CloudUploadOutlined,
   ClockCircleOutlined,
   CodeOutlined,
   DownOutlined,
@@ -47,7 +48,7 @@ import {
   WalletOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { MenuProps } from 'antd';
 import type { UploadFile } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -280,16 +281,16 @@ function ProjectFormView({ project, onBack, onSubmit }: { project: typeof initia
   const [aiFields, setAiFields] = useState<string[]>([]);
   const [indicatorResults, setIndicatorResults] = useState<Record<number, boolean | undefined>>({});
   const [indicatorActuals, setIndicatorActuals] = useState<Record<number, string>>({});
-  type MaterialKind = 'construction' | 'indicator' | 'fund' | 'other';
+  type MaterialKind = 'project' | 'other';
   const materialLabels: Record<MaterialKind, string> = {
-    construction: '项目建设内容证明材料',
-    indicator: '考核指标证明材料',
-    fund: '资金使用证明材料',
-    other: '其他证明材料',
+    project: '项目证明材料',
+    other: '其他材料',
   };
+  const materialRequired: Record<MaterialKind, boolean> = { project: true, other: false };
   const [materials, setMaterials] = useState<Record<MaterialKind, UploadFile[]>>({
-    construction: [], indicator: [], fund: [], other: [],
+    project: [], other: [],
   });
+  const [activeMaterialKind, setActiveMaterialKind] = useState<MaterialKind>('project');
   const usedAmount = Form.useWatch('used', form);
   const watchedValues = Form.useWatch([], form);
   const indicatorRows = [
@@ -319,13 +320,10 @@ function ProjectFormView({ project, onBack, onSubmit }: { project: typeof initia
   };
   const classifyMaterial = (fileName: string): MaterialKind => {
     const normalized = fileName.toLowerCase();
-    if (/考核|指标|绩效|达成|满意度/.test(normalized)) return 'indicator';
-    if (/资金|经费|预算|财务|发票|合同|支出|采购/.test(normalized)) return 'fund';
-    if (/建设|验收|试运行|项目内容|实施|功能/.test(normalized)) return 'construction';
-    return 'other';
+    return /其他|补充|附件/.test(normalized) ? 'other' : 'project';
   };
-  const saveMaterial = (file: Pick<UploadFile, 'uid' | 'name' | 'size' | 'type'>) => {
-    const kind = classifyMaterial(file.name);
+  const saveMaterial = (file: Pick<UploadFile, 'uid' | 'name' | 'size' | 'type'>, targetKind?: MaterialKind) => {
+    const kind = targetKind || classifyMaterial(file.name);
     const normalizedFile: UploadFile = {
       uid: file.uid || `audit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       name: file.name,
@@ -337,7 +335,7 @@ function ProjectFormView({ project, onBack, onSubmit }: { project: typeof initia
       if (Object.values(previous).flat().some((item) => item.uid === normalizedFile.uid)) return previous;
       return { ...previous, [kind]: [...previous[kind], normalizedFile] };
     });
-    message.success(`已自动识别为“${materialLabels[kind]}”并保存`);
+    message.success(`已上传至“${materialLabels[kind]}”`);
   };
   const applyAssistantInput = (input: string, source: 'text' | 'file' = 'text') => {
     const currentValues = form.getFieldsValue(true);
@@ -398,7 +396,7 @@ function ProjectFormView({ project, onBack, onSubmit }: { project: typeof initia
     window.addEventListener('audit-project-prefill-acknowledged', onAcknowledged);
     return () => window.removeEventListener('audit-project-prefill-acknowledged', onAcknowledged);
   }, []);
-  const beforeUpload = (file: File) => {
+  const beforeUpload = (kind: MaterialKind) => (file: File) => {
     if (!/\.(pdf|doc|docx)$/i.test(file.name)) {
       message.error('上传失败，仅支持 PDF、DOC、DOCX 类型文件');
       return Upload.LIST_IGNORE;
@@ -407,7 +405,7 @@ function ProjectFormView({ project, onBack, onSubmit }: { project: typeof initia
       message.error('上传失败，单文件超过最大限制 30M');
       return Upload.LIST_IGNORE;
     }
-    saveMaterial({ uid: (file as File & { uid?: string }).uid || '', name: file.name, size: file.size, type: file.type });
+    saveMaterial({ uid: (file as File & { uid?: string }).uid || '', name: file.name, size: file.size, type: file.type }, kind);
     window.dispatchEvent(new CustomEvent('audit-project-material-uploaded', {
       detail: { fileName: file.name, fileSize: file.size, file },
     }));
@@ -427,9 +425,7 @@ function ProjectFormView({ project, onBack, onSubmit }: { project: typeof initia
     window.addEventListener('audit-project-material-uploaded', onMaterialUploaded);
     return () => window.removeEventListener('audit-project-material-uploaded', onMaterialUploaded);
   }, []);
-  const requiredMaterialsReady = materials.construction.length > 0
-    && materials.indicator.length > 0
-    && materials.fund.length > 0;
+  const requiredMaterialsReady = materials.project.length > 0;
   const fieldsReady = !!(
     watchedValues?.completion !== undefined
     && watchedValues?.completionNote?.trim()
@@ -439,7 +435,7 @@ function ProjectFormView({ project, onBack, onSubmit }: { project: typeof initia
   );
   const submitForm = () => form.validateFields().then(() => {
     if (!requiredMaterialsReady) {
-      message.error('请上传项目建设、考核指标和资金使用三类必需材料');
+      message.error('请上传项目证明材料');
       return;
     }
     message.success('提交成功');
@@ -464,7 +460,63 @@ function ProjectFormView({ project, onBack, onSubmit }: { project: typeof initia
   return <div>
     <Header title="项目审计信息填报" description="上传证明材料并核对项目建设、考核指标与资金使用情况。" extra={<Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回列表</Button>} />
     <Form form={form} layout="vertical" initialValues={{ completion: project.completion || undefined, indicator: project.indicator || undefined, used: undefined, completionNote: '', fundDetail: '' }}>
-      <Card title="证明材料" className="audit-section-card"><div className="upload-grid">{(Object.keys(materialLabels) as MaterialKind[]).map((kind) => <Form.Item key={kind} label={materialLabels[kind]} required={kind !== 'other'}><Upload accept=".pdf,.doc,.docx" beforeUpload={beforeUpload} multiple fileList={materials[kind]} onRemove={(file) => { setMaterials((previous) => ({ ...previous, [kind]: previous[kind].filter((item) => item.uid !== file.uid) })); return true; }}><Button icon={<UploadOutlined />}>上传文件</Button></Upload></Form.Item>)}</div><Text type="secondary">支持 PDF、DOC、DOCX，可上传多个文件，单文件不超过 30M。文件将按名称自动识别材料类型并保存到对应位置。</Text></Card>
+      <Card title="证明材料" className="audit-section-card">
+        <div className="audit-material-switcher">
+          <Text type="secondary" className="audit-material-switcher-label">当前上传至：</Text>
+          {(Object.keys(materialLabels) as MaterialKind[]).map((kind) => (
+            <Tag.CheckableTag
+              key={kind}
+              checked={activeMaterialKind === kind}
+              onChange={(checked) => checked && setActiveMaterialKind(kind)}
+              className="audit-material-category"
+            >
+              {materialLabels[kind]}
+              {materialRequired[kind] && <span className="audit-material-required">*</span>}
+              <span className="audit-material-count">{materials[kind].length}份</span>
+            </Tag.CheckableTag>
+          ))}
+        </div>
+        <Upload.Dragger
+          accept=".pdf,.doc,.docx"
+          beforeUpload={beforeUpload(activeMaterialKind)}
+          multiple
+          fileList={materials[activeMaterialKind]}
+          showUploadList={false}
+          className="audit-material-dragger"
+        >
+          <p className="ant-upload-drag-icon"><CloudUploadOutlined /></p>
+          <p className="ant-upload-text">点击或拖拽文件（{materialLabels[activeMaterialKind]}）</p>
+          <p className="ant-upload-hint">
+            {activeMaterialKind === 'project'
+              ? '必填 · 需包括项目建设内容完成情况、考核指标达成情况、资金使用证明情况'
+              : '选填 · 可上传其他补充材料'}
+          </p>
+        </Upload.Dragger>
+        <div className="audit-material-files">
+          {(Object.keys(materialLabels) as MaterialKind[]).map((kind) => {
+            if (!materials[kind].length) return null;
+            return (
+              <div key={kind} className="audit-material-file-group">
+                <Text type="secondary" className="audit-material-file-label">{materialLabels[kind]}（{materials[kind].length}份）：</Text>
+                {materials[kind].map((file) => (
+                  <Tag
+                    key={file.uid}
+                    color="blue"
+                    closable
+                    onClose={(event) => {
+                      event.preventDefault();
+                      setMaterials((previous) => ({ ...previous, [kind]: previous[kind].filter((item) => item.uid !== file.uid) }));
+                    }}
+                  >
+                    {file.name}
+                  </Tag>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+        <Text type="secondary" className="audit-material-footnote">支持 PDF、DOC、DOCX · 可上传多个文件 · 单文件不超过 30M</Text>
+      </Card>
       <Card title="项目基本信息" className="audit-section-card"><Descriptions column={3} items={[
         { key: '1', label: '项目名称', children: project.name }, { key: '2', label: '申报科室', children: project.dept }, { key: '3', label: '申报赛道', children: project.track },
         { key: '4', label: '项目负责人', children: project.owner }, { key: '5', label: '项目联系人', children: project.contact }, { key: '6', label: '联系方式', children: project.phone },
@@ -1053,13 +1105,25 @@ function SessionDetail({ session }: { session: AuditSession }) {
 
 function BehaviorAudit() {
   const { message } = App.useApp();
+  const navigate = useNavigate();
   const [agent, setAgent] = useState<(typeof agentRows)[number] | null>(null);
   const [session, setSession] = useState<(typeof sessions)[number] | null>(null);
   const [query, setQuery] = useState('');
+  const [department, setDepartment] = useState('全部科室');
+  const [lastCalledRange, setLastCalledRange] = useState<[string, string] | null>(null);
   const [selected, setSelected] = useState<React.Key[]>([]);
-  const agents = agentRows.filter((x) => `${x.id}${x.name}`.toLowerCase().includes(query.toLowerCase()));
-  if (agent) return <div><Header title="智能体会话记录" description={`${agent.id} · ${agent.name}`} extra={<><Button icon={<ReloadOutlined />} onClick={() => message.success('会话数据已刷新')}>刷新</Button><Button icon={<ArrowLeftOutlined />} onClick={() => setAgent(null)}>返回智能体列表</Button></>} />
-    <Toolbar><Space wrap><Input prefix={<SearchOutlined />} placeholder="搜索会话标题或摘要" style={{ width: 280 }} /><Select defaultValue="startDesc" options={[{ label: '开始时间：由近到远', value: 'startDesc' }, { label: '开始时间：由远到近', value: 'startAsc' }, { label: '会话时长：由高到低', value: 'durationDesc' }]} style={{ width: 200 }} /><RangePicker showTime /></Space></Toolbar>
+  const agents = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    return agentRows.filter((item) => {
+      const matchesKeyword = !keyword || `${item.id} ${item.name}`.toLowerCase().includes(keyword);
+      const matchesDepartment = department === '全部科室' || item.dept === department;
+      const matchesLastCalled = !lastCalledRange
+        || (item.last >= lastCalledRange[0] && item.last <= lastCalledRange[1]);
+      return matchesKeyword && matchesDepartment && matchesLastCalled;
+    });
+  }, [department, lastCalledRange, query]);
+  if (agent) return <div><Header title="智能体会话记录" description={`${agent.id} · ${agent.name}`} extra={<><Button icon={<ReloadOutlined />} onClick={() => message.success('会话数据已刷新')}>刷新</Button><Button icon={<ArrowLeftOutlined />} onClick={() => { setAgent(null); setSession(null); navigate('/app/audit/behavior'); }}>返回智能体列表</Button></>} />
+    <Toolbar><Space wrap><Input prefix={<SearchOutlined />} placeholder="搜索会话标题或摘要" style={{ width: 280 }} /><RangePicker showTime /></Space></Toolbar>
     <Card bordered={false} className="audit-table-card"><Table dataSource={sessions} columns={[
       { title: '会话标题', dataIndex: 'title', width: 190 }, { title: '首轮输入摘要', dataIndex: 'input', ellipsis: true, render: truncate }, { title: '末轮输出摘要', dataIndex: 'output', ellipsis: true, render: truncate }, { title: '会话时长', dataIndex: 'duration', width: 110, sorter: (a, b) => a.duration - b.duration, render: (v) => `${Math.floor(v / 60)} 分 ${v % 60} 秒` }, { title: '会话开始时间', dataIndex: 'start', width: 175 }, { title: '会话结束时间', dataIndex: 'end', width: 175 }, { title: '操作', width: 90, render: (_, r) => <Button type="link" onClick={() => setSession(r)}>查看详情</Button> },
     ]} scroll={{ x: 1250 }} /></Card>
@@ -1075,7 +1139,7 @@ function BehaviorAudit() {
     </Drawer>
   </div>;
   return <div><Header title="智能体行为审计" description="按智能体查看会话规模、最近调用时间并下钻追溯完整交互。" />
-    <Toolbar><Space wrap><Input value={query} onChange={(e) => setQuery(e.target.value)} prefix={<SearchOutlined />} placeholder="搜索智能体编号或名称" allowClear style={{ width: 280 }} /><Select defaultValue="全部科室" options={departments.map((x) => ({ label: x, value: x }))} style={{ width: 190 }} /><RangePicker placeholder={['最近调用开始', '最近调用结束']} /></Space></Toolbar>
+    <Toolbar><Space wrap><Input value={query} onChange={(e) => setQuery(e.target.value)} prefix={<SearchOutlined />} placeholder="搜索智能体编号或名称" allowClear style={{ width: 280 }} /><Select value={department} onChange={setDepartment} options={departments.map((x) => ({ label: x, value: x }))} style={{ width: 190 }} /><RangePicker onChange={(dates) => setLastCalledRange(dates?.[0] && dates[1] ? [dates[0].startOf('day').format('YYYY-MM-DD HH:mm:ss'), dates[1].endOf('day').format('YYYY-MM-DD HH:mm:ss')] : null)} placeholder={['最近调用开始', '最近调用结束']} /></Space></Toolbar>
     <Card bordered={false} className="audit-table-card"><Table rowSelection={{ selectedRowKeys: selected, onChange: setSelected }} dataSource={agents} columns={[
       { title: '智能体编号', dataIndex: 'id', render: (v, r) => <Button type="link" onClick={() => setAgent(r)}>{v}</Button> }, { title: '智能体名称', dataIndex: 'name' }, { title: '版本', dataIndex: 'version', width: 90 }, { title: '所属科室', dataIndex: 'dept' }, { title: '会话数', dataIndex: 'sessions', sorter: (a, b) => a.sessions - b.sessions, render: (v) => v.toLocaleString() }, { title: '最近调用时间', dataIndex: 'last', sorter: (a, b) => a.last.localeCompare(b.last) }, { title: '操作', render: (_, r) => <Button type="link" onClick={() => setAgent(r)}>查看所有会话记录</Button> },
     ]} /></Card></div>;

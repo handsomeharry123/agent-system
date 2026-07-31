@@ -37,6 +37,9 @@ import {
   Tabs,
   List,
   Typography,
+  Segmented,
+  Pagination,
+  Avatar,
 } from 'antd';
 import type { MenuProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -57,10 +60,15 @@ import {
   BellOutlined,
   RocketOutlined,
   HistoryOutlined,
+  UnorderedListOutlined,
+  RobotOutlined,
+  MedicineBoxOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import PageHeader from '../../components/PageHeader';
+import { useAuth } from '../../hooks/useAuth';
 import { matchAgentByName } from '../../utils/agentNameMatcher';
+import { getAgentAvatar as getAgentAvatarImage } from '../../utils/agentAvatar';
 import {
   ledgerAgents,
   currentUser,
@@ -94,6 +102,35 @@ const RISK_TAG: Record<string, { color: string; tag: string }> = {
   一般关注: { color: 'default', tag: '一般关注' },
 };
 
+const AGENT_AVATAR: Record<string, { background: string; icon: React.ReactNode }> = {
+  智能问诊: { background: 'linear-gradient(135deg, #1677ff, #69b1ff)', icon: <RobotOutlined /> },
+  导诊分诊: { background: 'linear-gradient(135deg, #13c2c2, #5cdbd3)', icon: <MedicineBoxOutlined /> },
+  辅助诊断: { background: 'linear-gradient(135deg, #722ed1, #b37feb)', icon: <MedicineBoxOutlined /> },
+  影像分析: { background: 'linear-gradient(135deg, #2f54eb, #85a5ff)', icon: <MedicineBoxOutlined /> },
+  病历生成: { background: 'linear-gradient(135deg, #08979c, #5cdbd3)', icon: <RobotOutlined /> },
+  用药审核: { background: 'linear-gradient(135deg, #d46b08, #ffc069)', icon: <MedicineBoxOutlined /> },
+  健康评估: { background: 'linear-gradient(135deg, #389e0d, #95de64)', icon: <RobotOutlined /> },
+};
+
+const getAgentAvatarStyle = (type: string) =>
+  AGENT_AVATAR[type] ?? {
+    background: 'linear-gradient(135deg, #1677ff, #91caff)',
+    icon: <RobotOutlined />,
+  };
+
+const DIAGNOSIS_PHASE_TABS = [
+  '全部',
+  '导诊分诊',
+  '预问诊',
+  '预约挂号',
+  '辅助检查',
+  '辅助诊断',
+  '辅助治疗',
+  '住院',
+  '手术',
+  '其他',
+] as const;
+
 // ============== 筛选状态 ==============
 
 interface FilterState {
@@ -109,6 +146,8 @@ interface FilterState {
 const LedgerList = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { currentUser: authUser } = useAuth();
+  const isHospitalLeader = authUser?.roles.includes('医院领导') ?? false;
   const isPlatformAdmin = currentUser.role === 'platform_admin';
 
   const [filters, setFilters] = useState<FilterState>({ search: '' });
@@ -116,6 +155,9 @@ const LedgerList = () => {
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   // 多选导出台账：已勾选行 id 集合
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  // 台账支持卡片 / 表格双视图，默认使用信息密度更友好的卡片视图
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+  const [cardPage, setCardPage] = useState(1);
 
   // V1：速读订阅抽屉（PRD §3.1.1 / §3.3.1 汇报引导）
   const [subDrawerOpen, setSubDrawerOpen] = useState(false);
@@ -221,7 +263,9 @@ const LedgerList = () => {
         (a) =>
           a.idCode.toLowerCase().includes(kw) ||
           a.name.toLowerCase().includes(kw) ||
-          a.vendor.toLowerCase().includes(kw),
+          a.vendor.toLowerCase().includes(kw) ||
+          (a.description ?? '').toLowerCase().includes(kw) ||
+          a.functionKeywords.some((keyword) => keyword.toLowerCase().includes(kw)),
       );
     }
     if (filters.department) data = data.filter((a) => a.department === filters.department);
@@ -333,6 +377,10 @@ const LedgerList = () => {
     filters.runtimeStatus,
   ]);
 
+  useEffect(() => {
+    setCardPage(1);
+  }, [filters]);
+
   const exportMenu: MenuProps['items'] = [
     {
       key: 'export-selected',
@@ -361,6 +409,75 @@ const LedgerList = () => {
       onClick: () => handleExport(false),
     },
   ];
+
+  const getMoreItems = (record: LedgerAgent): MenuProps['items'] => {
+    const encName = encodeURIComponent(record.name);
+    return isPlatformAdmin
+      ? [
+          {
+            key: 'resource',
+            label: '查看资源申请',
+            icon: <AppstoreOutlined />,
+            onClick: () => window.open(`/app/resource-center/applies?tab=all&agentName=${encName}`, '_blank'),
+          },
+          {
+            key: 'create-eval',
+            label: '创建评测任务',
+            icon: <ExperimentOutlined />,
+            onClick: () =>
+              window.open(
+                `/app/evaluation/tasks/create?agentName=${encName}&agentCode=${encodeURIComponent(record.idCode)}`,
+                '_blank',
+              ),
+          },
+          {
+            key: 'monitor',
+            label: '查看监控告警',
+            icon: <MonitorOutlined />,
+            onClick: () => window.open(`/app/monitoring/alert-events?tab=all&search=${encName}`, '_blank'),
+          },
+        ]
+      : [
+          {
+            key: 'apply-resource',
+            label: '申请资源',
+            icon: <AppstoreOutlined />,
+            onClick: () => window.open(`/app/resource-center/apply-form?agentName=${encName}`, '_blank'),
+          },
+          {
+            key: 'view-eval',
+            label: '查看评测结果',
+            icon: <ExperimentOutlined />,
+            onClick: () => window.open(`/app/evaluation/tasks?tab=all&agentName=${encName}`, '_blank'),
+          },
+          {
+            key: 'monitor',
+            label: '查看监控告警',
+            icon: <MonitorOutlined />,
+            onClick: () => window.open(`/app/monitoring/alert-events?tab=all&search=${encName}`, '_blank'),
+          },
+        ];
+  };
+
+  const renderAgentActions = (record: LedgerAgent) => (
+    <Space size={6} split={<Divider type="vertical" style={{ margin: 0 }} />}>
+      <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleViewDetail(record)} style={{ padding: 0 }}>
+        360画像
+      </Button>
+      {!isHospitalLeader && (
+        <>
+          <Button type="link" size="small" icon={<SafetyCertificateOutlined />} onClick={() => handleRiskLevel(record)} style={{ padding: 0 }}>
+            风险分级
+          </Button>
+          <Dropdown menu={{ items: getMoreItems(record) }} trigger={['click']}>
+            <Button type="link" size="small" icon={<MoreOutlined />} style={{ padding: 0 }}>
+              更多
+            </Button>
+          </Dropdown>
+        </>
+      )}
+    </Space>
+  );
 
   // V1.7 §2.1 列表列定义（12 字段）
   const columns: ColumnsType<LedgerAgent> = [
@@ -501,97 +618,7 @@ const LedgerList = () => {
       key: 'action',
       width: 240,
       fixed: 'right',
-      render: (_, record) => {
-        // 操作列固定 3 按钮：详情 / 风险分级 / 更多
-        // 更多下拉按角色分发（台账列表 V2.9）：
-        //   · 信息科管理员：查看资源申请 / 创建评测任务 / 查看监控告警
-        //   · 科室管理员：申请资源 / 查看评测结果 / 查看监控告警
-        // 链接携带智能体名称（agentName），目标页据此预筛/预填
-        const encName = encodeURIComponent(record.name);
-        const moreItems: MenuProps['items'] = isPlatformAdmin
-          ? [
-              {
-                key: 'resource',
-                label: '查看资源申请',
-                icon: <AppstoreOutlined />,
-                onClick: () =>
-                  window.open(
-                    `/app/resource-center/applies?tab=all&agentName=${encName}`,
-                    '_blank',
-                  ),
-              },
-              {
-                key: 'create-eval',
-                label: '创建评测任务',
-                icon: <ExperimentOutlined />,
-                onClick: () =>
-                  window.open(
-                    `/app/evaluation/tasks/create?agentName=${encName}&agentCode=${encodeURIComponent(
-                      record.idCode,
-                    )}`,
-                    '_blank',
-                  ),
-              },
-              {
-                key: 'monitor',
-                label: '查看监控告警',
-                icon: <MonitorOutlined />,
-                onClick: () =>
-                  window.open(
-                    `/app/monitoring/alert-events?tab=all&search=${encName}`,
-                    '_blank',
-                  ),
-              },
-            ]
-          : [
-              {
-                key: 'apply-resource',
-                label: '申请资源',
-                icon: <AppstoreOutlined />,
-                onClick: () =>
-                  window.open(
-                    `/app/resource-center/apply-form?agentName=${encName}`,
-                    '_blank',
-                  ),
-              },
-              {
-                key: 'view-eval',
-                label: '查看评测结果',
-                icon: <ExperimentOutlined />,
-                onClick: () =>
-                  window.open(
-                    `/app/evaluation/tasks?tab=all&agentName=${encName}`,
-                    '_blank',
-                  ),
-              },
-              {
-                key: 'monitor',
-                label: '查看监控告警',
-                icon: <MonitorOutlined />,
-                onClick: () =>
-                  window.open(
-                    `/app/monitoring/alert-events?tab=all&search=${encName}`,
-                    '_blank',
-                  ),
-              },
-            ];
-
-        return (
-          <Space size={6} split={<Divider type="vertical" style={{ margin: 0 }} />}>
-            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleViewDetail(record)} style={{ padding: 0 }}>
-              360画像
-            </Button>
-            <Button type="link" size="small" icon={<SafetyCertificateOutlined />} onClick={() => handleRiskLevel(record)} style={{ padding: 0 }}>
-              风险分级
-            </Button>
-            <Dropdown menu={{ items: moreItems }} trigger={['click']}>
-              <Button type="link" size="small" icon={<MoreOutlined />} style={{ padding: 0 }}>
-                更多
-              </Button>
-            </Dropdown>
-          </Space>
-        );
-      },
+      render: (_, record) => renderAgentActions(record),
     },
   ];
 
@@ -625,7 +652,7 @@ const LedgerList = () => {
         <Row gutter={[12, 12]}>
           <Col xs={24} sm={12} md={8} lg={6}>
             <Input
-              placeholder="按编号 / 名称 / 供应商 模糊搜索"
+              placeholder="搜索名称 / 编号 / 功能关键词"
               prefix={<SearchOutlined style={{ color: '#BFBFBF' }} />}
               allowClear
               value={filters.search}
@@ -726,13 +753,11 @@ const LedgerList = () => {
           </Col>
         </Row>
 
-        {/* 已选/共 N 条 + 清空选择 — 紧贴表格上方 */}
-        <div style={{ marginTop: 12, marginBottom: 8 }}>
-          <Space size={8}>
+        {/* 总数 / 诊疗环节分类 / 视图切换保持在同一行 */}
+        <div className="ledger-card-toolbar">
+          <Space size={8} style={{ flex: '0 0 auto' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              {selectedCount > 0
-                ? `已选 ${selectedCount} 条`
-                : `共 ${filtered.length} 条`}
+              {selectedCount > 0 ? `已选 ${selectedCount} 条` : `共 ${filtered.length} 条`}
             </Text>
             {selectedCount > 0 && (
               <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setSelectedRowKeys([])}>
@@ -740,6 +765,32 @@ const LedgerList = () => {
               </Button>
             )}
           </Space>
+          {viewMode === 'card' && (
+            <div className="ledger-phase-tabs" role="tablist" aria-label="按诊疗环节筛选">
+              <Segmented
+                value={filters.diagnosisPhase ?? '全部'}
+                onChange={(key) =>
+                  setFilters((current) => ({
+                    ...current,
+                    diagnosisPhase: key === '全部' ? undefined : key,
+                  }))
+                }
+                options={DIAGNOSIS_PHASE_TABS.map((phase) => ({
+                  label: phase,
+                  value: phase,
+                }))}
+              />
+            </div>
+          )}
+          <Segmented
+            style={{ flex: '0 0 auto' }}
+            value={viewMode}
+            onChange={(value) => setViewMode(value as 'card' | 'table')}
+            options={[
+              { label: '卡片', value: 'card', icon: <AppstoreOutlined /> },
+              { label: '表格', value: 'table', icon: <UnorderedListOutlined /> },
+            ]}
+          />
         </div>
 
         {visibleList.length === 0 ? (
@@ -768,7 +819,152 @@ const LedgerList = () => {
             </Button>
           </Empty>
         ) : (
-          <div style={{ marginTop: 16 }}>
+          <div style={{ marginTop: 12 }}>
+            {viewMode === 'card' ? (
+              <>
+                <Row gutter={[16, 16]}>
+                  {filtered.slice((cardPage - 1) * 9, cardPage * 9).map((agent) => {
+                    const selected = selectedRowKeys.includes(agent.id);
+                    const avatar = getAgentAvatarStyle(agent.type);
+                    return (
+                      <Col xs={24} md={12} xl={8} key={agent.id}>
+                        <Card
+                          hoverable
+                          className={`ledger-agent-card${selected ? ' is-selected' : ''}`}
+                          styles={{ body: { padding: 20, height: '100%', display: 'flex', flexDirection: 'column' } }}
+                          style={{ height: 278 }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                            <Avatar
+                              className="ledger-agent-avatar"
+                              size={56}
+                              src={getAgentAvatarImage(agent)}
+                              icon={avatar.icon}
+                              style={{
+                                flex: '0 0 auto',
+                                background: avatar.background,
+                                color: '#fff',
+                                fontSize: 26,
+                                boxShadow: '0 6px 16px rgba(22, 119, 255, 0.18)',
+                              }}
+                            />
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <a
+                                onClick={() => handleViewDetail(agent)}
+                                style={{
+                                  display: 'block',
+                                  color: '#1f1f1f',
+                                  fontSize: 17,
+                                  fontWeight: 600,
+                                  lineHeight: 1.5,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {agent.name}
+                              </a>
+                              <Text type="secondary" style={{ fontSize: 13 }}>
+                                V{agent.version}
+                              </Text>
+                            </div>
+                            <Checkbox
+                              checked={selected}
+                              onChange={(e) =>
+                                setSelectedRowKeys((keys) =>
+                                  e.target.checked ? [...keys, agent.id] : keys.filter((key) => key !== agent.id),
+                                )
+                              }
+                              aria-label={`选择${agent.name}`}
+                            />
+                          </div>
+
+                          <Text
+                            type="secondary"
+                            ellipsis
+                            style={{ display: 'block', marginTop: 10, fontFamily: 'ui-monospace, monospace', fontSize: 12 }}
+                          >
+                            {agent.idCode}
+                          </Text>
+
+                          <Tooltip title={agent.description || '暂无功能描述'} placement="topLeft">
+                            <div
+                              style={{
+                                marginTop: 14,
+                                minHeight: 44,
+                                color: '#595959',
+                                fontSize: 14,
+                                lineHeight: '22px',
+                                display: '-webkit-box',
+                                WebkitBoxOrient: 'vertical',
+                                WebkitLineClamp: 2,
+                                overflow: 'hidden',
+                              }}
+                            >
+                              {agent.description || '暂无功能描述'}
+                            </div>
+                          </Tooltip>
+
+                          <div className="ledger-agent-keywords">
+                            {agent.functionKeywords.slice(0, 3).map((keyword) => (
+                              <Tag
+                                key={keyword}
+                                bordered={false}
+                                style={{
+                                  margin: 0,
+                                  padding: '2px 10px',
+                                  color: '#595959',
+                                  background: '#f5f5f5',
+                                  borderRadius: 6,
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {keyword}
+                              </Tag>
+                            ))}
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop: 'auto',
+                              paddingTop: 14,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 10,
+                            }}
+                          >
+                            <Tag className="ledger-agent-phase" color="cyan">
+                              {agent.diagnosisPhase?.[0] ?? '其他'}
+                            </Tag>
+                            <Button
+                              className="ledger-profile-action"
+                              type="link"
+                              size="small"
+                              icon={<EyeOutlined />}
+                              onClick={() => handleViewDetail(agent)}
+                              style={{ flex: '0 0 auto', padding: 0 }}
+                            >
+                              360画像
+                            </Button>
+                          </div>
+                        </Card>
+                      </Col>
+                    );
+                  })}
+                </Row>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+                  <Pagination
+                    current={cardPage}
+                    pageSize={9}
+                    total={filtered.length}
+                    showSizeChanger={false}
+                    showTotal={(total) => `共 ${total} 条`}
+                    onChange={setCardPage}
+                  />
+                </div>
+              </>
+            ) : (
             <Table
               rowKey="id"
               columns={columns}
@@ -786,6 +982,7 @@ const LedgerList = () => {
               }}
               scroll={{ x: 1900 }}
             />
+            )}
           </div>
         )}
       </Card>

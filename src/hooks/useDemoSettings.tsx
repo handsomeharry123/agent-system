@@ -26,7 +26,7 @@ import type { UserRole } from '../types/user';
 
 const STORAGE_KEY = 'demo_settings_v1';
 
-export type DemoRole = '信息科管理员' | '科室管理员';
+export type DemoRole = '信息科管理员' | '科室管理员' | '医院领导';
 
 interface DemoSettings {
   demoRole: DemoRole;
@@ -50,6 +50,7 @@ const computeDefaults = (): DemoSettings => {
     newUserRoles: {
       '信息科管理员': false,
       '科室管理员': false,
+      '医院领导': false,
     },
     visibleModules,
     visibleSubPages,
@@ -65,7 +66,9 @@ const mergeWithDefaults = (parsed: Partial<DemoSettings> | null | undefined): De
   if (!parsed) return defaults;
   return {
     demoRole:
-      parsed.demoRole === '信息科管理员' || parsed.demoRole === '科室管理员'
+      parsed.demoRole === '信息科管理员' ||
+      parsed.demoRole === '科室管理员' ||
+      parsed.demoRole === '医院领导'
         ? parsed.demoRole
         : '信息科管理员',
     newUserRoles: {

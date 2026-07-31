@@ -638,6 +638,15 @@ const AgentAssistant = () => {
       new URLSearchParams(location.search).get('tab') === 'pending_review';
     const isMonitoringAlertReviewingTab = isMonitoringAlertEventsPage &&
       new URLSearchParams(location.search).get('tab') === 'reviewing';
+    // 项目审计的列表 Tab 与填报表单共用 /app/audit/project，不能仅靠 pathname
+    // 判断当前场景。侧边气泡自动收起后 activeWelcome 会被清空，因此再从消息
+    // 队列中取最近一次审计欢迎语，保证稍后打开窗口仍能看到当前 Tab 的引导。
+    const activeAuditPageKey = activeWelcome?.pageKey.startsWith('audit-project-')
+      ? activeWelcome.pageKey
+      : [...messages]
+          .reverse()
+          .find((message) => message.id.startsWith('__welcome__:audit-project-'))
+          ?.id.match(/^__welcome__:(audit-project-[^:]+):/)?.[1];
     return messages.filter((m) => {
       if (HIDDEN_CHAT_MESSAGE_TYPES.has(m.type)) return false;
       // 草稿入口只展示当前草稿场景的欢迎消息，避免接入中心、需求列表等
@@ -664,8 +673,8 @@ const AgentAssistant = () => {
         return m.id.startsWith('__welcome__:project-application-form:');
       }
       if (isAuditProjectPage && m.id.startsWith('__welcome__:audit-project-')) {
-        return activeWelcome
-          ? m.id.startsWith(`__welcome__:${activeWelcome.pageKey}:`)
+        return activeAuditPageKey
+          ? m.id.startsWith(`__welcome__:${activeAuditPageKey}:`)
           : false;
       }
       // 生成需求与编辑需求草稿共用同一套智能体流程：上传材料 → 识别填充

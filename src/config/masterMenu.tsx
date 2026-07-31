@@ -296,6 +296,32 @@ export interface ResolvedModule {
   children?: ResolvedSubPage[];
 }
 
+export type MenuRoleKey = 'itAdmin' | 'itUser' | 'hospitalLeader';
+
+const HOSPITAL_LEADER_MODULES = new Set<ModuleKey>([
+  'home',
+  'assistant',
+  'ledger',
+  'monitoring',
+]);
+
+const HOSPITAL_LEADER_SUB_PAGES = new Set([
+  'ledger:overview',
+  'ledger:list',
+  'monitoring:overview',
+  'monitoring:business',
+  'monitoring:status',
+  'monitoring:cost',
+]);
+
+/** 医院领导仅拥有需求指定页面的查看入口。 */
+export const isHospitalLeaderModule = (moduleKey: ModuleKey): boolean =>
+  HOSPITAL_LEADER_MODULES.has(moduleKey);
+
+/** 医院领导仅拥有需求指定二级页面的查看入口。 */
+export const isHospitalLeaderSubPage = (subPageKey: string): boolean =>
+  HOSPITAL_LEADER_SUB_PAGES.has(subPageKey);
+
 /**
  * 判断单个模块在「当前角色 + 用户显隐集合」下是否最终可见。
  * BasicLayout（侧边栏）与 DemoFloatButton（演示树）必须共用同一份判定，
@@ -304,8 +330,9 @@ export interface ResolvedModule {
 export const isModuleVisible = (
   module: MasterModule,
   visibleModules: Record<string, boolean>,
-  demoRole: 'itAdmin' | 'itUser',
+  demoRole: MenuRoleKey,
 ): boolean => {
+  if (demoRole === 'hospitalLeader' && !isHospitalLeaderModule(module.key)) return false;
   // 角色基线：管理员专属模块对普通用户永远不可见
   if (module.defaultRoleVisible === 'itAdmin' && demoRole === 'itUser') return false;
   // 用户显隐偏好：未设置 = 视为默认（避免「全不选」后被默认值合并回 true）
@@ -320,11 +347,12 @@ export const isSubPageVisible = (
   sub: SubPage,
   visibleModules: Record<string, boolean>,
   visibleSubPages: Record<string, boolean>,
-  demoRole: 'itAdmin' | 'itUser',
+  demoRole: MenuRoleKey,
 ): boolean => {
   // 【关键】父模块不可见时，子页面一律不可见
   // 否则会出现"父未勾 + 子仍在 checkedKeys"→ antd Tree 联动模式下父又被标为已勾
   if (!isModuleVisible(module, visibleModules, demoRole)) return false;
+  if (demoRole === 'hospitalLeader' && !isHospitalLeaderSubPage(sub.key)) return false;
   // 子页面级角色基线：未设置 = 跟随父模块
   const subRole = sub.defaultRoleVisible || module.defaultRoleVisible;
   if (subRole === 'itAdmin' && demoRole === 'itUser') return false;
@@ -336,7 +364,7 @@ export const isSubPageVisible = (
 export const resolveMenu = (
   visibleModules: Record<string, boolean>,
   visibleSubPages: Record<string, boolean>,
-  demoRole: 'itAdmin' | 'itUser',
+  demoRole: MenuRoleKey,
 ): ResolvedModule[] => {
   return masterMenu
     .filter((m) => isModuleVisible(m, visibleModules, demoRole))

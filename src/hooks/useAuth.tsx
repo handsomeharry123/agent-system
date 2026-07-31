@@ -62,6 +62,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const permissions: Record<UserRole, Record<string, string[]>> = {
         医院领导: {
           home: ['view'],
+          assistant: ['view'],
           ledger: ['view'],
           monitoring: ['view'],
         },

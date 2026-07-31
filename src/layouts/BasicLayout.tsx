@@ -76,7 +76,11 @@ const BasicLayout = () => {
     return resolveMenu(
       effectiveVisibleModules,
       visibleSubPages,
-      demoRole === '信息科管理员' ? 'itAdmin' : 'itUser',
+      demoRole === '信息科管理员'
+        ? 'itAdmin'
+        : demoRole === '医院领导'
+          ? 'hospitalLeader'
+          : 'itUser',
     );
   }, [visibleModules, visibleSubPages, demoRole, isNewUser]);
 
@@ -119,6 +123,28 @@ const BasicLayout = () => {
       navigate('/app/agent-center', { replace: true });
       return;
     }
+    // 医院领导采用严格页面白名单，避免通过地址栏绕过侧边栏进入编辑/处置页面。
+    if (demoRole === '医院领导') {
+      const leaderAllowedPath =
+        path === '/app/home/dashboard' ||
+        path === '/app/home/overview' ||
+        path === '/app/ledger' ||
+        path === '/app/ledger/list' ||
+        path.startsWith('/app/ledger/detail/') ||
+        path === '/app/monitoring' ||
+        path === '/app/monitoring/business' ||
+        path === '/app/monitoring/status' ||
+        path === '/app/monitoring/cost';
+      if (!leaderAllowedPath) {
+        const warnedKey = `${path}::hospital-leader`;
+        if (warnedForRef.current !== warnedKey) {
+          warnedForRef.current = warnedKey;
+          message.info('医院领导仅可查看已授权页面，已自动跳转到首页。', 3);
+        }
+        navigate('/app/home/dashboard', { replace: true });
+        return;
+      }
+    }
     // 🛡️ V2.4 兜底:接入中心全部二级路径永久豁免拦截(不依赖 masterMenu 子项配置)
     //  场景:StrictMode + 子组件 hooks 顺序漂移导致 ErrorBoundary 替换为 "Something went wrong.",
     //  用户会误读为「拒绝访问」;此短路确保即使上游拦截逻辑因任何 race 误判,
@@ -151,17 +177,33 @@ const BasicLayout = () => {
     // 拦截策略 V2.1：仅在「角色基线无权」时强制回退，不再因演示面板取消勾选拦截路径。
     // 理由：演示面板的可见性只是「侧边栏显隐」开关，不应劫持地址栏直接访问的路由。
     // 保留项：仅信息科管理员可见的子页（如指标展示/数据资源/告警规则管理）对科室管理员仍然强制回退。
-    const roleKey = demoRole === '信息科管理员' ? 'itAdmin' : 'itUser';
+    const roleKey =
+      demoRole === '信息科管理员'
+        ? 'itAdmin'
+        : demoRole === '医院领导'
+          ? 'hospitalLeader'
+          : 'itUser';
     // 计算角色基线拦截：模块 defaultRoleVisible 对当前角色直接不可见
     const roleBaselineBlocked =
-      ownerModule.defaultRoleVisible === 'itAdmin' && roleKey === 'itUser';
+      (roleKey === 'hospitalLeader' &&
+        !['home', 'assistant', 'ledger', 'monitoring'].includes(ownerModule.key)) ||
+      (ownerModule.defaultRoleVisible === 'itAdmin' && roleKey === 'itUser');
     // 路径归属子页面判定：精确路径匹配 或 路径以子页面 path + '/' 开头
     const subPage = ownerModule.children?.find(
       (s) => path === s.path || path.startsWith(s.path + '/'),
     );
+    const leaderAllowedSubPages = [
+      'ledger:overview',
+      'ledger:list',
+      'monitoring:overview',
+      'monitoring:business',
+      'monitoring:status',
+      'monitoring:cost',
+    ];
     const subRoleBaselineBlocked = subPage
-      ? (subPage.defaultRoleVisible || ownerModule.defaultRoleVisible) === 'itAdmin' &&
-        roleKey === 'itUser'
+      ? (roleKey === 'hospitalLeader' && !leaderAllowedSubPages.includes(subPage.key)) ||
+        ((subPage.defaultRoleVisible || ownerModule.defaultRoleVisible) === 'itAdmin' &&
+          roleKey === 'itUser')
       : false;
     const moduleBlocked = roleBaselineBlocked;
     const subPageBlocked = subRoleBaselineBlocked;

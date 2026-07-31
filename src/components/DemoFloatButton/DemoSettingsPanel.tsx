@@ -28,6 +28,9 @@ import {
   masterMenu,
   isModuleVisible,
   isSubPageVisible,
+  isHospitalLeaderModule,
+  isHospitalLeaderSubPage,
+  type MenuRoleKey,
   type ModuleKey,
 } from '../../config/masterMenu';
 // V1.2: 同步切换 mock/resource-center 内部的英文 demoRole + currentUser 账号,
@@ -39,6 +42,7 @@ const { Text } = Typography;
 const ROLE_LABEL: Record<DemoRole, string> = {
   '信息科管理员': '信息科管理员',
   '科室管理员': '科室管理员',
+  '医院领导': '医院领导',
 };
 
 /**
@@ -60,6 +64,11 @@ const ROLE_DETAIL: Record<DemoRole, { userName: string; userDept: string; scope:
     userDept: '心内科',
     scope: '本科室注册与接入记录',
   },
+  '医院领导': {
+    userName: '李嘉',
+    userDept: '院领导',
+    scope: '全院数据（仅查看）',
+  },
 };
 
 /**
@@ -70,11 +79,16 @@ const ROLE_DETAIL: Record<DemoRole, { userName: string; userDept: string; scope:
 const ROLE_TO_APPLICANT_ACCOUNT: Record<DemoRole, string> = {
   '信息科管理员': 'admin01',
   '科室管理员': 'user_lxy', // 演示中心默认的科室管理员是李秀英
+  '医院领导': 'leader_lj',
 };
 
-/** 把当前角色归一为 resolveMenu / isModuleVisible 用的 'itAdmin' | 'itUser' */
-const toRoleKey = (demoRole: DemoRole): 'itAdmin' | 'itUser' =>
-  demoRole === '信息科管理员' ? 'itAdmin' : 'itUser';
+/** 把当前角色归一为菜单权限键。 */
+const toRoleKey = (demoRole: DemoRole): MenuRoleKey =>
+  demoRole === '信息科管理员'
+    ? 'itAdmin'
+    : demoRole === '医院领导'
+      ? 'hospitalLeader'
+      : 'itUser';
 
 /**
  * 演示设置面板（Drawer 内部内容）
@@ -110,11 +124,15 @@ const DemoSettingsPanel = ({ open, onClose }: DemoSettingsPanelProps) => {
   // 树形数据：每个节点附带"角色基线是否禁止"，用于在标题上提示并禁用勾选
   const treeData = useMemo<DataNode[]>(() => {
     return masterMenu.map((m) => {
-      const roleBlocked = m.defaultRoleVisible === 'itAdmin' && roleKey === 'itUser';
+      const roleBlocked =
+        (roleKey === 'hospitalLeader' && !isHospitalLeaderModule(m.key)) ||
+        (m.defaultRoleVisible === 'itAdmin' && roleKey === 'itUser');
       const children: DataNode[] | undefined = m.children
         ? m.children.map<DataNode>((sub) => {
             const subRole = sub.defaultRoleVisible || m.defaultRoleVisible;
-            const subRoleBlocked = subRole === 'itAdmin' && roleKey === 'itUser';
+            const subRoleBlocked =
+              (roleKey === 'hospitalLeader' && !isHospitalLeaderSubPage(sub.key)) ||
+              (subRole === 'itAdmin' && roleKey === 'itUser');
             return {
               key: sub.key,
               title: subRoleBlocked ? (
@@ -202,10 +220,12 @@ const DemoSettingsPanel = ({ open, onClose }: DemoSettingsPanelProps) => {
     //   applicantAccount 走 ROLE_TO_APPLICANT_ACCOUNT 映射, 让 owner 派发能正确命中 mockApplies 中的本人数据。
     //   必须先 setDemoRole 再 setCurrentUser —— mock 内部 setDemoRole 末尾会强制 resetCurrentUserByRole,
     //   把 currentUser 重置为角色默认值覆盖调用方刚写入的 account。
-    const mockRole: 'admin' | 'user' = role === '信息科管理员' ? 'admin' : 'user';
-    const applicantAccount = ROLE_TO_APPLICANT_ACCOUNT[role];
-    setMockDemoRole(mockRole);
-    setMockCurrentUser({ account: applicantAccount, name: ROLE_DETAIL[role].userName, role: mockRole });
+    if (role !== '医院领导') {
+      const mockRole: 'admin' | 'user' = role === '信息科管理员' ? 'admin' : 'user';
+      const applicantAccount = ROLE_TO_APPLICANT_ACCOUNT[role];
+      setMockDemoRole(mockRole);
+      setMockCurrentUser({ account: applicantAccount, name: ROLE_DETAIL[role].userName, role: mockRole });
+    }
 
     // 角色切换后按该角色保存的新用户状态进入对应默认页。
     navigate(
@@ -240,7 +260,7 @@ const DemoSettingsPanel = ({ open, onClose }: DemoSettingsPanelProps) => {
           <SettingOutlined />
           <span>演示设置</span>
           <Tag color="gold">演示模式</Tag>
-          <Tag color={demoRole === '信息科管理员' ? 'orange' : 'cyan'}>{demoRole}</Tag>
+          <Tag color={demoRole === '信息科管理员' ? 'orange' : demoRole === '医院领导' ? 'gold' : 'cyan'}>{demoRole}</Tag>
           <Tag color="blue">
             以 {ROLE_DETAIL[demoRole].userName} 的身份查看
           </Tag>
@@ -268,6 +288,10 @@ const DemoSettingsPanel = ({ open, onClose }: DemoSettingsPanelProps) => {
               {
                 label: `科室管理员（${ROLE_DETAIL['科室管理员'].userName}）`,
                 value: '科室管理员',
+              },
+              {
+                label: `医院领导（${ROLE_DETAIL['医院领导'].userName}）`,
+                value: '医院领导',
               },
             ]}
           />

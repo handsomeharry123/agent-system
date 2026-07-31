@@ -38,11 +38,13 @@ const permissionTree: DataNode[] = [
     key: 'access', title: '智能体接入中心', children: [
       page('access:list', '注册管理列表页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '审核', '撤销', '编辑', '删除']),
       page('access:draft', '注册管理草稿 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '编辑', '删除']),
-      page('access:pending', '注册管理待审核 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '审核', '撤销']),
-      page('access:reviewing', '注册管理审核中 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '审核', '撤销']),
+      page('access:pending', '注册管理待审核 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '审核', '撤销（信息科管理员仅限本科室注册的智能体）']),
+      page('access:reviewing', '注册管理审核中 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '审核', '撤销（信息科管理员仅限本科室注册的智能体）']),
       page('access:revoke', '注册管理撤销修改 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情', '编辑', '删除']),
       page('access:returned', '注册管理退回修改 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情']),
       page('access:approved', '注册管理审核通过 tab 页', ['智能体编号/名称下钻至注册信息详情', '新建注册', '查看详情']),
+      page('access:create', '新建注册页'),
+      page('access:detail', '注册信息详情页'),
     ],
   },
   { key: 'ledger', title: '统一台账中心', children: [page('ledger:overview', '台账总览页'), page('ledger:list', '台账列表页')] },
@@ -55,11 +57,13 @@ const permissionTree: DataNode[] = [
       { key: 'resource:apply', title: '申请管理', children: [
         page('resource:apply:all', '资源申请管理全部列表页', ['权限申请', '查看详情', '审核', '撤销', '编辑', '删除']),
         page('resource:apply:draft', '资源申请管理草稿 tab 页', ['权限申请', '编辑', '删除']),
-        page('resource:apply:pending', '资源申请管理待审核 tab 页', ['权限申请', '查看详情', '审核', '撤销']),
-        page('resource:apply:reviewing', '资源申请管理审核中 tab 页', ['权限申请', '查看详情', '审核', '撤销']),
+        page('resource:apply:pending', '资源申请管理待审核 tab 页', ['权限申请', '查看详情', '审核', '撤销（信息科管理员仅限本科室申请的资源）']),
+        page('resource:apply:reviewing', '资源申请管理审核中 tab 页', ['权限申请', '查看详情', '审核', '撤销（信息科管理员仅限本科室申请的资源）']),
         page('resource:apply:revoke', '资源申请管理撤销修改 tab 页', ['权限申请', '查看详情', '编辑', '删除']),
         page('resource:apply:returned', '资源申请管理退回修改 tab 页', ['权限申请', '查看详情']),
         page('resource:apply:approved', '资源申请管理审核通过 tab 页', ['权限申请', '查看详情']),
+        page('resource:apply:create', '申请权限页'),
+        page('resource:apply:detail', '权限申请详情页'),
       ] },
     ],
   },
@@ -68,12 +72,14 @@ const permissionTree: DataNode[] = [
       { key: 'evaluation:task', title: '评测任务管理', children: [
         page('evaluation:task:all', '评测任务管理全部列表页', ['新建评测任务', '重新评测', '查看详情', '审核', '撤销', '编辑', '删除']),
         page('evaluation:task:draft', '评测任务管理草稿列表页', ['新建评测任务', '查看详情', '编辑', '删除']),
+        page('evaluation:task:pending', '评测任务管理待评测列表页', ['新建评测任务', '查看详情', '撤销']),
         page('evaluation:task:running', '评测任务管理评测中列表页', ['新建评测任务', '查看详情', '撤销']),
         page('evaluation:task:revoke', '评测任务管理撤销列表页', ['新建评测任务', '查看详情', '编辑', '删除']),
         page('evaluation:task:finished', '评测任务管理评测完成列表页', ['新建评测任务', '查看详情', '审核']),
         page('evaluation:task:reviewing', '评测任务管理审核中列表页', ['新建评测任务', '查看详情', '审核']),
         page('evaluation:task:approved', '评测任务管理审核通过列表页', ['新建评测任务', '查看详情']),
         page('evaluation:task:returned', '评测任务管理退回修改列表页', ['新建评测任务', '查看详情']),
+        page('evaluation:task:result', '评测结果详情页'),
       ] },
       page('evaluation:index', '指标列表', ['查看评分规则', '前往任务管理']),
       page('evaluation:data', '数据集管理', ['点击数据集名称下钻至对应数据集详情', '上传数据集', '查看详情', '编辑', '删除']),
@@ -86,11 +92,13 @@ const permissionTree: DataNode[] = [
       { key: 'monitor:event', title: '告警事件处置', children: [
         page('monitor:event:all', '全部告警事件页', ['查看详情', '分派', '处理', '审核']),
         page('monitor:event:assign', '待分派告警事件页', ['查看详情', '分派']),
-        page('monitor:event:handle', '待处理告警事件页', ['查看详情', '处理']),
+        page('monitor:event:handle', '待处理告警事件页', ['查看详情', '处理（信息科管理员仅限本科室智能体产生的告警事件）']),
         page('monitor:event:handling', '处理中告警事件页'),
         page('monitor:event:pending', '待审核告警事件页', ['查看详情', '审核']),
         page('monitor:event:reviewing', '审核中告警事件页', ['查看详情', '审核']),
         page('monitor:event:closed', '已关闭告警事件页'), page('monitor:event:ignored', '已忽略告警事件页'),
+        page('monitor:event:process', '告警事件处理页'),
+        page('monitor:event:detail', '告警事件详情页'),
       ] },
     ],
   },
@@ -104,15 +112,17 @@ const permissionTree: DataNode[] = [
   {
     key: 'audit', title: '审计中心', children: [
       page('audit:economic', '经济审计'),
-      { key: 'audit:project', title: '项目审计', children: [
+      { key: 'audit:project', title: '项目审计（仅立项申报项目的科室具备权限）', children: [
         page('audit:project:all', '全部项目审计列表页', ['批量导出', '项目审计信息填报', '查看详情', '审计', '撤销', '编辑', '删除']),
         page('audit:project:pending', '待申请列表页', ['批量导出', '项目审计信息填报']),
         page('audit:project:draft', '草稿列表页', ['批量导出', '编辑', '删除']),
-        page('audit:project:audit', '待审计列表页', ['批量导出', '查看详情', '审计', '撤销']),
-        page('audit:project:auditing', '审计中列表页', ['批量导出', '查看详情', '审计', '撤销']),
+        page('audit:project:audit', '待审计列表页', ['批量导出', '查看详情', '审计', '撤销（信息科管理员仅限本科室申请的项目审计）']),
+        page('audit:project:auditing', '审计中列表页', ['批量导出', '查看详情', '审计', '撤销（信息科管理员仅限本科室申请的项目审计）']),
         page('audit:project:revoke', '撤销修改列表页', ['批量导出', '查看详情', '编辑']),
         page('audit:project:approved', '审计通过列表页', ['批量导出', '查看详情']),
-        page('audit:project:rejected', '审计不通过列表页', ['批量导出', '查看详情']),
+        page('audit:project:department-approved', '审计部通过列表页', ['批量导出', '查看详情']),
+        page('audit:project:form', '项目审计信息填报页'),
+        page('audit:project:detail', '项目审计信息详情页'),
       ] },
       page('audit:agent', '智能体行为审计'), page('audit:log', '操作日志页'),
     ],
@@ -127,8 +137,102 @@ const permissionTree: DataNode[] = [
 
 const flattenKeys = (nodes: DataNode[]): React.Key[] => nodes.flatMap((node) => [node.key, ...(node.children ? flattenKeys(node.children) : [])]);
 const allKeys = flattenKeys(permissionTree);
-const leaderKeys = allKeys.filter((key) => ['home', 'assistant', 'ledger', 'monitor'].some((prefix) => String(key).startsWith(prefix)));
-const deptKeys = allKeys.filter((key) => !String(key).startsWith('system:dict') && !String(key).includes('audit'));
+
+const findNode = (key: string, nodes: DataNode[] = permissionTree): DataNode | undefined => {
+  for (const node of nodes) {
+    if (String(node.key) === key) return node;
+    const found = node.children ? findNode(key, node.children) : undefined;
+    if (found) return found;
+  }
+  return undefined;
+};
+
+const keysFor = (key: string, actions?: string[]): React.Key[] => {
+  const node = findNode(key);
+  if (!node) return [];
+  if (!actions) return flattenKeys([node]);
+  const actionKeys = (node.children || [])
+    .filter((child) => actions.some((action) => String(child.title).startsWith(action)))
+    .map((child) => child.key);
+  return [node.key, ...actionKeys];
+};
+
+const combineKeys = (...groups: React.Key[][]) => Array.from(new Set(groups.flat()));
+
+const leaderKeys = combineKeys(
+  keysFor('home'),
+  keysFor('assistant'),
+  keysFor('ledger'),
+  keysFor('monitor:overview'),
+  keysFor('monitor:business'),
+  keysFor('monitor:status'),
+  keysFor('monitor:cost'),
+);
+
+const deptKeys = combineKeys(
+  keysFor('home'),
+  keysFor('assistant'),
+  keysFor('needs'),
+  keysFor('access:list', ['撤销']),
+  keysFor('access:draft'),
+  keysFor('access:pending', ['撤销']),
+  keysFor('access:reviewing', ['撤销']),
+  keysFor('access:revoke'),
+  keysFor('access:returned'),
+  keysFor('access:approved'),
+  keysFor('access:create'),
+  keysFor('access:detail'),
+  keysFor('ledger'),
+  ['resource:apply'],
+  keysFor('resource:apply:all'),
+  keysFor('resource:apply:draft'),
+  keysFor('resource:apply:pending', ['撤销']),
+  keysFor('resource:apply:reviewing', ['撤销']),
+  keysFor('resource:apply:revoke'),
+  keysFor('resource:apply:returned'),
+  keysFor('resource:apply:approved'),
+  keysFor('resource:apply:create'),
+  keysFor('resource:apply:detail'),
+  ['evaluation:task'],
+  keysFor('evaluation:task:all', ['查看详情']),
+  keysFor('evaluation:task:draft'),
+  keysFor('evaluation:task:pending'),
+  keysFor('evaluation:task:running', ['查看详情']),
+  keysFor('evaluation:task:revoke'),
+  keysFor('evaluation:task:finished', ['查看详情']),
+  keysFor('evaluation:task:reviewing', ['查看详情']),
+  keysFor('evaluation:task:approved'),
+  keysFor('evaluation:task:returned'),
+  keysFor('evaluation:task:result'),
+  keysFor('monitor:overview'),
+  keysFor('monitor:business'),
+  keysFor('monitor:status'),
+  keysFor('monitor:cost'),
+  ['monitor:event'],
+  keysFor('monitor:event:all'),
+  keysFor('monitor:event:handle', ['处理']),
+  keysFor('monitor:event:handling'),
+  keysFor('monitor:event:pending', ['查看详情']),
+  keysFor('monitor:event:reviewing', ['查看详情']),
+  keysFor('monitor:event:closed'),
+  keysFor('monitor:event:ignored'),
+  keysFor('monitor:event:process'),
+  keysFor('monitor:event:detail'),
+  keysFor('audit:economic'),
+  ['audit:project'],
+  keysFor('audit:project:all', ['撤销']),
+  keysFor('audit:project:pending'),
+  keysFor('audit:project:draft'),
+  keysFor('audit:project:audit', ['撤销']),
+  keysFor('audit:project:auditing', ['撤销']),
+  keysFor('audit:project:revoke'),
+  keysFor('audit:project:approved'),
+  keysFor('audit:project:department-approved'),
+  keysFor('audit:project:form'),
+  keysFor('audit:project:detail'),
+  keysFor('audit:agent'),
+  keysFor('system:model'),
+);
 const defaults: Record<string, React.Key[]> = { 医院领导: leaderKeys, 信息科管理员: allKeys, 科室管理员: deptKeys };
 
 const FunctionPermission = () => {

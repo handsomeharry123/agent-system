@@ -6,14 +6,18 @@ import { departmentOptions } from '../../mock/departments';
 import { systemRoles } from './constants';
 import { initialCenterUsers, type CenterUser } from './UserList';
 
-type UserFormValues = Pick<CenterUser, 'name' | 'employeeId' | 'department' | 'phone' | 'roles' | 'dataScope' | 'status'>;
+type UserFormValues = Pick<CenterUser, 'name' | 'employeeId' | 'password' | 'department' | 'phone' | 'roles' | 'dataScope' | 'status'>;
 
 const loadUsers = (): CenterUser[] => {
   const saved = sessionStorage.getItem('user-center-users');
   if (!saved) return initialCenterUsers;
   return JSON.parse(saved).map((user: CenterUser & { role?: CenterUser['roles'][number] }) => {
     const { role, ...rest } = user;
-    return { ...rest, roles: rest.roles?.length ? rest.roles : role ? [role] : [] };
+    return {
+      ...rest,
+      password: rest.password || initialCenterUsers.find((initialUser) => initialUser.id === user.id)?.password || '123456',
+      roles: rest.roles?.length ? rest.roles : role ? [role] : [],
+    };
   });
 };
 
@@ -85,8 +89,15 @@ const UserFormPage = () => {
           }}
         >
           <div className="user-center-form-grid">
-            <Form.Item name="name" label="用户姓名" rules={[{ required: true, message: '请输入用户姓名' }]}>
-              <Input placeholder="请输入用户姓名" maxLength={50} />
+            <Form.Item
+              name="name"
+              label="用户姓名"
+              rules={[
+                { required: true, message: '请输入用户姓名' },
+                { pattern: /^[\u4e00-\u9fa5]{2,10}$/, message: '用户姓名须为 2-10 个汉字' },
+              ]}
+            >
+              <Input placeholder="请输入用户姓名" maxLength={10} />
             </Form.Item>
             <Form.Item
               name="employeeId"
@@ -102,6 +113,15 @@ const UserFormPage = () => {
             >
               <Input placeholder="请输入用户工号" maxLength={30} />
             </Form.Item>
+            {isEditing && (
+              <Form.Item
+                name="password"
+                label="登录密码"
+                rules={[{ required: true, message: '请输入登录密码' }]}
+              >
+                <Input.Password placeholder="请输入登录密码" maxLength={50} />
+              </Form.Item>
+            )}
             {!isEditing && (
               <Form.Item label="初始密码" extra="统一设定为“用户姓名小写首字母 + 用户工号”">
                 <Input disabled value="系统自动生成" />
