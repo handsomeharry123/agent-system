@@ -119,11 +119,50 @@ const SUGGESTIONS_DEPT = [
 ];
 
 const SUGGESTIONS_DETAIL = [
-  '它最近的使用效果怎么样？',
-  '本科室谁用它用得最多？',
+  '这个智能体的基本信息是什么？',
   '它适合处理哪些场景？',
-  '最近有没有告警或故障记录？',
+  '它对接了哪些资源？',
+  '它的评测结果怎么样？',
 ];
+
+const detailOutOfScope = (detailView: 'profile' | 'detail') =>
+  `超出当前智能体${detailView === 'profile' ? '360画像页' : '信息详情页'}信息范围，暂无法为您解答，我们将持续完善。`;
+
+/** 详情页只回答页面已经呈现的结构化信息，不调用台账聚合推理。 */
+const detailAnswer = (q: string, agent: LedgerWelcomeAgent, detailView: 'profile' | 'detail'): AgentMsg => {
+  const id = `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const reply = (text: string): AgentMsg => ({ id, role: 'agent', text });
+  if (/基本信息|概况|介绍|是什么/.test(q)) {
+    return reply(`【${agent.name}】编号为 **${agent.idCode || '—'}**，版本 **${agent.version || '—'}**，所属科室为 **${agent.department || '—'}**，诊疗环节为 **${agent.diagnosisPhase || '—'}**。`);
+  }
+  if (/名称|叫什么/.test(q)) return reply(`该智能体名称为【${agent.name}】。`);
+  if (/编号|编码/.test(q)) return reply(`该智能体编号为 **${agent.idCode || '—'}**。`);
+  if (/版本/.test(q)) return reply(`当前智能体版本为 **${agent.version || '—'}**。`);
+  if (/科室|部门/.test(q)) return reply(`该智能体所属科室为 **${agent.department || '—'}**。`);
+  if (/场景|功能|做什么|诊疗环节|适合/.test(q)) {
+    return reply(`该智能体的诊疗环节为 **${agent.diagnosisPhase || '—'}**。功能描述：${agent.description || '暂无'}。`);
+  }
+  if (/来源|供应商|厂商/.test(q)) {
+    return reply(`智能体来源为 **${agent.sourceType || '—'}**，供应商为 **${agent.vendor || '—'}**。`);
+  }
+  if (/联系人|联系方式|电话/.test(q)) {
+    return reply(`技术联系人为 **${agent.techContact || '—'}**，联系方式为 **${agent.techContactPhone || '—'}**。`);
+  }
+  if (/风险/.test(q)) return reply(`当前风险分级为 **${agent.riskLevel || '—'}**。`);
+  if (/运行状态|在线|上线|接入时间/.test(q)) {
+    return reply(`当前运行状态为 **${agent.runtimeStatus || agent.availableStatus || '—'}**，接入时间为 **${agent.accessTime || '—'}**，上线时间为 **${agent.onlineTime || '—'}**。`);
+  }
+  if (/技术|模型|接入方式|接口/.test(q)) {
+    return reply(`该智能体通过 **${agent.accessType || '—'}** 接入，使用模型 **${agent.modelName || '—'}**。敏感接口凭证仅按页面权限展示。`);
+  }
+  if (/资源|对接/.test(q)) {
+    return reply(agent.resourceNames?.length ? `已对接资源：${agent.resourceNames.join('、')}。` : '当前页面显示该智能体暂无已对接资源。');
+  }
+  if (/评测|分数|得分/.test(q)) {
+    return reply(agent.evaluationScore != null ? `当前页面显示的准入评测总分为 **${agent.evaluationScore} 分**。` : '当前页面暂无准入评测结果。');
+  }
+  return reply(detailOutOfScope(detailView));
+};
 
 // ============ 模拟回答生成 ============
 const mockAnswer = (
@@ -532,6 +571,7 @@ export interface ChatPanelV31Props {
   scope: 'platform_admin' | 'dept_admin';
   pageKind?: 'overview' | 'list' | 'detail' | 'global';
   detailAgent?: LedgerWelcomeAgent;
+  detailView?: 'profile' | 'detail';
   onClose: () => void;
   // V1.1：与父组件配合的快捷操作
   onGenerateReport?: () => void;
@@ -543,6 +583,7 @@ export const ChatPanelV31: React.FC<ChatPanelV31Props> = ({
   scope,
   pageKind = 'overview',
   detailAgent,
+  detailView = 'profile',
   onClose,
   onGenerateReport,
   onSubscribeBriefing,
@@ -578,24 +619,12 @@ export const ChatPanelV31: React.FC<ChatPanelV31Props> = ({
       faultCount: metrics.faultCount,
     };
     if (pageKind === 'detail') {
-      const detailText = isDept
-        ? `你好，我是**医小管**！这是【${activeDetailAgent.name}】的 360 画像，当前可用状态：**${activeDetailAgent.availableStatus}**，本月本科室调用 **${activeDetailAgent.monthlyCalls.toLocaleString()} 次**，当前告警 **${activeDetailAgent.alarmCount} 次**、故障 **${activeDetailAgent.faultCount} 次**，需要我带你查看信息详情吗？`
-        : `你好，我是**医小管**！这是【${activeDetailAgent.name}】的 360 画像，我已为你聚合基本信息、关联资源拓扑、准入评测与运行监测信息；当前告警 **${activeDetailAgent.alarmCount} 次**、故障 **${activeDetailAgent.faultCount} 次**，需要我带你查看信息详情吗？推荐问题（欢迎语下方，点击即问）：`;
-      const detailGuideActions: MsgGuideAction[] = [
-        {
-          key: 'view-detail',
-          label: '查看明细',
-          kind: 'view-detail',
-          value: 'detail',
-          primary: true,
-        },
-      ];
+      const detailText = `您好，我是**医小管**。当前为您展示【${activeDetailAgent.name}】的${detailView === 'profile' ? '360画像' : '信息详情'}，有什么该智能体相关问题可以直接问我~`;
       setMsgs([
         {
           id: 'welcome',
           role: 'agent',
           text: detailText,
-          guideActions: detailGuideActions,
           suggestions,
         },
       ]);
@@ -749,7 +778,7 @@ export const ChatPanelV31: React.FC<ChatPanelV31Props> = ({
       suggestions,
     };
     setMsgs([welcome]);
-  }, [detailAgent, metrics, pageKind, scope, suggestions]);
+  }, [detailAgent, detailView, metrics, pageKind, scope, suggestions]);
 
   // 消息追加时滚到底
   useEffect(() => {
@@ -770,7 +799,12 @@ export const ChatPanelV31: React.FC<ChatPanelV31Props> = ({
     setInput('');
     // 模拟思考延迟
     setTimeout(() => {
-      setMsgs((prev) => [...prev, mockAnswer(q, metrics.scopeLabel, metrics)]);
+      setMsgs((prev) => [
+        ...prev,
+        pageKind === 'detail'
+          ? detailAnswer(q, detailAgent || { name: '当前智能体', availableStatus: '未知', monthlyCalls: 0, alarmCount: 0, faultCount: 0 }, detailView)
+          : mockAnswer(q, metrics.scopeLabel, metrics),
+      ]);
     }, 450);
   };
 

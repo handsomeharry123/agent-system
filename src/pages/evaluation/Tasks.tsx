@@ -64,6 +64,7 @@ import {
   Typography,
   Dropdown,
   Progress,
+  Segmented,
 } from 'antd';
 import {
   PlusOutlined,
@@ -76,6 +77,8 @@ import {
   SearchOutlined,
   ExclamationCircleOutlined,
   MoreOutlined,
+  SafetyCertificateOutlined,
+  ExperimentOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { MenuProps } from 'antd';
@@ -92,11 +95,14 @@ import {
 } from '../../mock/evaluation';
 import { useAuth } from '../../hooks/useAuth';
 import { useSmartDraft } from '../agent-center/smart/store';
+import PujiangTaskList from './pujiang/PujiangTaskList';
 
 const { Text } = Typography;
 
 // 评测标准固定值（V1.7 §一）
 const EVAL_STANDARD = '团体标准《智能体安全评测规范》';
+
+type EvaluationModule = 'safety' | 'pujiang';
 
 // Tab 列表（V1.7：全部 + 7 状态 = 8 个 Tab；「待评测」为排队中间态，统一在全部任务中展示；「待审核」已下线）
 //   · Tab key 与 EvaluationStatus 一一对应（除 'all'），便于 t.status === activeTab 直筛
@@ -161,6 +167,10 @@ const Tasks = () => {
 
   // 本地任务（支持操作后修改）
   const [tasks, setTasks] = useState<EvaluationTask[]>(mockEvaluationTasks);
+  const [evaluationModule, setEvaluationModule] = useState<EvaluationModule>(searchParams.get('module') === 'pujiang' ? 'pujiang' : 'safety');
+  const updateCurrentTasks = (updater: (previous: EvaluationTask[]) => EvaluationTask[]) => {
+    setTasks(updater);
+  };
 
   // 台账列表「查看评测结果」联动：?tab=all&agentName=XXX → 自动切到「全部任务」并按名称预筛
   const presetAgentName = searchParams.get('agentName') || '';
@@ -284,7 +294,7 @@ const Tasks = () => {
       okType: 'danger',
       cancelText: '取消',
       onOk: () => {
-        setTasks((prev) =>
+        updateCurrentTasks((prev) =>
           prev.map((t) =>
             t.id === task.id
               ? { ...t, status: '撤销', cancelTime: new Date().toISOString().slice(0, 19).replace('T', ' ') }
@@ -306,7 +316,7 @@ const Tasks = () => {
       okText: '确认发起',
       cancelText: '取消',
       onOk: () => {
-        setTasks((prev) =>
+        updateCurrentTasks((prev) =>
           prev.map((t) =>
             t.id === task.id
               ? { ...t, status: '审核中', reviewStartTime: new Date().toISOString().slice(0, 19).replace('T', ' ') }
@@ -335,7 +345,7 @@ const Tasks = () => {
       okType: 'danger',
       cancelText: '取消',
       onOk: () => {
-        setTasks((prev) => prev.filter((t) => t.id !== task.id));
+        updateCurrentTasks((prev) => prev.filter((t) => t.id !== task.id));
         message.success('已删除');
       },
     });
@@ -830,6 +840,36 @@ const Tasks = () => {
     return cols;
   };
 
+  const moduleSwitcher = (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        paddingBottom: 16,
+        marginBottom: 4,
+        borderBottom: '1px solid #F0F0F0',
+      }}
+    >
+      <Segmented<EvaluationModule>
+        value={evaluationModule}
+        size="large"
+        options={[
+          { value: 'safety', label: <Space size={6}><SafetyCertificateOutlined /><span>安全性评测</span></Space> },
+          { value: 'pujiang', label: <Space size={6}><ExperimentOutlined /><span>浦江实验室评测</span></Space> },
+        ]}
+        onChange={(value) => {
+          setEvaluationModule(value);
+          setSearchParams(value === 'pujiang' ? { module: 'pujiang' } : {}, { replace: true });
+          setActiveTab('all');
+          setKeyword('');
+          setStatusFilter(undefined);
+          setRiskFilter(undefined);
+          setResultFilter(undefined);
+        }}
+      />
+    </div>
+  );
+
   return (
     <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100%' }}>
       <PageHeader
@@ -841,7 +881,7 @@ const Tasks = () => {
               key="create"
               type="primary"
               icon={<PlusOutlined />}
-              onClick={() => navigate('/app/evaluation/tasks/create')}
+              onClick={() => navigate(evaluationModule === 'pujiang' ? '/app/evaluation/tasks/pujiang/create' : '/app/evaluation/tasks/create')}
             >
               新建评测任务
             </Button>
@@ -849,7 +889,12 @@ const Tasks = () => {
         ]}
       />
 
+      {evaluationModule === 'pujiang' ? (
+        <PujiangTaskList moduleSwitcher={moduleSwitcher} />
+      ) : (
+      <>
       <Card style={{ marginTop: 16 }}>
+        {moduleSwitcher}
         <Tabs
           activeKey={activeTab}
           onChange={(k) => {
@@ -954,6 +999,8 @@ const Tasks = () => {
           scroll={{ x: 1820 }}
         />
       </div>
+      </>
+      )}
     </div>
   );
 };

@@ -49,7 +49,6 @@ import LedgerDetail from './pages/ledger/Detail';
 import RiskLevelPage from './pages/ledger/RiskLevel';
 // 智能化升级 Demo(§3.1-3.3)
 import LedgerDemo from './pages/ledger/demo';
-import DemoOverviewV31 from './pages/ledger/demo/OverviewV31';
 import DemoProfileV32 from './pages/ledger/demo/AgentProfileV32';
 import DemoReportV34 from './pages/ledger/demo/ReportV34';
 import DemoAgentListV32 from './pages/ledger/demo/AgentListV32';
@@ -76,6 +75,8 @@ import ImportDataset from './pages/evaluation/ImportDataset';
 import ImportQuestions from './pages/evaluation/ImportQuestions';
 import EvaluationDatasetDetail from './pages/evaluation/EvaluationDatasetDetail';
 import TaskReview from './pages/evaluation/TaskReview';
+import PujiangTaskForm from './pages/evaluation/pujiang/PujiangTaskForm';
+import PujiangTaskDetail from './pages/evaluation/pujiang/PujiangTaskDetail';
 
 // Pages - Orchestration
 import Orchestration from './pages/orchestration/index';
@@ -241,8 +242,9 @@ const routes: RouteObject[] = [
         path: 'ledger-demo',
         element: <LedgerDemo />,
         children: [
-          { index: true, element: <Navigate to="/app/ledger-demo/overview" replace /> },
-          { path: 'overview', element: <DemoOverviewV31 /> },
+          { index: true, element: <Navigate to="/app/ledger" replace /> },
+          // 旧 Demo 总览已下线；兼容历史链接并统一回到正式台账总览。
+          { path: 'overview', element: <Navigate to="/app/ledger" replace /> },
           { path: 'list', element: <DemoAgentListV32 /> },
           { path: 'profile', element: <DemoProfileV32 /> },
           { path: 'report', element: <DemoReportV34 /> },
@@ -280,6 +282,9 @@ const routes: RouteObject[] = [
           { path: 'tasks', element: <Tasks /> },
           // 3.2 新建评测任务
           { path: 'tasks/create', element: <CreateTask /> },
+          // 浦江实验室评测：新建/编辑与结果详情
+          { path: 'tasks/pujiang/create', element: <PujiangTaskForm /> },
+          { path: 'tasks/pujiang/:id', element: <PujiangTaskDetail /> },
           // 3.3 评测结果详情
           { path: 'tasks/:id/report', element: <EvaluationReport /> },
           // 3.4 评测结果审核（仅管理员）

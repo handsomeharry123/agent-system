@@ -52,7 +52,7 @@ import { ledgerAgents } from '../../mock/ledger';
 //   - 总览首页: /app/ledger(精确)
 //   - 列表页:   /app/ledger/list(精确 + 带 query 的形式,如 ?accessMonth=...)
 //   - 详情页:   /app/ledger/detail/:id(走详情页欢迎语"360 画像")
-//   - Demo:     /app/ledger-demo/overview | /app/ledger-demo/list
+//   - Demo:     /app/ledger-demo/list
 //   - 其他页面: 仅显示机器人 icon,不弹气泡
 const isBubbleTriggerPath = (pathname: string): boolean => {
   if (pathname === '/app/ledger') return true;
@@ -169,6 +169,23 @@ export const AgentFloatHost: React.FC = () => {
       alarmCount,
       faultCount,
       abnormalConnections,
+      idCode: agent.idCode,
+      version: agent.version,
+      department: agent.department,
+      diagnosisPhase: agent.diagnosisPhase.join(' / '),
+      description: agent.description,
+      sourceType: agent.sourceType,
+      vendor: agent.vendor,
+      techContact: agent.techContact,
+      techContactPhone: agent.techContactPhone,
+      riskLevel: agent.riskLevel,
+      runtimeStatus: agent.runtimeStatus,
+      accessTime: agent.accessTime,
+      onlineTime: agent.onlineTime,
+      accessType: agent.accessType,
+      modelName: agent.modelName,
+      resourceNames: agent.linkedResources.map((item) => item.name),
+      evaluationScore: agent.evaluationReport?.totalScore,
     };
   }, [location.pathname]);
 
@@ -176,6 +193,7 @@ export const AgentFloatHost: React.FC = () => {
   const [hover, setHover] = useState(false);
   const [open, setOpen] = useState(false); // 对话浮层开关(对齐 AgentAssistant)
   const [bubbleOpen, setBubbleOpen] = useState(false); // 态势汇报气泡开关
+  const [detailView, setDetailView] = useState<'profile' | 'detail'>('profile');
   const [mood, setMood] = useState<AgentMood>('idle');
   // badgePulse: 新消息时 600ms 内播放红点放大闪烁 + bounce;手 wave
   const [badgePulse, setBadgePulse] = useState(false);
@@ -187,6 +205,20 @@ export const AgentFloatHost: React.FC = () => {
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; posX: number; posY: number } | null>(null);
 
   const robotRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setDetailView('profile');
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const handleDetailViewChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ agentId?: string; view?: 'profile' | 'detail' }>).detail;
+      if (detail?.agentId && detailAgent?.id && detail.agentId !== detailAgent.id) return;
+      if (detail?.view) setDetailView(detail.view);
+    };
+    window.addEventListener('ledger-detail-view-change', handleDetailViewChange);
+    return () => window.removeEventListener('ledger-detail-view-change', handleDetailViewChange);
+  }, [detailAgent?.id]);
 
   // V1.1：报告生成 / 订阅速读 钩子(由 useNavigate 注入)
   const handleGenerateReport = () => {
@@ -424,6 +456,7 @@ export const AgentFloatHost: React.FC = () => {
           metrics={metrics}
           pageKind={pageKind}
           detailAgent={detailAgent}
+          detailView={detailView}
           anchorRef={robotRef}
           anchorPositionKey={`${Math.round(robotPos.left)}:${Math.round(robotPos.top)}:${draggingRobot ? 1 : 0}`}
           onClose={handleCloseBubble}
@@ -441,6 +474,7 @@ export const AgentFloatHost: React.FC = () => {
           scope={scope}
           pageKind={pageKind}
           detailAgent={detailAgent}
+          detailView={detailView}
           onClose={handleChatClose}
           onGenerateReport={enableReportActions ? handleGenerateReport : undefined}
           onSubscribeBriefing={enableReportActions ? handleSubscribeBriefing : undefined}

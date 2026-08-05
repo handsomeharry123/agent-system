@@ -42,6 +42,7 @@ import {
   ThunderboltFilled,
 } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
+import AgentLifecycleProgress, { type AgentLifecycleStage } from '../../components/AgentLifecycleProgress';
 import { departmentOptions } from '../../mock/departments';
 import { useAuth } from '../../hooks/useAuth';
 import { useSmartDraft } from '../agent-center/smart/store';
@@ -90,6 +91,8 @@ interface ProjectRecord {
   finishTime?: string;
   reviewNote?: string;
   files: string[];
+  /** 跨详情页共享的项目流程节点；历史记录未保存时按立项节点展示。 */
+  lifecycleStage?: AgentLifecycleStage;
 }
 
 type IndicatorItem = {
@@ -1261,36 +1264,44 @@ export function ProjectApplicationDetail() {
   const record = useMemo(() => getRecord(id), [id]);
   const { currentUser } = useAuth();
   const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
-  const isAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
+  const isDepartmentAdmin = currentUser?.roles.includes('科室管理员') ?? false;
+  const isProjectDepartmentAdmin = isDepartmentAdmin && currentUser?.department === record?.department;
+  const lifecycleStage = record?.lifecycleStage ?? '立项';
+  const shouldGuideRegistration = Boolean(
+    record &&
+    record.status === '立项通过' &&
+    lifecycleStage === '立项' &&
+    isProjectDepartmentAdmin,
+  );
   useEffect(() => {
-    if (!record) return undefined;
-    const onDownload = () => {
-      downloadProjectApplicationTemplate();
-      message.success('项目申报书已开始下载');
-    };
-    window.addEventListener('project-application-download', onDownload);
+    if (!record || !shouldGuideRegistration) return undefined;
     pushWelcomeGreeting(
       'project-application-detail',
-      isAdmin ? 'admin' : 'dept',
+      'dept',
       () => [record.name],
       {
-        actions: [{
-          key: 'download-project-application',
-          label: '项目申报书下载',
-          event: 'project-application-download',
-          enabled: record.files.length > 0,
-          reason: '当前项目暂无可下载的申报书',
-        }],
+        actions: [
+          {
+            key: 'confirm-registration',
+            label: '确认填写',
+            path: `/app/agent-center/register?projectId=${encodeURIComponent(record.id)}`,
+            enabled: true,
+          },
+          {
+            key: 'defer-registration',
+            label: '暂不填写',
+            event: 'project-application-defer-registration',
+            enabled: true,
+          },
+        ],
       },
     );
-    return () => {
-      window.removeEventListener('project-application-download', onDownload);
-      consumeWelcome();
-    };
-  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, record]);
+    return () => consumeWelcome();
+  }, [consumeWelcome, pushWelcomeGreeting, record, shouldGuideRegistration]);
   if (!record) return <Card><Text type="secondary">未找到该立项申报记录</Text></Card>;
   return <Space direction="vertical" size={16} style={{ width: '100%' }}>
     <PageHeader showBack onBack={() => navigate(-1)} title="立项信息详情" subTitle={`${record.id} · ${record.name}`} />
+    <AgentLifecycleProgress currentStage={lifecycleStage} />
     <RecordContent record={record} />
     {record.reviewNote && <Card title="审核结论" bordered={false}><Descriptions><Descriptions.Item label="结论"><Tag color={statusColor[record.status]}>{record.status}</Tag></Descriptions.Item><Descriptions.Item label="具体说明">{record.reviewNote}</Descriptions.Item></Descriptions></Card>}
     <Card bordered={false} style={{ textAlign: 'right' }}><Button onClick={() => navigate(-1)}>返回</Button></Card>

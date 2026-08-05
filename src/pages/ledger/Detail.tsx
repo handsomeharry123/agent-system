@@ -67,6 +67,7 @@ import {
   UndoOutlined,
 } from '@ant-design/icons';
 import ProfileView360 from './ProfileView360';
+import AgentLifecycleProgress, { type AgentLifecycleStage } from '../../components/AgentLifecycleProgress';
 import { useAuth } from '../../hooks/useAuth';
 import {
   generateAgentAvatar,
@@ -525,6 +526,14 @@ const LedgerDetail = () => {
   }, [agent]);
 
   useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('ledger-detail-view-change', {
+        detail: { agentId: id, view },
+      }),
+    );
+  }, [id, view]);
+
+  useEffect(() => {
     const handleViewDetail = (event: Event) => {
       const agentId = (event as CustomEvent<{ agentId?: string }>).detail?.agentId;
       if (agentId && agentId !== id) return;
@@ -759,6 +768,17 @@ const LedgerDetail = () => {
     isPlatformAdmin &&
     (agent.lifecycleStatus === '试运行中' || agent.lifecycleStatus === '已上线');
   const canEnable = isPlatformAdmin && agent.lifecycleStatus === '已禁用';
+
+  // 台账详情与立项、接入及评测详情共用同一套流程口径。
+  // 已产生上线时间即表示浦江实验室评测通过并自动上线；已有准入评测结果但尚未
+  // 上线时，表示流程已进入浦江实验室评测阶段。
+  const lifecycleStage: AgentLifecycleStage = agent.onlineTime
+    ? '上线'
+    : agent.evaluationReport
+      ? '浦江实验室评测'
+      : agent.accessTime
+        ? '接入'
+        : '立项';
 
   // ============== Tab: 基本信息（V1.8 §2.2.1）==============
   const BasicInfoBlock = (
@@ -1710,6 +1730,10 @@ exporter = OTLPSpanExporter(
           )}
         </Flex>
       </Card>
+
+      <div style={{ marginBottom: 12 }}>
+        <AgentLifecycleProgress currentStage={lifecycleStage} />
+      </div>
 
       {/* 360 画像视图(PRD §3.2.2 — 默认展示) */}
       {view === 'profile' && <ProfileView360 agent={agent} onSwitchToDetail={() => setView('detail')} />}

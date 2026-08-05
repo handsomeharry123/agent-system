@@ -213,7 +213,7 @@ const AgentListV32: React.FC = () => {
               type="text"
               icon={<ArrowLeftOutlined />}
               size="small"
-              onClick={() => navigate('/app/ledger-demo')}
+              onClick={() => navigate('/app/ledger')}
             />
             <span>台账列表(智能化升级 Demo · §3.2.1)</span>
             <Tag color="processing">PRD §3.2.1</Tag>

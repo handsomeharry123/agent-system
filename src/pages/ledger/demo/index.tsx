@@ -9,8 +9,8 @@
  * 访问方式:http://localhost:5173/app/ledger-demo
  *
  * 子页路由:
- *   /app/ledger-demo           → 总览(本页,默认 Tab 切到 §3.1)
- *   /app/ledger-demo/overview  → §3.1 / §4.1 态势概览与分流(右上角视角切换)
+ *   /app/ledger-demo           → 正式台账总览 /app/ledger
+ *   /app/ledger-demo/overview  → 已下线，兼容重定向至 /app/ledger
  *   /app/ledger-demo/profile   → §3.2 / §4.2 智能体 360 画像
  *   /app/ledger-demo/report    → §3.3 / §4.3 报告生成 / 编辑 / 导出
  */
@@ -18,7 +18,6 @@ import React from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { Tabs, Card, Space, Button } from 'antd';
 import {
-  DashboardOutlined,
   RobotOutlined,
   FileTextOutlined,
   ArrowLeftOutlined,
@@ -40,23 +39,13 @@ const LedgerDemo: React.FC = () => {
 
   // 当前 tab key
   const tabKey = (() => {
-    if (location.pathname.endsWith('/overview')) return 'overview';
     if (location.pathname.endsWith('/list')) return 'list';
     if (location.pathname.endsWith('/profile')) return 'profile';
     if (location.pathname.endsWith('/report')) return 'report';
-    return 'overview';
+    return 'list';
   })();
 
   const tabItems = [
-    {
-      key: 'overview',
-      label: (
-        <Space size={6}>
-          <DashboardOutlined />
-          <span>§3.1 态势概览与分流</span>
-        </Space>
-      ),
-    },
     {
       key: 'list',
       label: (

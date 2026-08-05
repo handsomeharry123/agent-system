@@ -7,11 +7,8 @@
  *  - 事件类型
  *  - 关联智能体
  *  - 触发告警内容（统一结构）
- *  - 触发告警时间
- *  - 处理结果（已处理 / 已忽略）
- *  - 处理方案
- *  - 审核意见（处理完成 / 退回重新处理）
- *  - 审核说明
+ *  - 处理结果（已处理 / 已忽略）与处理方案
+ *  - 审核意见（处理完成 / 退回重新处理）与审核说明
  *  - 智能体告警关联拓扑图（触发方 → 所属科室 → 通知对象）
  *
  * 按钮：返回
@@ -177,32 +174,34 @@ const AlertEventDetail = () => {
         </Card>
       </Card>
 
-      <Card bordered={false} style={{ marginTop: 16 }} title="触发告警时间">
-        <Text>{event.triggerTime}</Text>
+      <Card bordered={false} style={{ marginTop: 16 }} title="处理结果与处理方案">
+        <Descriptions column={2} size="small">
+          <Descriptions.Item label="处理结果">
+            {event.handleResult ? (
+              <Tag color={event.handleResult === '已处理' ? 'success' : 'default'}>{event.handleResult}</Tag>
+            ) : <EmptyState message="处理结果不能为空" />}
+          </Descriptions.Item>
+          <Descriptions.Item label="处理方案">
+            {event.handlePlan ? (
+              <Text style={{ whiteSpace: 'pre-wrap' }}>{event.handlePlan}</Text>
+            ) : <EmptyState message="处理方案不能为空" />}
+          </Descriptions.Item>
+        </Descriptions>
       </Card>
 
-      <Card bordered={false} style={{ marginTop: 16 }} title="处理结果">
-        {event.handleResult ? (
-          <Tag color={event.handleResult === '已处理' ? 'success' : 'default'}>{event.handleResult}</Tag>
-        ) : <EmptyState message="处理结果不能为空" />}
-      </Card>
-
-      <Card bordered={false} style={{ marginTop: 16 }} title="处理方案">
-        {event.handlePlan ? (
-          <Text style={{ whiteSpace: 'pre-wrap' }}>{event.handlePlan}</Text>
-        ) : <EmptyState message="处理方案不能为空" />}
-      </Card>
-
-      <Card bordered={false} style={{ marginTop: 16 }} title="审核意见">
-        {event.reviewOpinion ? (
-          <Tag color={event.reviewOpinion === '处理完成，关闭该告警事项' ? 'success' : 'warning'}>{event.reviewOpinion}</Tag>
-        ) : <Text type="secondary">—</Text>}
-      </Card>
-
-      <Card bordered={false} style={{ marginTop: 16 }} title="审核说明">
-        {event.reviewRemark ? (
-          <Text style={{ whiteSpace: 'pre-wrap' }}>{event.reviewRemark}</Text>
-        ) : <Text type="secondary">—</Text>}
+      <Card bordered={false} style={{ marginTop: 16 }} title="审核意见与审核说明">
+        <Descriptions column={2} size="small">
+          <Descriptions.Item label="审核意见">
+            {event.reviewOpinion ? (
+              <Tag color={event.reviewOpinion === '处理完成，关闭该告警事项' ? 'success' : 'warning'}>{event.reviewOpinion}</Tag>
+            ) : <Text type="secondary">—</Text>}
+          </Descriptions.Item>
+          <Descriptions.Item label="审核说明">
+            {event.reviewRemark ? (
+              <Text style={{ whiteSpace: 'pre-wrap' }}>{event.reviewRemark}</Text>
+            ) : <Text type="secondary">—</Text>}
+          </Descriptions.Item>
+        </Descriptions>
       </Card>
 
       <Card bordered={false} style={{ marginTop: 16 }} title="智能体告警关联拓扑图">

@@ -28,6 +28,7 @@ import {
   FilePdfOutlined,
 } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
+import AgentLifecycleProgress from '../../components/AgentLifecycleProgress';
 import { useAccessRecords } from './store';
 import { useSmartDraft } from './smart/store.tsx';
 import { useAuth } from '../../hooks/useAuth';
@@ -56,10 +57,11 @@ const Detail = () => {
   const currentRole = currentUser?.roles[0] || ROLE_DEPT;
   const isPlatformAdmin = currentRole === ROLE_ADMIN;
   const loginName = currentUser?.name || '当前用户';
-  const offerEvaluationAfterAudit = Boolean(
-    (location.state as { offerEvaluationAfterAudit?: boolean } | null)?.offerEvaluationAfterAudit,
-  );
   const [evaluationTask, setEvaluationTask] = useState<EvaluationTask | null>(null);
+  const [evaluationOfferDismissed, setEvaluationOfferDismissed] = useState(false);
+  const shouldOfferEvaluation = Boolean(
+    record && isPlatformAdmin && record.status === '审核通过' && !evaluationTask && !evaluationOfferDismissed,
+  );
 
   // PRD §3.4.1.2 — 接入进度 + 核心指标改为对话窗口呈现(详情页不嵌入卡片)
   // 在 early-return 之前派生, 避免 hooks 顺序不一致
@@ -145,6 +147,15 @@ const Detail = () => {
   // PRD §3.1.1 欢迎语：注册信息详情页 — 提供方 / 管理方文案一致,统一走 provider
   //   只读页气泡直接操作：【返回列表】+【查看附件】(滚动到备案材料 Card,无附件时置灰)
   useEffect(() => {
+    if (shouldOfferEvaluation && record) {
+      pushWelcomeGreeting('agent-center-eval-offer', 'admin', () => [record.name], {
+        actions: [
+          { key: 'create-evaluation', label: '确认创建', event: 'agent-detail-create-evaluation', enabled: true },
+          { key: 'skip-evaluation', label: '暂不创建', event: 'agent-detail-skip-evaluation', enabled: true },
+        ],
+      });
+      return;
+    }
     const fmt = (n: number) => (n > 0 ? String(n) : '暂无');
     const visibleRecords = records.filter((r) => (isPlatformAdmin ? true : r.applicant === loginName));
     const count = (status: string) => visibleRecords.filter((r) => r.status === status).length;
@@ -166,24 +177,14 @@ const Detail = () => {
         },
       ],
     });
-  }, [pushWelcomeGreeting, record, isPlatformAdmin, records, loginName]);
-
-  // 审核通过后进入详情页：先询问，用户确认后立即创建评测任务并用第二个气泡展示进度。
-  useEffect(() => {
-    if (!record || !isPlatformAdmin || !offerEvaluationAfterAudit || evaluationTask) return;
-    pushWelcomeGreeting('agent-center-eval-offer', 'admin', undefined, {
-      actions: [
-        { key: 'create-evaluation', label: '确认创建', event: 'agent-detail-create-evaluation', enabled: true },
-        { key: 'skip-evaluation', label: '暂不创建', event: 'agent-detail-skip-evaluation', enabled: true },
-      ],
-    });
-  }, [record, isPlatformAdmin, offerEvaluationAfterAudit, evaluationTask, pushWelcomeGreeting]);
+  }, [pushWelcomeGreeting, record, isPlatformAdmin, records, loginName, shouldOfferEvaluation]);
 
   useEffect(() => {
-    if (!record || !offerEvaluationAfterAudit) return;
+    if (!record || !isPlatformAdmin || record.status !== '审核通过' || evaluationTask) return;
     const clearNavigationFlag = () =>
       navigate(location.pathname, { replace: true, state: {} });
     const onSkip = () => {
+      setEvaluationOfferDismissed(true);
       clearNavigationFlag();
       message.info('已暂不创建评测任务');
     };
@@ -248,7 +249,8 @@ const Detail = () => {
     };
   }, [
     record,
-    offerEvaluationAfterAudit,
+    isPlatformAdmin,
+    evaluationTask,
     location.pathname,
     loginName,
     navigate,
@@ -331,6 +333,7 @@ const Detail = () => {
       />
 
       <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 12 }}>
+        <AgentLifecycleProgress currentStage={evaluationTask ? '安全性评测' : '接入'} />
         <div data-testid="detail-attachments-card">
         <Card title="备案材料" size="small">
           {record.attachments.length === 0 && <Empty description="无备案材料" />}

@@ -61,6 +61,23 @@ export interface LedgerWelcomeAgent {
   alarmCount: number;
   faultCount: number;
   abnormalConnections?: number;
+  idCode?: string;
+  version?: string;
+  department?: string;
+  diagnosisPhase?: string;
+  description?: string;
+  sourceType?: string;
+  vendor?: string;
+  techContact?: string;
+  techContactPhone?: string;
+  riskLevel?: string;
+  runtimeStatus?: string;
+  accessTime?: string;
+  onlineTime?: string;
+  accessType?: string;
+  modelName?: string;
+  resourceNames?: string[];
+  evaluationScore?: number;
 }
 
 export const buildPlatformAdminMetrics = (): StatusMetrics => ({
@@ -210,6 +227,7 @@ export interface StatusBubbleProps {
   metrics: StatusMetrics;
   pageKind?: 'overview' | 'list' | 'detail' | 'global';
   detailAgent?: LedgerWelcomeAgent;
+  detailView?: 'profile' | 'detail';
   // 由调用方传入（机器人 icon 的 DOM ref），用于计算气泡定位
   anchorRef: React.RefObject<HTMLElement>;
   // 当锚点由拖拽移动时传入变化值，触发气泡重新计算位置
@@ -233,6 +251,7 @@ export const StatusBubbleV31: React.FC<StatusBubbleProps> = ({
   metrics,
   pageKind = 'overview',
   detailAgent,
+  detailView = 'profile',
   anchorRef,
   anchorPositionKey,
   onClose,
@@ -469,54 +488,9 @@ export const StatusBubbleV31: React.FC<StatusBubbleProps> = ({
         {isDetail ? (
           <>
             <div style={{ fontSize: 12, color: '#262626', marginBottom: 6 }}>
-              你好，我是医小管！这是
+              您好，我是医小管。当前为您展示
               <strong>【{activeDetailAgent.name}】</strong>
-              的 360 画像，
-              {isDept ? (
-                <>
-                  当前可用状态：
-                  <strong>{activeDetailAgent.availableStatus}</strong>
-                  ，本月本科室调用
-                  <strong>{activeDetailAgent.monthlyCalls.toLocaleString()} 次</strong>
-                  ，当前告警
-                  <strong>{activeDetailAgent.alarmCount} 次</strong>
-                  、故障
-                  <strong>{activeDetailAgent.faultCount} 次</strong>
-                  ，需要我带你查看信息详情吗？
-                </>
-              ) : (
-                <>
-                  我已为你聚合基本信息、关联资源拓扑、准入评测与运行监测；当前告警
-                  <strong>{activeDetailAgent.alarmCount} 次</strong>
-                  、故障
-                  <strong>{activeDetailAgent.faultCount} 次</strong>
-                  ，异常对接
-                  <strong>{activeDetailAgent.abnormalConnections ?? 0} 处</strong>
-                  ，需要我带你查看信息详情吗？
-                </>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
-              <button
-                type="button"
-                data-testid="ledger-bubble-action-view-detail"
-                onClick={() => {
-                  onViewDetail?.();
-                  onClose();
-                }}
-                style={{
-                  minWidth: 84,
-                  padding: '4px 8px',
-                  background: '#1677FF',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 4,
-                  fontSize: 12,
-                  cursor: 'pointer',
-                }}
-              >
-                查看明细
-              </button>
+              的{detailView === 'profile' ? '360画像' : '信息详情'}，有什么该智能体相关问题可以直接问我~
             </div>
           </>
         ) : (

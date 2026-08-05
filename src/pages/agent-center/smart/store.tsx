@@ -86,6 +86,7 @@ export type WelcomePageKey =
   | 'agent-center-eval-created' // 评测任务创建后的进度提示
   | 'evaluation-tasks'         // 准入评测「评测任务管理」页
   | 'evaluation-report'        // 准入评测「评测结果详情」页
+  | 'pujiang-evaluation-report' // 浦江实验室「评测结果详情」页
   | 'monitoring-overview'      // 统一运行监控中心「监控总览」页
   | 'monitoring-business'      // 统一运行监控中心「业务监控」页
   | 'monitoring-status'        // 统一运行监控中心「状态监控」页
@@ -231,16 +232,16 @@ const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>
   },
   'project-application-detail': {
     dept: {
-      bubble: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
-      window: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+      bubble: '您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~该项目已立项通过，是否需要我帮您填写接入注册信息？',
+      window: '您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~该项目已立项通过，是否需要我帮您填写接入注册信息？',
     },
     provider: {
-      bubble: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
-      window: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+      bubble: '您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+      window: '您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
     },
     admin: {
-      bubble: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
-      window: '您好，我是医小管。您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+      bubble: '您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
+      window: '您好，我是医小管。当前为您展示【X】的立项信息详情，有什么该项目相关问题可以直接问我~',
     },
   },
   'project-application-audit': {
@@ -412,9 +413,9 @@ const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>
     },
   },
   'agent-center-eval-offer': {
-    dept: { bubble: '该智能体已审核通过，是否需要立即创建评测任务？', window: '该智能体已审核通过，是否需要立即创建评测任务？' },
-    provider: { bubble: '该智能体已审核通过，是否需要立即创建评测任务？', window: '该智能体已审核通过，是否需要立即创建评测任务？' },
-    admin: { bubble: '该智能体已审核通过，是否需要立即创建评测任务？', window: '该智能体已审核通过，是否需要立即创建评测任务？' },
+    dept: { bubble: '您好，我是医小管。当前为您展示【X】的注册信息详情，有什么该智能体相关问题可以直接问我~该智能体已成功接入，是否需要立即创建安全性评测任务？', window: '您好，我是医小管。当前为您展示【X】的注册信息详情，有什么该智能体相关问题可以直接问我~该智能体已成功接入，是否需要立即创建安全性评测任务？' },
+    provider: { bubble: '您好，我是医小管。当前为您展示【X】的注册信息详情，有什么该智能体相关问题可以直接问我~该智能体已成功接入，是否需要立即创建安全性评测任务？', window: '您好，我是医小管。当前为您展示【X】的注册信息详情，有什么该智能体相关问题可以直接问我~该智能体已成功接入，是否需要立即创建安全性评测任务？' },
+    admin: { bubble: '您好，我是医小管。当前为您展示【X】的注册信息详情，有什么该智能体相关问题可以直接问我~该智能体已成功接入，是否需要立即创建安全性评测任务？', window: '您好，我是医小管。当前为您展示【X】的注册信息详情，有什么该智能体相关问题可以直接问我~该智能体已成功接入，是否需要立即创建安全性评测任务？' },
   },
   'agent-center-eval-created': {
     dept: { bubble: '评测任务已创建：X。当前进度：X（X）。', window: '评测任务已创建：X。当前进度：X（X）。' },
@@ -502,9 +503,14 @@ const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>
     admin: { bubble: '您好，我是医小管。全院已接入X个智能体，\n待评测X个、评测中X个、评测完成X个\n审核中X个、审核通过X个、退回修改X个\n在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。全院已接入X个智能体，\n待评测X个、评测中X个、评测完成X个\n审核中X个、审核通过X个、退回修改X个\n在气泡里点对应状态即可直接分类查看详情' },
   },
   'evaluation-report': {
-    dept: { bubble: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~' },
-    provider: { bubble: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~' },
-    admin: { bubble: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的评测结果详情，有什么评测结果相关问题可以直接问我~' },
+    dept: { bubble: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么安全性评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么安全性评测结果相关问题可以直接问我~' },
+    provider: { bubble: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么安全性评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么安全性评测结果相关问题可以直接问我~' },
+    admin: { bubble: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么安全性评测结果相关问题可以直接问我~该智能体已通过安全性评测，是否需要立即开展浦江实验室评测？', window: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么安全性评测结果相关问题可以直接问我~该智能体已通过安全性评测，是否需要立即开展浦江实验室评测？' },
+  },
+  'pujiang-evaluation-report': {
+    dept: { bubble: '您好，我是医小管。当前为您展示【X】的浦江实验室评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么评测结果相关问题可以直接问我~' },
+    provider: { bubble: '您好，我是医小管。当前为您展示【X】的浦江实验室评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么评测结果相关问题可以直接问我~' },
+    admin: { bubble: '您好，我是医小管。当前为您展示【X】的浦江实验室评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么评测结果相关问题可以直接问我~' },
   },
   'resource-approval': {
     dept: { bubble: '您好，我是医小管。我已完成预审：标注了X个疑似问题并跑了访问测试，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。', window: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~' },
@@ -1276,7 +1282,7 @@ export const SmartDraftProvider = ({
           pageKey === 'monitoring-status' ||
           pageKey === 'monitoring-alert-rules' ||
           pageKey === 'monitoring-alert-events' || pageKey === 'monitoring-alert-pending-assign' || pageKey === 'monitoring-alert-detail' || pageKey === 'monitoring-alert-review' || pageKey === 'monitoring-alert-pending' || pageKey === 'monitoring-alert-handling' || pageKey === 'monitoring-alert-pending-review' || pageKey === 'monitoring-alert-reviewing' || pageKey === 'monitoring-alert-closed' || pageKey === 'monitoring-alert-ignored' ||
-          pageKey === 'evaluation-report';
+          pageKey === 'evaluation-report' || pageKey === 'pujiang-evaluation-report';
         const base = replaceCurrentPageWelcome
           ? prev.filter((m) => !m.id.startsWith(`__welcome__:${pageKey}:`))
           : prev;

@@ -1211,7 +1211,7 @@ const ReportV34: React.FC = () => {
                 type="text"
                 icon={<ArrowLeftOutlined />}
                 size="small"
-                onClick={() => navigate('/app/ledger-demo')}
+                onClick={() => navigate('/app/ledger')}
               />
               <span>
                 {isPlatformReport ? '全院智能体运行管理情况报告' : '本科室智能体运行情况报告'}

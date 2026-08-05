@@ -603,6 +603,7 @@ const AgentAssistant = () => {
     const isResourceApplyDetailPage = /^\/app\/resource-center\/applies\/[^/]+$/.test(location.pathname);
     const isResourceApprovalPage = /^\/app\/resource-center\/approval\/[^/]+$/.test(location.pathname);
     const isEvaluationReportPage = /^\/app\/evaluation\/tasks\/[^/]+\/report$/.test(location.pathname);
+    const isPujiangEvaluationReportPage = /^\/app\/evaluation\/tasks\/pujiang\/[^/]+$/.test(location.pathname);
     const isEvaluationTasksPage = location.pathname === '/app/evaluation/tasks';
     const isMonitoringOverviewPage = location.pathname === '/app/monitoring';
     const isMonitoringBusinessPage = location.pathname === '/app/monitoring/business';
@@ -730,6 +731,9 @@ const AgentAssistant = () => {
       }
       if (isEvaluationReportPage && m.id.startsWith('__welcome__:')) {
         return m.id.startsWith('__welcome__:evaluation-report:');
+      }
+      if (isPujiangEvaluationReportPage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:pujiang-evaluation-report:');
       }
       if (isEvaluationTasksPage && m.id.startsWith('__welcome__:')) {
         return m.id.startsWith('__welcome__:evaluation-tasks:');
