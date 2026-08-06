@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import dayjs from 'dayjs';
 import {
   CheckCircleOutlined,
@@ -26,6 +26,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../../components/PageHeader';
 import { PUJIANG_PLATFORM, PUJIANG_PLATFORM_URL, getPujiangTask, initialPujiangTasks } from './data';
+import { useSmartDraft } from '../../agent-center/smart/store';
 
 const { Link, Text } = Typography;
 const { TextArea } = Input;
@@ -44,9 +45,38 @@ print(completion.choices[0].message.content)`;
 const PujiangTaskForm = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const editingTask = useMemo(() => params.get('taskId') ? getPujiangTask(params.get('taskId')!) : undefined, [params]);
   const [form] = Form.useForm();
   const back = (notice?: string) => { if (notice) message.success(notice); navigate('/app/evaluation/tasks?module=pujiang'); };
+
+  const counts = useMemo(() => ({
+    evaluating: initialPujiangTasks.filter((task) => task.status === '评测中').length,
+    passed: initialPujiangTasks.filter((task) => task.status === '评测通过').length,
+    returned: initialPujiangTasks.filter((task) => task.status === '退回修改').length,
+  }), []);
+
+  useEffect(() => {
+    const values = [counts.evaluating, counts.passed, counts.returned];
+    pushWelcomeGreeting('pujiang-evaluation-create', 'admin', () => values, {
+      windowReplacements: values,
+      chips: [
+        { key: 'pujiang-create-evaluating', label: `评测中 ${counts.evaluating}`, targetTab: '评测中', tone: 'warning' },
+        { key: 'pujiang-create-passed', label: `评测通过 ${counts.passed}`, targetTab: '评测通过', tone: 'success' },
+        { key: 'pujiang-create-returned', label: `退回修改 ${counts.returned}`, targetTab: '退回修改', tone: 'error' },
+      ],
+    });
+    const onJump = (event: Event) => {
+      const targetTab = (event as CustomEvent<string>).detail;
+      if (!['评测中', '评测通过', '退回修改'].includes(targetTab)) return;
+      navigate(`/app/evaluation/tasks?module=pujiang&tab=${encodeURIComponent(targetTab)}`);
+    };
+    window.addEventListener('agent-jump-tab', onJump);
+    return () => {
+      window.removeEventListener('agent-jump-tab', onJump);
+      consumeWelcome();
+    };
+  }, [consumeWelcome, counts, navigate, pushWelcomeGreeting]);
 
   const fillAgentFields = (agentId: string) => {
     const agent = initialPujiangTasks.find((item) => item.id === agentId);

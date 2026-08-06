@@ -107,11 +107,10 @@ type EvaluationModule = 'safety' | 'pujiang';
 // Tab 列表（V1.7：全部 + 7 状态 = 8 个 Tab；「待评测」为排队中间态，统一在全部任务中展示；「待审核」已下线）
 //   · Tab key 与 EvaluationStatus 一一对应（除 'all'），便于 t.status === activeTab 直筛
 //   · 末位 Tab 真实状态为「退回重测」，展示文案沿用「退回修改」
-type TabKey = 'all' | '草稿' | '待评测' | '评测中' | '撤销' | '评测完成' | '审核中' | '审核通过' | '退回重测';
+type TabKey = 'all' | '草稿' | '评测中' | '撤销' | '评测完成' | '审核中' | '审核通过' | '退回重测';
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'all', label: '全部任务' },
   { key: '草稿', label: '草稿' },
-  { key: '待评测', label: '待评测' },
   { key: '评测中', label: '评测中' },
   { key: '撤销', label: '撤销' },
   { key: '评测完成', label: '评测完成' },
@@ -174,10 +173,11 @@ const Tasks = () => {
 
   // 台账列表「查看评测结果」联动：?tab=all&agentName=XXX → 自动切到「全部任务」并按名称预筛
   const presetAgentName = searchParams.get('agentName') || '';
-  const presetTab = searchParams.get('tab') as TabKey | null;
+  const requestedTab = searchParams.get('tab');
+  const presetTab = TABS.some((tab) => tab.key === requestedTab) ? requestedTab as TabKey : null;
 
   // 筛选
-  const [activeTab, setActiveTab] = useState<TabKey>((presetTab as TabKey) || 'all');
+  const [activeTab, setActiveTab] = useState<TabKey>(presetTab || 'all');
   const [keyword, setKeyword] = useState(presetAgentName);
   const [statusFilter, setStatusFilter] = useState<EvaluationStatus | undefined>();
   const [riskFilter, setRiskFilter] = useState<RiskLevel | undefined>();
@@ -190,11 +190,12 @@ const Tasks = () => {
   );
 
   // 联动参数消费:首次挂载后清掉 URL 中的 agentName/tab,避免刷新重复触发
+  // 已下线或非法 Tab（如「待评测」）统一回落到「全部任务」。
   useEffect(() => {
-    if (!presetAgentName && !presetTab) return;
+    if (!presetAgentName && !requestedTab) return;
     const next = new URLSearchParams(searchParams);
     if (presetAgentName) next.delete('agentName');
-    if (presetTab) next.delete('tab');
+    if (requestedTab) next.delete('tab');
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -203,7 +204,7 @@ const Tasks = () => {
   // Tab 计数
   // ---------------------------------------------------------------------------
   const tabCount = useMemo(() => {
-    const m: Record<TabKey, number> = {
+    const m: Record<TabKey | '待评测', number> = {
       all: scopedTasks.length,
       草稿: 0, 待评测: 0, 评测中: 0, 撤销: 0, 评测完成: 0,
       审核中: 0, 审核通过: 0, 退回重测: 0,
@@ -215,14 +216,14 @@ const Tasks = () => {
   }, [scopedTasks]);
 
   useEffect(() => {
+    if (evaluationModule !== 'safety') return;
     const connectedAgents = new Set(scopedTasks.map((task) => task.agentId)).size;
-    const values = [connectedAgents, tabCount.待评测, tabCount.评测中, tabCount.评测完成,
+    const values = [connectedAgents, tabCount.评测中, tabCount.评测完成,
       tabCount.审核中, tabCount.审核通过, tabCount.退回重测];
     pushWelcomeGreeting('evaluation-tasks', isAdmin ? 'admin' : 'dept', () => values, {
       windowReplacements: values,
       chips: [
-        { key: 'pending-eval', label: `待评测 ${tabCount.待评测}`, targetTab: '待评测', tone: 'warning' },
-        { key: 'evaluating', label: `评测中 ${tabCount.评测中}`, targetTab: '评测中', tone: 'warning' },
+        { key: 'evaluating', label: `安全性评测中 ${tabCount.评测中}`, targetTab: '评测中', tone: 'warning' },
         { key: 'evaluated', label: `评测完成 ${tabCount.评测完成}`, targetTab: '评测完成', tone: 'success' },
         { key: 'reviewing', label: `审核中 ${tabCount.审核中}`, targetTab: '审核中', tone: 'warning' },
         { key: 'approved', label: `审核通过 ${tabCount.审核通过}`, targetTab: '审核通过', tone: 'success' },
@@ -230,7 +231,7 @@ const Tasks = () => {
       ],
     });
     return () => consumeWelcome();
-  }, [consumeWelcome, isAdmin, pushWelcomeGreeting, scopedTasks, tabCount]);
+  }, [consumeWelcome, evaluationModule, isAdmin, pushWelcomeGreeting, scopedTasks, tabCount]);
 
   useEffect(() => {
     const onJump = (event: Event) => {

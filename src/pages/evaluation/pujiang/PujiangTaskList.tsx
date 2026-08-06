@@ -1,9 +1,11 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button, Card, Dropdown, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd';
 import { DeleteOutlined, EditOutlined, EyeOutlined, MoreOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PUJIANG_PLATFORM, initialPujiangTasks, type PujiangStatus, type PujiangTask } from './data';
+import { useAuth } from '../../../hooks/useAuth';
+import { useSmartDraft } from '../../agent-center/smart/store';
 
 const { Text, Link } = Typography;
 type TabKey = 'all' | PujiangStatus;
@@ -22,10 +24,26 @@ interface Props { moduleSwitcher: ReactNode; }
 
 const PujiangTaskList = ({ moduleSwitcher }: Props) => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [tasks, setTasks] = useState(initialPujiangTasks);
-  const [activeTab, setActiveTab] = useState<TabKey>('all');
+  // 浦江模块默认落在「全部任务」；全部状态 Tab 均展示同一套医小管分类引导。
+  const requestedTab = searchParams.get('tab') as TabKey | null;
+  const [activeTab, setActiveTab] = useState<TabKey>(tabs.some((tab) => tab.key === requestedTab) ? requestedTab! : 'all');
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState<PujiangStatus>();
+
+  useEffect(() => {
+    if (!requestedTab || !tabs.some((tab) => tab.key === requestedTab)) return;
+    setActiveTab(requestedTab);
+    const next = new URLSearchParams(searchParams);
+    next.delete('tab');
+    setSearchParams(next, { replace: true });
+    // URL 中的 tab 仅用于跨页面精准落位，消费后清理，避免刷新重复触发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const counts = useMemo(() => Object.fromEntries(tabs.map((tab) => [tab.key, tab.key === 'all' ? tasks.length : tasks.filter((task) => task.status === tab.key).length])), [tasks]);
   const visibleTasks = useMemo(() => tasks.filter((task) => {
@@ -34,6 +52,30 @@ const PujiangTaskList = ({ moduleSwitcher }: Props) => {
     const value = keyword.trim().toLowerCase();
     return !value || task.agentName.toLowerCase().includes(value) || task.agentCode.toLowerCase().includes(value);
   }), [activeTab, keyword, status, tasks]);
+
+  useEffect(() => {
+    const values = [counts.评测中, counts.评测通过, counts.退回修改];
+    pushWelcomeGreeting('pujiang-evaluation-tasks', isAdmin ? 'admin' : 'dept', () => values, {
+      windowReplacements: values,
+      chips: [
+        { key: 'pujiang-evaluating', label: `评测中 ${counts.评测中}`, targetTab: '评测中', tone: 'warning' },
+        { key: 'pujiang-passed', label: `评测通过 ${counts.评测通过}`, targetTab: '评测通过', tone: 'success' },
+        { key: 'pujiang-returned', label: `退回修改 ${counts.退回修改}`, targetTab: '退回修改', tone: 'error' },
+      ],
+    });
+    return () => consumeWelcome();
+  }, [activeTab, consumeWelcome, counts, isAdmin, pushWelcomeGreeting]);
+
+  useEffect(() => {
+    const onJump = (event: Event) => {
+      const nextTab = (event as CustomEvent<TabKey>).detail;
+      if (!tabs.some((tab) => tab.key === nextTab)) return;
+      setActiveTab(nextTab);
+      setStatus(undefined);
+    };
+    window.addEventListener('agent-jump-tab', onJump);
+    return () => window.removeEventListener('agent-jump-tab', onJump);
+  }, []);
 
   const remove = (task: PujiangTask) => Modal.confirm({
     title: '确认删除评测任务？',

@@ -1211,7 +1211,7 @@ function ProjectAudit() {
   const columns: ColumnsType<ProjectAuditRow> = [
     { title: '项目名称', dataIndex: 'name', fixed: 'left', width: 220, ellipsis: true },
     { title: '申报科室', dataIndex: 'dept', width: 105 }, { title: '申报赛道', dataIndex: 'track', width: 105 },
-    { title: '日均服务患者人数', dataIndex: 'dailyPatients', width: 155, sorter: sortable('dailyPatients'), render: (v) => `${v} 人` },
+    { title: <span style={{ whiteSpace: 'nowrap' }}>日均服务患者人数</span>, dataIndex: 'dailyPatients', width: 190, sorter: sortable('dailyPatients'), render: (v) => `${v} 人` },
     { title: '日均服务患者人数增长率', dataIndex: 'growthRate', width: 205, sorter: sortable('growthRate'), render: rate },
     { title: '任务执行成功率', dataIndex: 'taskSuccessRate', width: 150, sorter: sortable('taskSuccessRate'), render: rate },
     { title: '响应时间 P99', dataIndex: 'responseP99', width: 135, sorter: sortable('responseP99'), render: (v) => `${v} 秒` },
@@ -1223,7 +1223,7 @@ function ProjectAudit() {
     { title: '投资预算金额', dataIndex: 'investment', width: 145, render: (v) => `${v.toFixed(2)} 万元` },
     { title: '单次调用成本', dataIndex: 'callCost', width: 145, render: (v) => `${v.toFixed(2)} 元` },
     { title: '单位服务成本', dataIndex: 'serviceCost', width: 145, render: (v) => `${v.toFixed(2)} 元/人` },
-    { title: '操作', fixed: 'right', width: 255, render: (_, row) => <Space size={0}><Button type="link" href="/项目审计报告模板(1).docx" download="项目审计报告模板(1).docx" onClick={() => message.success('模板已下载')}>模板下载</Button><Button type="link" onClick={() => open(row, 'upload')}>上传材料</Button><Button type="link" onClick={() => open(row, 'detail')}>查看详情</Button></Space> },
+    { title: '操作', fixed: 'right', width: 180, render: (_, row) => <Space size={0}><Button type="link" onClick={() => open(row, 'upload')}>上传材料</Button><Button type="link" onClick={() => open(row, 'detail')}>查看详情</Button></Space> },
   ];
   const metrics = [
     {
@@ -1267,7 +1267,12 @@ function ProjectAudit() {
         </Card>
       ))}
     </div>
-    <Toolbar><Space wrap><Text strong>筛选项</Text><Select allowClear placeholder="申报科室" value={department} onChange={setDepartment} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.dept))].map((value) => ({ label: value, value }))} /><Select allowClear placeholder="申报赛道" value={track} onChange={setTrack} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.track))].map((value) => ({ label: value, value }))} /><Button onClick={() => { setDepartment(undefined); setTrack(undefined); }}>重置</Button><Text type="secondary">点击指标表头可切换升序或降序</Text></Space></Toolbar>
+    <Toolbar>
+      <div className="project-audit-toolbar">
+        <Space wrap><Text strong>筛选项</Text><Select allowClear placeholder="申报科室" value={department} onChange={setDepartment} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.dept))].map((value) => ({ label: value, value }))} /><Select allowClear placeholder="申报赛道" value={track} onChange={setTrack} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.track))].map((value) => ({ label: value, value }))} /><Button onClick={() => { setDepartment(undefined); setTrack(undefined); }}>重置</Button><Text type="secondary">点击指标表头可切换升序或降序</Text></Space>
+        <Button icon={<DownloadOutlined />} href="/项目审计报告模板(1).docx" download="项目审计报告模板(1).docx" onClick={() => message.success('模板已下载')}>模板下载</Button>
+      </div>
+    </Toolbar>
     <Card bordered={false} className="audit-table-card"><Table columns={columns} dataSource={filtered} scroll={{ x: 2500 }} pagination={{ pageSize: 8, showTotal: (n) => `共 ${n} 条` }} /></Card>
   </div>;
 }

@@ -1304,6 +1304,7 @@ export function ProjectApplicationDetail() {
   const record = useMemo(() => getRecord(id), [id]);
   const { currentUser } = useAuth();
   const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
+  const isInformationAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
   const isDepartmentAdmin = currentUser?.roles.includes('科室管理员') ?? false;
   const isProjectDepartmentAdmin = isDepartmentAdmin && currentUser?.department === record?.department;
   const lifecycleStage = record?.lifecycleStage ?? '立项';
@@ -1311,13 +1312,13 @@ export function ProjectApplicationDetail() {
     record &&
     record.status === '立项通过' &&
     lifecycleStage === '立项' &&
-    isProjectDepartmentAdmin,
+    (isInformationAdmin || isProjectDepartmentAdmin),
   );
   useEffect(() => {
     if (!record || !shouldGuideRegistration) return undefined;
     pushWelcomeGreeting(
       'project-application-detail',
-      'dept',
+      isInformationAdmin ? 'admin' : 'dept',
       () => [record.name],
       {
         actions: [
@@ -1337,7 +1338,7 @@ export function ProjectApplicationDetail() {
       },
     );
     return () => consumeWelcome();
-  }, [consumeWelcome, pushWelcomeGreeting, record, shouldGuideRegistration]);
+  }, [consumeWelcome, isInformationAdmin, pushWelcomeGreeting, record, shouldGuideRegistration]);
   if (!record) return <Card><Text type="secondary">未找到该立项申报记录</Text></Card>;
   return <Space direction="vertical" size={16} style={{ width: '100%' }}>
     <PageHeader showBack onBack={() => navigate(-1)} title="立项信息详情" subTitle={`${record.id} · ${record.name}`} />

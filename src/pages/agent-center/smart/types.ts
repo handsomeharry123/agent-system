@@ -230,6 +230,13 @@ export interface RegistrationDraft {
   name: string;
   agentCode: string;
   version: string;
+  parameterCount: number;
+  openSource: '是' | '否';
+  contextLength: number;
+  temperature: number;
+  topP?: number;
+  concurrency?: number;
+  releaseDate: string;
   modelName: string;
   modelVersion: string;
   modelDeploymentMode: ModelDeploymentMode;
@@ -244,6 +251,7 @@ export interface RegistrationDraft {
   supplier?: string;
   contactName: string;
   contactPhone: string;
+  contactEmail: string;
 
   // ③ 技术信息
   accessMode: AccessMode;

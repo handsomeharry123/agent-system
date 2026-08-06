@@ -222,6 +222,21 @@
   box-shadow: 0 3px 14px rgba(31, 56, 88, .04);
 }
 
+.project-audit-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.project-audit-toolbar > .ant-space {
+  min-width: 0;
+}
+
+.project-audit-toolbar > .ant-btn {
+  flex: none;
+}
+
 .audit-status-card .ant-card-body {
   padding: 0 18px;
 }

@@ -32,6 +32,13 @@ export interface AccessRecord {
   name: string;
   agentCode: string;
   version: string;
+  parameterCount?: number;
+  openSource?: '是' | '否';
+  contextLength?: number;
+  temperature?: number;
+  topP?: number;
+  concurrency?: number;
+  releaseDate?: string;
   modelName?: string;
   modelVersion?: string;
   modelDeploymentMode?: ModelDeploymentMode;
@@ -42,6 +49,7 @@ export interface AccessRecord {
   supplier: string;
   contactName: string;
   contactPhone: string;
+  contactEmail?: string;
   type: AgentType;
   description: string;
   applicant: string;

@@ -41,6 +41,7 @@ import {
 import { mockAgents } from '../../mock/agents';
 import { matchAgentByName } from '../../utils/agentNameMatcher';
 import { useAuth } from '../../hooks/useAuth';
+import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 
@@ -79,6 +80,7 @@ const CreateTask = () => {
     ? matchAgentByName(presetAgentName, mockAgents)
     : undefined;
   const { currentUser } = useAuth();
+  const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
 
   const [form] = Form.useForm();
 
@@ -88,6 +90,40 @@ const CreateTask = () => {
   const selectedDims: EvalDimension[] = ALL_DIMENSIONS;
   // 测试样本量（任务级统一一档；V1.9：默认「快速评测」）
   const [sampleLevel, setSampleLevel] = useState<SampleLevel>('快速评测');
+
+  useEffect(() => {
+    const connectedAgents = new Set(mockEvaluationTasks.map((task) => task.agentId)).size;
+    const countStatus = (status: EvaluationTask['status']) =>
+      mockEvaluationTasks.filter((task) => task.status === status).length;
+    const values = [
+      connectedAgents,
+      countStatus('评测中'),
+      countStatus('评测完成'),
+      countStatus('审核中'),
+      countStatus('审核通过'),
+      countStatus('退回重测'),
+    ];
+    pushWelcomeGreeting('evaluation-create', 'admin', () => values, {
+      windowReplacements: values,
+      chips: [
+        { key: 'create-evaluating', label: `安全性评测中 ${values[1]}`, targetTab: '评测中', tone: 'warning' },
+        { key: 'create-evaluated', label: `评测完成 ${values[2]}`, targetTab: '评测完成', tone: 'success' },
+        { key: 'create-reviewing', label: `审核中 ${values[3]}`, targetTab: '审核中', tone: 'warning' },
+        { key: 'create-approved', label: `审核通过 ${values[4]}`, targetTab: '审核通过', tone: 'success' },
+        { key: 'create-returned', label: `退回修改 ${values[5]}`, targetTab: '退回重测', tone: 'error' },
+      ],
+    });
+    const onJump = (event: Event) => {
+      const targetTab = (event as CustomEvent<string>).detail;
+      if (!['评测中', '评测完成', '审核中', '审核通过', '退回重测'].includes(targetTab)) return;
+      navigate(`/app/evaluation/tasks?tab=${encodeURIComponent(targetTab)}`);
+    };
+    window.addEventListener('agent-jump-tab', onJump);
+    return () => {
+      window.removeEventListener('agent-jump-tab', onJump);
+      consumeWelcome();
+    };
+  }, [consumeWelcome, navigate, pushWelcomeGreeting]);
 
   // 智能体下拉
   const agentOptions = useMemo(

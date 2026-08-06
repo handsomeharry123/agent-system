@@ -603,8 +603,11 @@ const AgentAssistant = () => {
     const isResourceApplyDetailPage = /^\/app\/resource-center\/applies\/[^/]+$/.test(location.pathname);
     const isResourceApprovalPage = /^\/app\/resource-center\/approval\/[^/]+$/.test(location.pathname);
     const isEvaluationReportPage = /^\/app\/evaluation\/tasks\/[^/]+\/report$/.test(location.pathname);
-    const isPujiangEvaluationReportPage = /^\/app\/evaluation\/tasks\/pujiang\/[^/]+$/.test(location.pathname);
+    const isPujiangEvaluationReportPage = /^\/app\/evaluation\/tasks\/pujiang\/(?!create$)[^/]+$/.test(location.pathname);
+    const isPujiangEvaluationCreatePage = location.pathname === '/app/evaluation/tasks/pujiang/create';
     const isEvaluationTasksPage = location.pathname === '/app/evaluation/tasks';
+    const isPujiangEvaluationTasksPage = isEvaluationTasksPage &&
+      new URLSearchParams(location.search).get('module') === 'pujiang';
     const isMonitoringOverviewPage = location.pathname === '/app/monitoring';
     const isMonitoringBusinessPage = location.pathname === '/app/monitoring/business';
     const isMonitoringStatusPage = location.pathname === '/app/monitoring/status';
@@ -735,8 +738,15 @@ const AgentAssistant = () => {
       if (isPujiangEvaluationReportPage && m.id.startsWith('__welcome__:')) {
         return m.id.startsWith('__welcome__:pujiang-evaluation-report:');
       }
+      if (isPujiangEvaluationCreatePage && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith('__welcome__:pujiang-evaluation-create:');
+      }
       if (isEvaluationTasksPage && m.id.startsWith('__welcome__:')) {
-        return m.id.startsWith('__welcome__:evaluation-tasks:');
+        return m.id.startsWith(
+          isPujiangEvaluationTasksPage
+            ? '__welcome__:pujiang-evaluation-tasks:'
+            : '__welcome__:evaluation-tasks:',
+        );
       }
       if (isMonitoringOverviewPage && m.id.startsWith('__welcome__:')) {
         return m.id.startsWith('__welcome__:monitoring-overview:');

@@ -34,7 +34,6 @@ const AgentLifecycleProgress = ({ currentStage = '立项' }: AgentLifecycleProgr
       <div className="lifecycle-heading">
         <Text strong className="lifecycle-title">项目进度</Text>
         <span className="lifecycle-status"><i />当前阶段：{currentStage}</span>
-        <Text type="secondary" className="lifecycle-hint">当前节点及之前的流程节点已点亮</Text>
       </div>
 
       <div className="lifecycle-progress-body" style={{ '--lifecycle-progress': `${progress}%` } as CSSProperties}>
