@@ -14,6 +14,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Progress,
   Radio,
   Select,
@@ -36,6 +37,7 @@ import {
   CodeOutlined,
   DownOutlined,
   DownloadOutlined,
+  DeleteOutlined,
   EyeOutlined,
   FilePdfOutlined,
   CloudServerOutlined,
@@ -1091,7 +1093,7 @@ type ProjectAuditRow = typeof initialProjects[number] & {
   investment: number;
   callCost: number;
   serviceCost: number;
-  material?: string;
+  materials: string[];
 };
 
 const projectAuditRows: ProjectAuditRow[] = initialProjects.slice(0, 6).map((project, index) => {
@@ -1112,7 +1114,7 @@ const projectAuditRows: ProjectAuditRow[] = initialProjects.slice(0, 6).map((pro
     investment,
     callCost: investment * 10000 / calls,
     serviceCost: investment * 10000 / (dailyPatients * 365),
-    material: index < 3 ? `${project.name}审计材料.pdf` : undefined,
+    materials: index < 3 ? [`${project.name}审计材料.pdf`] : [],
   };
 });
 
@@ -1125,12 +1127,13 @@ const downloadTextFile = (name: string, content: string) => {
   URL.revokeObjectURL(url);
 };
 
-function ProjectMaterialUpload({ project, onBack }: { project: ProjectAuditRow; onBack: () => void }) {
+function ProjectMaterialUpload({ project, onBack, onUploaded }: { project: ProjectAuditRow; onBack: () => void; onUploaded: (fileNames: string[]) => void }) {
   const { message } = App.useApp();
   const [files, setFiles] = useState<UploadFile[]>([]);
   const confirmUpload = () => {
     if (!files.length) return message.warning('请先选择 PDF 文件');
-    message.success('文件上传成功');
+    onUploaded(files.map((file) => file.name));
+    message.success(project.materials.length ? '材料补充成功' : '文件上传成功');
     onBack();
   };
   return <div>
@@ -1145,7 +1148,7 @@ function ProjectMaterialUpload({ project, onBack }: { project: ProjectAuditRow; 
     <Card title="上传文件" bordered={false} className="audit-section-card">
       <Upload.Dragger
         accept="application/pdf,.pdf"
-        maxCount={1}
+        maxCount={10}
         fileList={files}
         beforeUpload={(file) => {
           if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
@@ -1156,10 +1159,10 @@ function ProjectMaterialUpload({ project, onBack }: { project: ProjectAuditRow; 
             message.error('单文件大小不能超过 30M');
             return Upload.LIST_IGNORE;
           }
-          setFiles([file]);
+          setFiles((currentFiles) => [...currentFiles, file]);
           return false;
         }}
-        onRemove={() => { setFiles([]); return true; }}
+        onRemove={(file) => { setFiles((currentFiles) => currentFiles.filter((item) => item.uid !== file.uid)); return true; }}
       >
         <p className="ant-upload-drag-icon"><CloudUploadOutlined /></p>
         <p className="ant-upload-text">点击或拖拽 PDF 文件到此区域上传</p>
@@ -1176,7 +1179,7 @@ const projectInfoItems = (project: ProjectAuditRow) => [
   { key: 'track', label: '申报赛道', children: project.track },
 ];
 
-function NewProjectDetail({ project, onBack }: { project: ProjectAuditRow; onBack: () => void }) {
+function NewProjectDetail({ project, onBack, onDeleteMaterial }: { project: ProjectAuditRow; onBack: () => void; onDeleteMaterial: (fileName: string) => void }) {
   const { message } = App.useApp();
   const [preview, setPreview] = useState(false);
   const sections = [
@@ -1190,9 +1193,9 @@ function NewProjectDetail({ project, onBack }: { project: ProjectAuditRow; onBac
     <Card title="项目基本信息" className="audit-section-card"><Descriptions bordered column={3} items={projectInfoItems(project)} /></Card>
     {sections.map((section) => <Card key={section.title} title={section.title} className="audit-section-card"><Descriptions bordered column={3} items={section.items.map(([label, value]) => ({ key: label, label, children: value }))} /></Card>)}
     <Card title="⑤ 审计材料" className="audit-section-card">
-      {project.material ? <Space><FilePdfOutlined style={{ color: '#e5484d' }} /><Text>{project.material}</Text><Button type="link" icon={<EyeOutlined />} onClick={() => setPreview(true)}>预览</Button><Button type="link" icon={<DownloadOutlined />} onClick={() => { downloadTextFile(project.material!, '项目审计材料演示文件'); message.success('开始下载审计材料'); }}>下载</Button></Space> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂未上传审计材料" />}
+      {project.materials.length ? <div className="audit-material-list">{project.materials.map((material) => <div className="audit-material-item" key={material}><Space wrap><FilePdfOutlined style={{ color: '#e5484d' }} /><Text>{material}</Text><Button type="link" icon={<EyeOutlined />} onClick={() => setPreview(true)}>预览</Button><Button type="link" icon={<DownloadOutlined />} onClick={() => { downloadTextFile(material, '项目审计材料演示文件'); message.success('开始下载审计材料'); }}>下载</Button><Popconfirm title="确认删除该附件材料？" description="删除后不可恢复" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => onDeleteMaterial(material)}><Button danger type="link" icon={<DeleteOutlined />}>删除</Button></Popconfirm></Space></div>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂未上传审计材料" />}
     </Card>
-    <Modal open={preview} title="审计材料预览" width={760} onCancel={() => setPreview(false)} footer={<Button onClick={() => setPreview(false)}>关闭</Button>}><div className="pdf-preview"><FilePdfOutlined /><Title level={4}>{project.material}</Title><Text type="secondary">PDF 文件在线预览区域</Text></div></Modal>
+    <Modal open={preview} title="审计材料预览" width={760} onCancel={() => setPreview(false)} footer={<Button onClick={() => setPreview(false)}>关闭</Button>}><div className="pdf-preview"><FilePdfOutlined /><Title level={4}>{project.materials[0]}</Title><Text type="secondary">PDF 文件在线预览区域</Text></div></Modal>
   </div>;
 }
 
@@ -1200,11 +1203,16 @@ function ProjectAudit() {
   const { message } = App.useApp();
   const [department, setDepartment] = useState<string>();
   const [track, setTrack] = useState<string>();
+  const [rows, setRows] = useState(projectAuditRows);
   const [screen, setScreen] = useState<'list' | 'upload' | 'detail'>('list');
   const [current, setCurrent] = useState(projectAuditRows[0]);
-  const filtered = projectAuditRows.filter((row) => (!department || row.dept === department) && (!track || row.track === track));
-  if (screen === 'upload') return <ProjectMaterialUpload project={current} onBack={() => setScreen('list')} />;
-  if (screen === 'detail') return <NewProjectDetail project={current} onBack={() => setScreen('list')} />;
+  const filtered = rows.filter((row) => (!department || row.dept === department) && (!track || row.track === track));
+  const updateMaterials = (projectKey: string, materials: string[]) => {
+    setRows((currentRows) => currentRows.map((row) => row.key === projectKey ? { ...row, materials } : row));
+    setCurrent((currentProject) => currentProject.key === projectKey ? { ...currentProject, materials } : currentProject);
+  };
+  if (screen === 'upload') return <ProjectMaterialUpload project={current} onBack={() => setScreen('list')} onUploaded={(fileNames) => updateMaterials(current.key, [...current.materials, ...fileNames])} />;
+  if (screen === 'detail') return <NewProjectDetail project={current} onBack={() => setScreen('list')} onDeleteMaterial={(fileName) => { updateMaterials(current.key, current.materials.filter((material) => material !== fileName)); message.success('附件材料已删除'); }} />;
   const open = (row: ProjectAuditRow, target: 'upload' | 'detail') => { setCurrent(row); setScreen(target); };
   const rate = (value: number) => `${value.toFixed(2).replace(/\.00$/, '')}%`;
   const sortable = (key: keyof ProjectAuditRow) => (a: ProjectAuditRow, b: ProjectAuditRow) => Number(a[key]) - Number(b[key]);
@@ -1223,7 +1231,8 @@ function ProjectAudit() {
     { title: '投资预算金额', dataIndex: 'investment', width: 145, render: (v) => `${v.toFixed(2)} 万元` },
     { title: '单次调用成本', dataIndex: 'callCost', width: 145, render: (v) => `${v.toFixed(2)} 元` },
     { title: '单位服务成本', dataIndex: 'serviceCost', width: 145, render: (v) => `${v.toFixed(2)} 元/人` },
-    { title: '操作', fixed: 'right', width: 180, render: (_, row) => <Space size={0}><Button type="link" onClick={() => open(row, 'upload')}>上传材料</Button><Button type="link" onClick={() => open(row, 'detail')}>查看详情</Button></Space> },
+    { title: '附件材料', dataIndex: 'materials', width: 110, align: 'center', render: (materials: string[]) => `${materials.length} 个` },
+    { title: '操作', fixed: 'right', width: 190, render: (_, row) => <Space size={0}><Button type="link" onClick={() => open(row, 'upload')}>{row.materials.length ? '补充材料' : '上传材料'}</Button><Button type="link" onClick={() => open(row, 'detail')}>查看详情</Button></Space> },
   ];
   const metrics = [
     {
@@ -1244,7 +1253,7 @@ function ProjectAudit() {
     },
   ];
   return <div>
-    <Header title="项目审计" description="从服务效率、服务质量、服务安全和服务成本维度审计项目运行成效。" extra={<Button icon={<ReloadOutlined />} onClick={() => message.success('数据已刷新至最新时间')}>刷新</Button>} />
+    <Header title="项目审计" description="从服务效率、服务质量、服务安全和服务成本维度审计项目运行成效。" extra={<Space><Button icon={<DownloadOutlined />} href="/项目审计报告模板(1).docx" download="项目审计报告模板(1).docx" onClick={() => message.success('模板已下载')}>模板下载</Button><Button icon={<ReloadOutlined />} onClick={() => message.success('数据已刷新至最新时间')}>刷新</Button></Space>} />
     <div className="audit-stat-grid economic-stat-grid project-stat-grid">
       {metrics.map((metric, index) => (
         <Card
@@ -1270,7 +1279,6 @@ function ProjectAudit() {
     <Toolbar>
       <div className="project-audit-toolbar">
         <Space wrap><Text strong>筛选项</Text><Select allowClear placeholder="申报科室" value={department} onChange={setDepartment} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.dept))].map((value) => ({ label: value, value }))} /><Select allowClear placeholder="申报赛道" value={track} onChange={setTrack} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.track))].map((value) => ({ label: value, value }))} /><Button onClick={() => { setDepartment(undefined); setTrack(undefined); }}>重置</Button><Text type="secondary">点击指标表头可切换升序或降序</Text></Space>
-        <Button icon={<DownloadOutlined />} href="/项目审计报告模板(1).docx" download="项目审计报告模板(1).docx" onClick={() => message.success('模板已下载')}>模板下载</Button>
       </div>
     </Toolbar>
     <Card bordered={false} className="audit-table-card"><Table columns={columns} dataSource={filtered} scroll={{ x: 2500 }} pagination={{ pageSize: 8, showTotal: (n) => `共 ${n} 条` }} /></Card>

@@ -23,6 +23,7 @@ import { Bar } from '@ant-design/charts';
 import PageHeader from '../../components/PageHeader';
 import { useAuth } from '../../hooks/useAuth';
 import { useSmartDraft } from '../agent-center/smart/store';
+import './monitoring-dashboard.css';
 import {
   costKpiV18, costTop5V18,
 } from '../../mock/monitoringV18';
@@ -58,7 +59,7 @@ const buildTop5BarConfig = (
 
   return {
     ...chartBase,
-    height: 260,
+    height: 230,
     data: cleaned,
     xField: 'value',
     yField: 'name',
@@ -223,7 +224,7 @@ const CostV18 = () => {
   }, [consumeWelcome, isAdmin, pushWelcomeGreeting, resources]);
 
   return (
-    <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100vh' }}>
+    <div className="monitoring-dashboard monitoring-cost-page">
       <PageHeader
         title="成本监控"
         subTitle="CPU / GPU / 内存 / Token 累计与当日用量及 TOP5 消耗排行"
@@ -240,11 +241,12 @@ const CostV18 = () => {
         {/* 4 类资源 KPI 卡片：一排 4 个，去掉内嵌趋势图 */}
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
           {resources.map((r) => (
-            <Col span={6} key={r.key}>
+            <Col xs={24} md={12} xl={6} key={r.key}>
               <Card
                 bordered={false}
                 style={{ background: '#FFFFFF' }}
-                styles={{ body: { padding: 16, height: 160 } }}
+                className="monitoring-kpi-card"
+                styles={{ body: { padding: 16, minHeight: 146 } }}
                 title={
                   <Text strong style={{ fontSize: 15 }}>{r.title} 使用量</Text>
                 }
@@ -283,15 +285,16 @@ const CostV18 = () => {
           ))}
         </Row>
 
-        {/* 8 个 TOP5 排行（4 资源 × 2 时间维度 = 累计/当日）一行 4 图：4 × span=6 = 24 列，不留空 */}
+        {/* 排行图保持双列，给长智能体名称、刻度和数值标签足够空间。 */}
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
           {resources.map((r) => (
-            <Col span={6} key={`top-${r.key}`}>
+            <Col xs={24} xl={12} key={`top-${r.key}`}>
               <Card
                 bordered={false}
                 title={`${r.title} 累计使用量消耗排行 TOP5`}
-                styles={{ body: { padding: 12, height: 280 } }}
-                style={{ height: 340 }}
+                className="monitoring-chart-card"
+                styles={{ body: { padding: 12, height: 252 } }}
+                style={{ height: 304 }}
               >
                 <Bar {...buildTop5BarConfig(r.top5, r.topUnit)} />
               </Card>
@@ -301,12 +304,13 @@ const CostV18 = () => {
 
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
           {resources.map((r) => (
-            <Col span={6} key={`top-today-${r.key}`}>
+            <Col xs={24} xl={12} key={`top-today-${r.key}`}>
               <Card
                 bordered={false}
                 title={`${r.title} 当日使用量消耗排行 TOP5`}
-                styles={{ body: { padding: 12, height: 280 } }}
-                style={{ height: 340 }}
+                className="monitoring-chart-card"
+                styles={{ body: { padding: 12, height: 252 } }}
+                style={{ height: 304 }}
               >
                 <Bar
                   {...buildTop5BarConfig(

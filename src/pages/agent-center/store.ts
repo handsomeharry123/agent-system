@@ -131,9 +131,9 @@ const initialRecords: AccessRecord[] = [
     passTime: nowISO(-1),
     passNote: '备案材料齐全，同意接入。',
     auditHistory: [
-      { label: '提交注册申请', time: nowISO(-3), status: 'finish', operator: '王建国' },
+      { label: '提交审核', time: nowISO(-3), status: 'finish', operator: '王建国' },
+      { label: '审核中', time: nowISO(-2), status: 'process', operator: '李秀英' },
       { label: '审核通过', time: nowISO(-1), status: 'finish', operator: '李秀英', desc: '备案材料齐全' },
-      { label: '台账同步', time: nowISO(-1), status: 'finish', desc: '已同步至统一台账中心' },
     ],
     ledgerSynced: true,
   },

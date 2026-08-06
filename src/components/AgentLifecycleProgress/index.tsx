@@ -42,7 +42,8 @@ const AgentLifecycleProgress = ({ currentStage = '立项' }: AgentLifecycleProgr
         </div>
         <ol className="lifecycle-steps">
           {AGENT_LIFECYCLE_STAGES.map((title, index) => {
-            const completed = index < current;
+            // 当前阶段表示该节点已经达成，因此当前节点也应展示完成勾选。
+            const completed = index <= current;
             const active = index === current;
             return (
               <li

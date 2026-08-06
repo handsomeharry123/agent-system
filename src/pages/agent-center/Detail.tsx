@@ -18,7 +18,6 @@ import {
   Row,
   Space,
   Tag,
-  Timeline,
   Typography,
 } from 'antd';
 import {
@@ -29,6 +28,7 @@ import {
 } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
 import AgentLifecycleProgress from '../../components/AgentLifecycleProgress';
+import ApprovalTimeline, { type ApprovalTimelineItem } from '../../components/ApprovalTimeline';
 import { useAccessRecords } from './store';
 import { useSmartDraft } from './smart/store.tsx';
 import { useAuth } from '../../hooks/useAuth';
@@ -318,6 +318,34 @@ const Detail = () => {
     );
   }
 
+  const auditTimelineItems: ApprovalTimelineItem[] = record.auditHistory
+    .filter((node) =>
+      ['提交注册申请', '提交审核', '修改重提', '重新注册提交审核', '审核中', '审核通过', '退回修改'].includes(node.label),
+    )
+    .map((node) => {
+      const isSubmit = ['提交注册申请', '提交审核', '修改重提', '重新注册提交审核'].includes(node.label);
+      const isReviewing = node.label === '审核中';
+      const isCompleted = node.label === '审核通过' || node.label === '退回修改';
+      const auditHasFinished = record.status === '审核通过' || record.status === '退回修改';
+
+      return {
+        title:
+          node.label === '提交注册申请'
+            ? '提交审核'
+            : node.label === '修改重提'
+              ? '重新注册提交审核'
+              : node.label,
+        time: node.time,
+        timeLabel: isSubmit ? '提交审核时间' : isReviewing ? '开始审核时间' : '审核完成时间',
+        operator: node.operator,
+        operatorLabel: isSubmit ? '提交人' : '审核人',
+        description: isCompleted ? node.desc || '—' : undefined,
+        descriptionLabel: isCompleted ? '具体说明' : undefined,
+        // 与立项详情一致：流程产生终审结论后，此前的“审核中”节点属于已完成步骤。
+        status: isReviewing && auditHasFinished ? 'finish' : node.status,
+      };
+    });
+
   return (
     <>
       <PageHeader
@@ -545,33 +573,7 @@ const Detail = () => {
         {/* §3.4.1.2 PRD：接入进度 + 核心指标 + 一键直达 不再在详情页嵌入卡片,
             改为由 Agent 对话窗口呈现(详见 useEffect → addMessage('insight-detail')) */}
 
-        <Card title="审核时间线" size="small">
-          {record.auditHistory.length === 0 ? (
-            <Empty description="暂无审核记录" />
-          ) : (
-            <Timeline
-              items={record.auditHistory.map((n) => ({
-                color:
-                  n.status === 'finish'
-                    ? 'green'
-                    : n.status === 'error'
-                      ? 'red'
-                      : n.status === 'process'
-                        ? 'blue'
-                        : 'gray',
-                children: (
-                  <Space direction="vertical" size={2}>
-                    <Text strong>{n.label}</Text>
-                    <Text type="secondary">
-                      {n.time} {n.operator ? `· ${n.operator}` : ''}
-                    </Text>
-                    {n.desc && <Text>{n.desc}</Text>}
-                  </Space>
-                ),
-              }))}
-            />
-          )}
-        </Card>
+        <ApprovalTimeline items={auditTimelineItems} title="审核时间线" />
       </Space>
     </>
   );

@@ -144,7 +144,19 @@ const saveRecord = (record: ProjectRecord) => {
 };
 
 const getProjectApprovalTimeline = (record: ProjectRecord): ApprovalTimelineItem[] => {
-  if (record.approvalHistory?.length) return record.approvalHistory;
+  const withFieldLabels = (item: ApprovalTimelineItem): ApprovalTimelineItem => {
+    if (item.title === '提交审核' || item.title === '重新提交审核') {
+      return { ...item, timeLabel: '提交审核时间', operatorLabel: '提交人' };
+    }
+    if (item.title === '审核中') {
+      return { ...item, timeLabel: '开始审核时间', operatorLabel: '审核人' };
+    }
+    if (item.title === '立项通过' || item.title === '立项不通过') {
+      return { ...item, timeLabel: '审核完成时间', operatorLabel: '审核人', descriptionLabel: '具体说明' };
+    }
+    return item;
+  };
+  if (record.approvalHistory?.length) return record.approvalHistory.map(withFieldLabels);
   const items: ApprovalTimelineItem[] = [];
   if (record.submitTime) {
     items.push({ title: '提交审核', time: record.submitTime, operator: record.applicant, status: 'finish' });
@@ -166,7 +178,7 @@ const getProjectApprovalTimeline = (record: ProjectRecord): ApprovalTimelineItem
       status: record.status === '立项通过' ? 'finish' : 'error',
     });
   }
-  return items;
+  return items.map(withFieldLabels);
 };
 
 const escapeHtml = (value: string | number) =>

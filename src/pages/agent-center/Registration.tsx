@@ -899,7 +899,7 @@ const Registration = () => {
       auditHistory: [
         ...(draftTarget?.auditHistory || []),
         {
-          label: draftTarget ? '修改重提' : '提交注册申请',
+          label: draftTarget ? '重新注册提交审核' : '提交审核',
           time: nowISO(0),
           status: 'finish',
           operator: loginName,

@@ -9,8 +9,11 @@ export type ApprovalTimelineStatus = 'finish' | 'process' | 'error' | 'wait';
 export interface ApprovalTimelineItem {
   title: string;
   time?: string;
+  timeLabel?: string;
   operator?: string;
+  operatorLabel?: string;
   description?: string;
+  descriptionLabel?: string;
   status: ApprovalTimelineStatus;
 }
 
@@ -49,13 +52,13 @@ const ApprovalTimeline = ({ items, title = '审批时间线', style }: ApprovalT
                 {(item.time || item.operator) && (
                   <div style={{ marginTop: 4 }}>
                     <Text type="secondary" style={{ fontSize: 13 }}>
-                      {item.time && <><ClockCircleOutlined /> {item.time}</>}
+                      {item.time && <><ClockCircleOutlined /> {item.timeLabel && `${item.timeLabel}：`}{item.time}</>}
                       {item.time && item.operator && ' · '}
-                      {item.operator}
+                      {item.operator && <>{item.operatorLabel && `${item.operatorLabel}：`}{item.operator}</>}
                     </Text>
                   </div>
                 )}
-                {item.description && <Paragraph style={{ margin: '5px 0 0', fontSize: 13, whiteSpace: 'pre-line' }}>{item.description}</Paragraph>}
+                {item.description && <Paragraph style={{ margin: '5px 0 0', fontSize: 13, whiteSpace: 'pre-line' }}>{item.descriptionLabel && `${item.descriptionLabel}：`}{item.description}</Paragraph>}
               </div>
             ),
           };

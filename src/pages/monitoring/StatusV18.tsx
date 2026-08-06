@@ -24,6 +24,7 @@ import { Pie } from '@ant-design/charts';
 import PageHeader from '../../components/PageHeader';
 import { useAuth } from '../../hooks/useAuth';
 import { useSmartDraft } from '../agent-center/smart/store';
+import './monitoring-dashboard.css';
 import {
   statusKpiV18, deptDistributionV18, mockAgentsV18,
 } from '../../mock/monitoringV18';
@@ -197,7 +198,7 @@ const StatusV18 = () => {
   );
 
   return (
-    <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100vh' }}>
+    <div className="monitoring-dashboard monitoring-status-page">
       <PageHeader
         title="状态监控"
         subTitle="智能体运行状态、故障恢复能力与科室分布"
@@ -221,7 +222,8 @@ const StatusV18 = () => {
                   hoverable
                   bordered={false}
                   style={{ background: '#FFFFFF' }}
-                  styles={{ body: { padding: 16, height: 140 } }}
+                  className="monitoring-kpi-card"
+                  styles={{ body: { padding: 16, minHeight: 132 } }}
                 >
                   <Space size={8} align="center" style={{ marginBottom: 8 }}>
                     <span style={{ fontSize: 22, color: k.color }}>{k.icon}</span>
@@ -245,7 +247,7 @@ const StatusV18 = () => {
         </Row>
 
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-          <Col span={12}>
+          <Col xs={24} xl={12}>
             <Card bordered={false} styles={{ body: { padding: 20 } }}>
               <Space direction="vertical" size={6}>
                 <Space><Text>平均故障恢复时间</Text>{liveBadge}</Space>
@@ -254,7 +256,7 @@ const StatusV18 = () => {
               </Space>
             </Card>
           </Col>
-          <Col span={12}>
+          <Col xs={24} xl={12}>
             <Card bordered={false} styles={{ body: { padding: 20 } }}>
               <Space direction="vertical" size={6}>
                 <Space><Text>平均故障间隔</Text>{liveBadge}</Space>
@@ -267,17 +269,17 @@ const StatusV18 = () => {
 
         {/* 饼图：各运行状态科室智能体数量比例 */}
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-          <Col span={12}>
-            <Card bordered={false} title="各运行状态总占比"
-              styles={{ body: { padding: 12, height: 380 } }} style={{ height: 440 }}>
-              <Row gutter={8} style={{ height: 400 }}>
+          <Col xs={24} xl={12}>
+            <Card bordered={false} className="monitoring-chart-card" title="各运行状态总占比"
+              styles={{ body: { padding: 12, height: 300 } }} style={{ height: 352 }}>
+              <Row gutter={8} style={{ height: 276 }}>
                 <Col span={14}>
                   {/* 外层 overflow:hidden 兜底限制标签越界；内层 SVG overflow:visible 让标签溢出 SVG 仍可见 */}
-                  <div style={{ height: 400, position: 'relative', overflow: 'hidden' }}>
+                  <div style={{ height: 276, position: 'relative', overflow: 'hidden' }}>
                     <Pie
                       autoFit
                       pixelRatio={window.devicePixelRatio}
-                      height={400}
+                      height={276}
                       data={pieData}
                       angleField="value"
                       colorField="type"
@@ -345,7 +347,7 @@ const StatusV18 = () => {
                   {/* 右侧图例：色块 + 名称 + 数量 / 占比 + 进度条（与图2 智能体来源分布情况 一致） */}
                   <div
                     style={{
-                      height: 400,
+                      height: 276,
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'center',
@@ -394,9 +396,9 @@ const StatusV18 = () => {
               </Row>
             </Card>
           </Col>
-          <Col span={12}>
-            <Card bordered={false} title="各运行状态 - 科室分布"
-              styles={{ body: { padding: 12, height: 380 } }} style={{ height: 440 }}>
+          <Col xs={24} xl={12}>
+            <Card bordered={false} className="monitoring-chart-card" title="各运行状态 - 科室分布"
+              styles={{ body: { padding: 12, height: 300, overflowY: 'auto' } }} style={{ height: 352 }}>
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(5, 1fr)', gap: 8, fontSize: 12 }}>
                   <div />

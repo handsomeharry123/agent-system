@@ -46,6 +46,21 @@ import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 
+const TRAIL_NODE_META: Record<ApplyItem['trail'][number]['action'], {
+  title: string;
+  timeLabel: string;
+  operatorLabel: string;
+}> = {
+  提交: { title: '提交审核', timeLabel: '提交审核时间', operatorLabel: '提交人' },
+  重新提交: { title: '重新注册提交审核', timeLabel: '提交审核时间', operatorLabel: '提交人' },
+  开始审核: { title: '审核中', timeLabel: '开始审核时间', operatorLabel: '审核人' },
+  审核通过: { title: '审核通过', timeLabel: '审核完成时间', operatorLabel: '审核人' },
+  退回修改: { title: '退回修改', timeLabel: '审核完成时间', operatorLabel: '审核人' },
+  撤销: { title: '撤销修改', timeLabel: '撤销时间', operatorLabel: '操作人' },
+  自动归档: { title: '自动归档', timeLabel: '归档时间', operatorLabel: '操作人' },
+  编辑: { title: '编辑', timeLabel: '编辑时间', operatorLabel: '操作人' },
+};
+
 const ApplyDetail = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -245,16 +260,26 @@ const ApplyDetail = () => {
           <Steps
             direction="vertical"
             size="small"
-            items={it.trail.map((t) => ({
-              title: t.action,
-              description: (
-                <Space direction="vertical" size={2}>
-                  <Text>{t.operator} · {t.at}</Text>
-                  {t.comment && <Text type="secondary">意见:{t.comment}</Text>}
-                </Space>
-              ),
-              status: t.action.includes('通过') ? 'finish' : t.action.includes('退回') || t.action.includes('撤销') ? 'error' : t.action.includes('归档') ? 'wait' : 'process',
-            }))}
+            items={it.trail.map((t) => {
+              const meta = TRAIL_NODE_META[t.action];
+              const isReviewResult = t.action === '审核通过' || t.action === '退回修改';
+              return {
+                title: meta.title,
+                description: (
+                  <Space direction="vertical" size={2}>
+                    <Text><Text strong>{meta.timeLabel}：</Text>{t.at}</Text>
+                    <Text><Text strong>{meta.operatorLabel}：</Text>{t.operator}</Text>
+                    {isReviewResult && (
+                      <Text type="secondary">
+                        <Text strong>具体说明：</Text>{t.comment || '暂无说明'}
+                      </Text>
+                    )}
+                    {!isReviewResult && t.comment && <Text type="secondary">说明：{t.comment}</Text>}
+                  </Space>
+                ),
+                status: t.status || 'process',
+              };
+            })}
           />
         )}
       </Card>

@@ -29,6 +29,7 @@ import {
 import { Line, Column, Pie, Bar } from '@ant-design/charts';
 import PageHeader from '../../components/PageHeader';
 import MetricLabel from '../../components/MetricLabel';
+import './monitoring-dashboard.css';
 import { useAuth } from '../../hooks/useAuth';
 import { useSmartDraft } from '../agent-center/smart/store';
 import {
@@ -170,7 +171,7 @@ const BusinessV18 = () => {
   }, [consumeWelcome, currentUser?.department, isAdmin, pushWelcomeGreeting, scopedKpi]);
 
   return (
-    <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100vh' }}>
+    <div className="monitoring-dashboard monitoring-business-page">
       <PageHeader
         title="业务监控"
         subTitle="智能体的调用量、成功率、并发/吞吐、响应时间、超时率、采纳率与用户反馈"
@@ -185,7 +186,7 @@ const BusinessV18 = () => {
       />
 
       <Spin spinning={loading}>
-        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Row className="business-quality-kpi-row" gutter={[16, 16]} style={{ marginTop: 16 }}>
           {[
             ['任务执行成功率', `${kpi.taskSuccessRate}%`, '#52C41A', '已完成且无异常终止'],
             ['任务中断率', `${kpi.taskInterruptRate}%`, '#FAAD14', '超时 / 报错 / 循环卡死'],
@@ -195,7 +196,7 @@ const BusinessV18 = () => {
           ].map(([title, value, color, note]) => (
             <Col flex="1 1 190px" key={String(title)}>
               <Link to="/app/audit">
-                <Card hoverable bordered={false} styles={{ body: { padding: 16, minHeight: 126 } }}>
+                <Card className="monitoring-kpi-card" hoverable bordered={false} styles={{ body: { padding: 16, minHeight: 126 } }}>
                   <MetricLabel name={String(title)} variant="kpi" />
                   <Text strong style={{ display: 'block', fontSize: 30, color: String(color), margin: '6px 0 2px' }}>{value}</Text>
                   <Text type="secondary" style={{ fontSize: 12 }}>{note} · 查看审计日志 →</Text>
