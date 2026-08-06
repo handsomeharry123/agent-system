@@ -159,6 +159,8 @@ const AlertEventReview = () => {
             ...event,
             status: isClose ? 'closed' : 'pending_handle',
             reviewer: '黄帅帅',
+            reviewStartTime: event.reviewStartTime || now,
+            reviewCompleteTime: now,
             reviewTime: now,
             reviewOpinion: values.reviewOpinion,
             reviewRemark: values.reviewRemark,

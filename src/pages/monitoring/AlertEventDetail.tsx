@@ -20,6 +20,7 @@ import {
 } from 'antd';
 import { ArrowLeftOutlined, ReloadOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
+import ApprovalTimeline, { type ApprovalTimelineItem } from '../../components/ApprovalTimeline';
 import {
   mockAlertEventsV18, AlertEventStatusLabels, AlertEventStatusColors,
   NotifyChannelLabels, type AlertEventV18,
@@ -105,6 +106,52 @@ const AlertEventDetail = () => {
     return <Text type="secondary">该事件非您处理，无权查看</Text>;
   }
   if (!event) return <Text type="secondary">事件不存在</Text>;
+
+  const approvalTimeline: ApprovalTimelineItem[] = [];
+  if (event.status === 'closed' || event.status === 'ignored') {
+    approvalTimeline.push({
+      title: '事件分派',
+      time: event.assignTime,
+      operator: event.assigner,
+      status: 'finish',
+    });
+    approvalTimeline.push({
+      title: '处理中',
+      time: event.handleStartTime,
+      operator: event.handler,
+      description: event.handlePlan ? `处理方案：${event.handlePlan}` : undefined,
+      status: 'finish',
+    });
+    if (event.status === 'closed') {
+      approvalTimeline.push({
+        title: '审核中',
+        time: event.reviewStartTime || event.handleCompleteTime,
+        operator: event.reviewer,
+        status: 'finish',
+      });
+      approvalTimeline.push({
+        title: '已关闭',
+        time: event.reviewCompleteTime || event.reviewTime,
+        operator: event.reviewer,
+        description: [
+          `处理意见及方案：${event.handleResult || '已处理'}${event.handlePlan ? `；${event.handlePlan}` : ''}`,
+          `审核意见及说明：${event.reviewOpinion || '处理完成，关闭该告警事项'}${event.reviewRemark ? `；${event.reviewRemark}` : ''}`,
+        ].join('\n'),
+        status: 'finish',
+      });
+    } else {
+      approvalTimeline.push({
+        title: '已忽略',
+        time: event.handleCompleteTime || event.handleTimeline?.find((item) => item.action === '已忽略')?.time,
+        operator: event.handler,
+        description: [
+          `处理意见及方案：${event.handleResult || '已忽略'}${event.handlePlan ? `；${event.handlePlan}` : ''}`,
+          `审核意见及说明：${event.reviewOpinion || '同意忽略该告警事项'}${event.reviewRemark ? `；${event.reviewRemark}` : ''}`,
+        ].join('\n'),
+        status: 'finish',
+      });
+    }
+  }
 
   return (
     <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100vh' }}>
@@ -203,6 +250,10 @@ const AlertEventDetail = () => {
           </Descriptions.Item>
         </Descriptions>
       </Card>
+
+      {approvalTimeline.length > 0 && (
+        <ApprovalTimeline items={approvalTimeline} style={{ marginTop: 16 }} />
+      )}
 
       <Card bordered={false} style={{ marginTop: 16 }} title="智能体告警关联拓扑图">
         <Card size="small" style={{ background: '#FAFAFA' }}>

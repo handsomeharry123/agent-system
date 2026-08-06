@@ -188,8 +188,18 @@ const AlertEventListV18 = () => {
 
   // 信息科管理员点击「审核」即接手事件：先转入审核中，再进入审核页。
   const beginReview = useCallback((event: AlertEventV18) => {
+    const reviewStartedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
     const reviewingEvent: AlertEventV18 = event.status === 'pending_review'
-      ? { ...event, status: 'reviewing' }
+      ? {
+        ...event,
+        status: 'reviewing',
+        reviewer: currentUserName || '信息科管理员',
+        reviewStartTime: reviewStartedAt,
+        handleTimeline: [
+          ...(event.handleTimeline || []),
+          { time: reviewStartedAt, action: '审核中', operator: currentUserName || '信息科管理员', remark: '开始审核处理结果与处置方案' },
+        ],
+      }
       : event;
     if (event.status === 'pending_review') {
       setEvents((current) => current.map((item) => item.id === event.id ? reviewingEvent : item));
@@ -198,7 +208,7 @@ const AlertEventListV18 = () => {
       message.success('事件已转入「审核中事件」');
     }
     navigate(`/app/monitoring/alert-events/${event.id}/review?tab=reviewing`);
-  }, [navigate]);
+  }, [currentUserName, navigate]);
 
   // 列定义
   const baseColumns: ProColumns<AlertEventV18>[] = [
@@ -563,6 +573,8 @@ const AlertEventListV18 = () => {
             handleCompleteTime: now,
             handleResult: '已忽略',
             handlePlan: values.handlePlan,
+            reviewOpinion: '同意忽略该告警事项',
+            reviewRemark: `处理人确认该事件无需继续处置：${values.handlePlan}`,
             handleTimeline: [
               ...(e.handleTimeline || []),
               { time: now, action: '已忽略', operator, remark: values.handlePlan },

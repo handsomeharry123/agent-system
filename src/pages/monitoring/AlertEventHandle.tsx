@@ -56,15 +56,20 @@ const AlertEventHandle = () => {
       const values = await handleForm.validateFields();
       setSaving(true);
       const isIgnored = values.handleResult === '已忽略';
+      const operator = currentUserName || '当前用户';
       const updated: AlertEventV18 = {
         ...event,
         status: isIgnored ? 'ignored' : 'handling',
         handleStartTime: now,
+        handleCompleteTime: isIgnored ? now : event.handleCompleteTime,
+        handler: event.handler || operator,
         handleResult: values.handleResult,
         handlePlan: values.handlePlan,
+        reviewOpinion: isIgnored ? '同意忽略该告警事项' : event.reviewOpinion,
+        reviewRemark: isIgnored ? `处理人确认该事件无需继续处置：${values.handlePlan}` : event.reviewRemark,
         handleTimeline: [
           ...(event.handleTimeline || []),
-          { time: now, action: isIgnored ? '已忽略' : '开始处理', operator: '黄帅帅', remark: values.handlePlan },
+          { time: now, action: isIgnored ? '已忽略' : '开始处理', operator, remark: values.handlePlan },
         ],
       };
       const idx = mockAlertEventsV18.findIndex((x) => x.id === event.id);

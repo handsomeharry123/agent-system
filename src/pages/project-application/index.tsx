@@ -43,6 +43,7 @@ import {
 } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
 import AgentLifecycleProgress, { type AgentLifecycleStage } from '../../components/AgentLifecycleProgress';
+import ApprovalTimeline, { type ApprovalTimelineItem } from '../../components/ApprovalTimeline';
 import { departmentOptions } from '../../mock/departments';
 import { useAuth } from '../../hooks/useAuth';
 import { useSmartDraft } from '../agent-center/smart/store';
@@ -89,7 +90,10 @@ interface ProjectRecord {
   submitTime?: string;
   revokeTime?: string;
   finishTime?: string;
+  reviewStartTime?: string;
+  reviewer?: string;
   reviewNote?: string;
+  approvalHistory?: ApprovalTimelineItem[];
   files: string[];
   /** 跨详情页共享的项目流程节点；历史记录未保存时按立项节点展示。 */
   lifecycleStage?: AgentLifecycleStage;
@@ -137,6 +141,32 @@ const saveRecord = (record: ProjectRecord) => {
   if (index >= 0) rows[index] = record;
   else rows.unshift(record);
   writeRecords(rows);
+};
+
+const getProjectApprovalTimeline = (record: ProjectRecord): ApprovalTimelineItem[] => {
+  if (record.approvalHistory?.length) return record.approvalHistory;
+  const items: ApprovalTimelineItem[] = [];
+  if (record.submitTime) {
+    items.push({ title: '提交审核', time: record.submitTime, operator: record.applicant, status: 'finish' });
+  }
+  if (record.status === '审核中' || record.status === '立项通过' || record.status === '立项不通过') {
+    items.push({
+      title: '审核中',
+      time: record.reviewStartTime || (record.status === '审核中' ? record.updateTime : record.submitTime),
+      operator: record.reviewer || '信息科管理员',
+      status: record.status === '审核中' ? 'process' : 'finish',
+    });
+  }
+  if (record.status === '立项通过' || record.status === '立项不通过') {
+    items.push({
+      title: record.status,
+      time: record.finishTime || record.updateTime,
+      operator: record.reviewer || '信息科管理员',
+      description: record.reviewNote,
+      status: record.status === '立项通过' ? 'finish' : 'error',
+    });
+  }
+  return items;
 };
 
 const escapeHtml = (value: string | number) =>
@@ -609,8 +639,12 @@ export default function ProjectApplication() {
   ), [records, isAdmin, currentUser?.name, active, keyword, department, track]);
 
   const updateStatus = (record: ProjectRecord, status: ProjectStatus) => {
+    const changedAt = now();
+    const nextHistory = status === '审核中'
+      ? [...getProjectApprovalTimeline(record), { title: '审核中', time: changedAt, operator: currentUser?.name || '信息科管理员', status: 'process' as const }]
+      : record.approvalHistory;
     const next = records.map((item) => item.id === record.id
-      ? { ...item, status, updateTime: now(), ...(status === '撤销修改' ? { revokeTime: now() } : {}) }
+      ? { ...item, status, updateTime: changedAt, approvalHistory: nextHistory, ...(status === '撤销修改' ? { revokeTime: changedAt } : {}), ...(status === '审核中' ? { reviewStartTime: changedAt, reviewer: currentUser?.name || '信息科管理员' } : {}) }
       : item);
     setRecords(next);
     writeRecords(next);
@@ -944,6 +978,12 @@ export function ProjectApplicationForm() {
         applicant: editing?.applicant || currentUser?.name || '当前用户',
         updateTime: now(),
         submitTime: status === '待审核' ? now() : editing?.submitTime,
+        approvalHistory: status === '待审核'
+          ? [
+            ...(editing?.approvalHistory || []),
+            { title: editing?.approvalHistory?.length ? '重新提交审核' : '提交审核', time: now(), operator: editing?.applicant || currentUser?.name || '当前用户', status: 'finish' },
+          ]
+          : editing?.approvalHistory,
         files: [...applicationFiles, ...(values.evidenceFiles || [])].map((file) => file.name),
       };
       delete (record as unknown as Record<string, unknown>).applicationFiles;
@@ -1304,12 +1344,14 @@ export function ProjectApplicationDetail() {
     <AgentLifecycleProgress currentStage={lifecycleStage} />
     <RecordContent record={record} />
     {record.reviewNote && <Card title="审核结论" bordered={false}><Descriptions><Descriptions.Item label="结论"><Tag color={statusColor[record.status]}>{record.status}</Tag></Descriptions.Item><Descriptions.Item label="具体说明">{record.reviewNote}</Descriptions.Item></Descriptions></Card>}
+    <ApprovalTimeline items={getProjectApprovalTimeline(record)} />
     <Card bordered={false} style={{ textAlign: 'right' }}><Button onClick={() => navigate(-1)}>返回</Button></Card>
   </Space>;
 }
 
 export function ProjectApplicationAudit() {
   const { id } = useParams(); const navigate = useNavigate(); const record = getRecord(id);
+  const { currentUser } = useAuth();
   const aiPreAudit = useMemo(() => {
     if (!record) {
       return { conclusion: '立项通过' as const, note: '' };
@@ -1326,12 +1368,17 @@ export function ProjectApplicationAudit() {
   useEffect(() => {
     if (!record) return undefined;
     const completeFromAssistant = (nextConclusion: '立项通过' | '立项不通过') => {
+      const completedAt = now();
+      const reviewer = currentUser?.name || '信息科管理员';
       saveRecord({
         ...record,
         status: nextConclusion,
         reviewNote: note,
-        finishTime: now(),
-        updateTime: now(),
+        finishTime: completedAt,
+        updateTime: completedAt,
+        reviewStartTime: record.reviewStartTime || completedAt,
+        reviewer,
+        approvalHistory: [...getProjectApprovalTimeline(record).map((item) => item.status === 'process' ? { ...item, status: 'finish' as const } : item), { title: nextConclusion, time: completedAt, operator: reviewer, description: note, status: nextConclusion === '立项通过' ? 'finish' : 'error' }],
       });
       message.success(`审核完成：${nextConclusion}`);
       navigate(`/app/project-application?status=${nextConclusion}`);
@@ -1374,7 +1421,9 @@ export function ProjectApplicationAudit() {
     Modal.confirm({
       title: `确认是否${conclusion}？`, okText: '是', cancelText: '否',
       onOk: () => {
-        saveRecord({ ...record, status: conclusion, reviewNote: note, finishTime: now(), updateTime: now() });
+        const completedAt = now();
+        const reviewer = currentUser?.name || '信息科管理员';
+        saveRecord({ ...record, status: conclusion, reviewNote: note, finishTime: completedAt, updateTime: completedAt, reviewStartTime: record.reviewStartTime || completedAt, reviewer, approvalHistory: [...getProjectApprovalTimeline(record).map((item) => item.status === 'process' ? { ...item, status: 'finish' as const } : item), { title: conclusion, time: completedAt, operator: reviewer, description: note, status: conclusion === '立项通过' ? 'finish' : 'error' }] });
         message.success(`审核完成：${conclusion}`);
         navigate(`/app/project-application?status=${conclusion}`);
       },

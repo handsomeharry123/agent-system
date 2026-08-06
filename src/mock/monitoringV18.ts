@@ -272,10 +272,14 @@ export interface AlertEventV18 {
   handleTimeline?: { time: string; action: string; operator: string; remark?: string }[];
   /** 审核人 */
   reviewer?: string;
-  /** 审核时间 */
+  /** 开始审核时间 */
+  reviewStartTime?: string;
+  /** 审核完成时间（兼容旧数据时可回退 reviewTime） */
+  reviewCompleteTime?: string;
+  /** 审核时间（历史字段） */
   reviewTime?: string;
   /** 审核意见 */
-  reviewOpinion?: '处理完成，关闭该告警事项' | '退回重新处理';
+  reviewOpinion?: '处理完成，关闭该告警事项' | '退回重新处理' | '同意忽略该告警事项';
   /** 审核说明 */
   reviewRemark?: string;
   /** 退回处理说明（处理 - 退回 - 再次处理 时展示） */
@@ -878,6 +882,7 @@ export const mockAlertEventsV18: AlertEventV18[] = [
       { time: '2026-06-25 15:10:00', action: '审核中', operator: '黄帅帅', remark: '复核处置方案' },
     ],
     reviewer: '黄帅帅',
+    reviewStartTime: '2026-06-25 15:10:00',
     reviewTime: '2026-06-25 15:10:00',
   }),
 
@@ -914,6 +919,8 @@ export const mockAlertEventsV18: AlertEventV18[] = [
       { time: '2026-06-18 11:00:00', action: '审核通过', operator: '黄帅帅', remark: '已扩容实例，问题闭环' },
     ],
     reviewer: '黄帅帅',
+    reviewStartTime: '2026-06-18 10:35:00',
+    reviewCompleteTime: '2026-06-18 11:00:00',
     reviewTime: '2026-06-18 11:00:00',
     reviewOpinion: '处理完成，关闭该告警事项',
     reviewRemark: '已扩容 1 台推理实例，CPU 使用率回落至 65%，问题闭环。',
@@ -953,6 +960,8 @@ export const mockAlertEventsV18: AlertEventV18[] = [
       { time: '2026-06-20 14:30:00', action: '审核通过', operator: '黄帅帅', remark: '问题已闭环，基线更新' },
     ],
     reviewer: '黄帅帅',
+    reviewStartTime: '2026-06-20 14:05:00',
+    reviewCompleteTime: '2026-06-20 14:30:00',
     reviewTime: '2026-06-20 14:30:00',
     reviewOpinion: '处理完成，关闭该告警事项',
     reviewRemark: '已确认是 6 月体检高峰带来的自然增量，基线更新已完成，问题闭环。',
@@ -1082,6 +1091,7 @@ export const mockAlertEventsV18: AlertEventV18[] = [
       { time: '2026-06-26 12:10:00', action: '审核中', operator: '黄帅帅', remark: '复核处置方案' },
     ],
     reviewer: '黄帅帅',
+    reviewStartTime: '2026-06-26 12:10:00',
     reviewTime: '2026-06-26 12:10:00',
   }),
   makeEvent({
@@ -1117,6 +1127,8 @@ export const mockAlertEventsV18: AlertEventV18[] = [
       { time: '2026-06-24 12:00:00', action: '审核通过', operator: '黄帅帅', remark: '基线调整后问题闭环' },
     ],
     reviewer: '黄帅帅',
+    reviewStartTime: '2026-06-24 11:35:00',
+    reviewCompleteTime: '2026-06-24 12:00:00',
     reviewTime: '2026-06-24 12:00:00',
     reviewOpinion: '处理完成，关闭该告警事项',
     reviewRemark: '已确认是体检高峰带来的自然增量，基线更新已完成，问题闭环。',
@@ -1153,6 +1165,8 @@ export const mockAlertEventsV18: AlertEventV18[] = [
       { time: '2026-06-22 08:25:00', action: '开始处理', operator: '黄帅帅' },
       { time: '2026-06-22 09:00:00', action: '已忽略', operator: '黄帅帅', remark: '灰度发布过程态' },
     ],
+    reviewOpinion: '同意忽略该告警事项',
+    reviewRemark: '已确认属于灰度发布期间的预期版本差异，无需进一步处置。',
   }),
 ];
 

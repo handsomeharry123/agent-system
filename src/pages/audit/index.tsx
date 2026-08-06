@@ -38,11 +38,15 @@ import {
   DownloadOutlined,
   EyeOutlined,
   FilePdfOutlined,
+  CloudServerOutlined,
+  LikeOutlined,
   MoreOutlined,
   ReloadOutlined,
   RiseOutlined,
   RobotOutlined,
   SearchOutlined,
+  SafetyCertificateOutlined,
+  TeamOutlined,
   ToolOutlined,
   ThunderboltFilled,
   ThunderboltOutlined,
@@ -1219,14 +1223,50 @@ function ProjectAudit() {
     { title: '投资预算金额', dataIndex: 'investment', width: 145, render: (v) => `${v.toFixed(2)} 万元` },
     { title: '单次调用成本', dataIndex: 'callCost', width: 145, render: (v) => `${v.toFixed(2)} 元` },
     { title: '单位服务成本', dataIndex: 'serviceCost', width: 145, render: (v) => `${v.toFixed(2)} 元/人` },
-    { title: '操作', fixed: 'right', width: 255, render: (_, row) => <Space size={0}><Button type="link" onClick={() => { downloadTextFile('项目审计材料模板.doc', '项目基本信息\n项目建设内容完成情况\n项目投资预算使用情况'); message.success('模板已下载'); }}>模板下载</Button><Button type="link" onClick={() => open(row, 'upload')}>上传材料</Button><Button type="link" onClick={() => open(row, 'detail')}>查看详情</Button></Space> },
+    { title: '操作', fixed: 'right', width: 255, render: (_, row) => <Space size={0}><Button type="link" href="/项目审计报告模板(1).docx" download="项目审计报告模板(1).docx" onClick={() => message.success('模板已下载')}>模板下载</Button><Button type="link" onClick={() => open(row, 'upload')}>上传材料</Button><Button type="link" onClick={() => open(row, 'detail')}>查看详情</Button></Space> },
   ];
   const metrics = [
-    ['日均服务患者人数增长率', 25.38, '%'], ['医生采纳率', 89.35, '%'], ['服务可用率', 99.64, '%'], ['安全可控率', 99.9, '%'],
+    {
+      key: 'efficiency', dimension: '服务效率', title: '日均服务患者人数增长率', value: 25.38, suffix: '%',
+      icon: <TeamOutlined />, bars: [34, 42, 48, 55, 63, 70, 78, 88],
+    },
+    {
+      key: 'quality', dimension: '服务质量', title: '医生采纳率', value: 89.35, suffix: '%',
+      icon: <LikeOutlined />, bars: [56, 62, 58, 70, 76, 73, 84, 91],
+    },
+    {
+      key: 'availability', dimension: '运行稳定', title: '服务可用率', value: 99.64, suffix: '%',
+      icon: <CloudServerOutlined />, bars: [82, 86, 84, 90, 88, 94, 92, 97],
+    },
+    {
+      key: 'safety', dimension: '服务安全', title: '安全可控率', value: 99.9, suffix: '%',
+      icon: <SafetyCertificateOutlined />, bars: [76, 82, 87, 85, 91, 94, 96, 100],
+    },
   ];
   return <div>
     <Header title="项目审计" description="从服务效率、服务质量、服务安全和服务成本维度审计项目运行成效。" extra={<Button icon={<ReloadOutlined />} onClick={() => message.success('数据已刷新至最新时间')}>刷新</Button>} />
-    <div className="audit-stat-grid">{metrics.map(([label, value, suffix]) => <Card key={String(label)} bordered={false}><Statistic title={label} value={value} precision={2} suffix={suffix} /></Card>)}</div>
+    <div className="audit-stat-grid economic-stat-grid project-stat-grid">
+      {metrics.map((metric, index) => (
+        <Card
+          key={metric.key}
+          bordered={false}
+          className={`economic-stat-card project-stat-card project-stat-card-${metric.key}`}
+          style={{ '--card-delay': `${index * 90}ms` } as React.CSSProperties}
+        >
+          <div className="economic-stat-glow" />
+          <div className="economic-stat-head project-stat-head">
+            <span className="economic-stat-icon">{metric.icon}</span>
+            <span className="project-stat-dimension">{metric.dimension}</span>
+          </div>
+          <Statistic title={metric.title} value={metric.value} precision={2} suffix={metric.suffix} />
+          <div className="economic-stat-foot">
+            <span className="economic-mini-chart" aria-hidden="true">
+              {metric.bars.map((height, barIndex) => <i key={barIndex} style={{ height: `${height}%` }} />)}
+            </span>
+          </div>
+        </Card>
+      ))}
+    </div>
     <Toolbar><Space wrap><Text strong>筛选项</Text><Select allowClear placeholder="申报科室" value={department} onChange={setDepartment} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.dept))].map((value) => ({ label: value, value }))} /><Select allowClear placeholder="申报赛道" value={track} onChange={setTrack} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.track))].map((value) => ({ label: value, value }))} /><Button onClick={() => { setDepartment(undefined); setTrack(undefined); }}>重置</Button><Text type="secondary">点击指标表头可切换升序或降序</Text></Space></Toolbar>
     <Card bordered={false} className="audit-table-card"><Table columns={columns} dataSource={filtered} scroll={{ x: 2500 }} pagination={{ pageSize: 8, showTotal: (n) => `共 ${n} 条` }} /></Card>
   </div>;

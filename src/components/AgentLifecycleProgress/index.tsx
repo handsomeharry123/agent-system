@@ -1,4 +1,7 @@
-import { Card, Steps, Typography } from 'antd';
+import { CheckOutlined } from '@ant-design/icons';
+import { Card, Typography } from 'antd';
+import type { CSSProperties } from 'react';
+import './index.css';
 
 const { Text } = Typography;
 
@@ -19,24 +22,48 @@ interface AgentLifecycleProgressProps {
 /** 从立项到上线的统一流程进度，供各业务详情页复用。 */
 const AgentLifecycleProgress = ({ currentStage = '立项' }: AgentLifecycleProgressProps) => {
   const current = Math.max(0, AGENT_LIFECYCLE_STAGES.indexOf(currentStage));
+  const progress = current / (AGENT_LIFECYCLE_STAGES.length - 1) * 100;
 
   return (
     <Card
       bordered={false}
-      styles={{ body: { padding: '18px 32px 16px' } }}
+      className="lifecycle-card"
       data-testid="agent-lifecycle-progress"
       aria-label={`项目流程进度，当前节点：${currentStage}`}
     >
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 16 }}>
-        <Text strong style={{ fontSize: 16 }}>项目进度</Text>
-        <Text type="secondary" style={{ fontSize: 12 }}>当前节点及之前的流程节点已点亮</Text>
+      <div className="lifecycle-heading">
+        <Text strong className="lifecycle-title">项目进度</Text>
+        <span className="lifecycle-status"><i />当前阶段：{currentStage}</span>
+        <Text type="secondary" className="lifecycle-hint">当前节点及之前的流程节点已点亮</Text>
       </div>
-      <Steps
-        current={current}
-        responsive={false}
-        size="small"
-        items={AGENT_LIFECYCLE_STAGES.map((title) => ({ title }))}
-      />
+
+      <div className="lifecycle-progress-body" style={{ '--lifecycle-progress': `${progress}%` } as CSSProperties}>
+        <div className="lifecycle-track" aria-hidden="true">
+          <div className="lifecycle-track-fill"><span /></div>
+        </div>
+        <ol className="lifecycle-steps">
+          {AGENT_LIFECYCLE_STAGES.map((title, index) => {
+            const completed = index < current;
+            const active = index === current;
+            return (
+              <li
+                key={title}
+                className={`lifecycle-step${completed ? ' is-completed' : ''}${active ? ' is-active' : ''}`}
+                style={{ '--step-index': index } as CSSProperties}
+                aria-current={active ? 'step' : undefined}
+              >
+                <span className="lifecycle-node" aria-hidden="true">
+                  <span className="lifecycle-node-ring" />
+                  <span className="lifecycle-node-core">
+                    {completed ? <CheckOutlined /> : index + 1}
+                  </span>
+                </span>
+                <span className="lifecycle-label">{title}</span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
     </Card>
   );
 };

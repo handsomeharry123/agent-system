@@ -40,6 +40,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { Column, Line } from '@ant-design/charts';
 import PageHeader from '../../components/PageHeader';
 import AgentLifecycleProgress, { type AgentLifecycleStage } from '../../components/AgentLifecycleProgress';
+import ApprovalTimeline, { type ApprovalTimelineItem } from '../../components/ApprovalTimeline';
 import {
   getTaskById,
   getReportByTaskId,
@@ -404,6 +405,34 @@ const EvaluationReport = () => {
     }))
   );
 
+  const approvalTimeline: ApprovalTimelineItem[] = [];
+  if (task.evalCompleteTime) {
+    approvalTimeline.push({
+      title: '评测完成',
+      time: task.evalCompleteTime,
+      operator: task.creator,
+      description: task.evalResultDesc || (report ? `评测结论：${report.conclusion}` : undefined),
+      status: 'finish',
+    });
+  }
+  if (task.reviewStartTime || task.status === '待审核' || task.status === '审核中' || task.status === '审核通过' || task.status === '退回重测') {
+    approvalTimeline.push({
+      title: '审核中',
+      time: task.reviewStartTime,
+      operator: task.reviewer || (task.status === '待审核' ? undefined : '信息科管理员'),
+      status: task.status === '待审核' || task.status === '审核中' ? 'process' : 'finish',
+    });
+  }
+  if (task.status === '审核通过' || task.status === '退回重测') {
+    approvalTimeline.push({
+      title: task.status === '审核通过' ? '审核通过' : '退回修改',
+      time: task.reviewCompleteTime || task.rejectTime,
+      operator: task.reviewer || '信息科管理员',
+      description: task.reviewComment,
+      status: task.status === '审核通过' ? 'finish' : 'error',
+    });
+  }
+
   return (
     <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100%' }}>
       <Card style={{ marginBottom: 16 }}>
@@ -651,6 +680,8 @@ const EvaluationReport = () => {
           <Paragraph style={{ margin: 0 }}>{task.reviewComment}</Paragraph>
         </Card>
       )}
+
+      <ApprovalTimeline items={approvalTimeline} style={{ marginBottom: 16 }} />
 
       {/* 隐藏 PDF 渲染 host — React 管生命周期，避开 StrictMode 双重挂载问题 */}
       <div

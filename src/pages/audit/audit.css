@@ -80,6 +80,12 @@
 .economic-stat-card-token { --card-accent: #08a88a; --card-accent-rgb: 8, 168, 138; }
 .economic-stat-card-roi { --card-accent: #e58b22; --card-accent-rgb: 229, 139, 34; }
 
+/* 项目审计沿用经济审计的卡片语言，以连续的蓝青色谱突出运行成效属性。 */
+.project-stat-card-efficiency { --card-accent: #1677ff; --card-accent-rgb: 22, 119, 255; }
+.project-stat-card-quality { --card-accent: #5766d8; --card-accent-rgb: 87, 102, 216; }
+.project-stat-card-availability { --card-accent: #0c9e9a; --card-accent-rgb: 12, 158, 154; }
+.project-stat-card-safety { --card-accent: #18a06a; --card-accent-rgb: 24, 160, 106; }
+
 .economic-stat-card .ant-card-body {
   position: relative;
   z-index: 1;
@@ -106,6 +112,21 @@
 
 .economic-stat-head {
   margin-bottom: 9px;
+}
+
+.project-stat-head {
+  justify-content: space-between;
+}
+
+.project-stat-dimension {
+  padding: 4px 9px;
+  border: 1px solid rgba(var(--card-accent-rgb), .12);
+  border-radius: 999px;
+  background: rgba(var(--card-accent-rgb), .07);
+  color: var(--card-accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
 }
 
 .economic-stat-foot {

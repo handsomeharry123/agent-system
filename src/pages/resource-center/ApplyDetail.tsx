@@ -238,7 +238,7 @@ const ApplyDetail = () => {
         </Card>
       )}
 
-      <Card title={<Space><HistoryOutlined />审批轨迹时间轴</Space>} bordered={false}>
+      <Card title={<Space><HistoryOutlined />审批时间线</Space>} bordered={false}>
         {it.trail.length === 0 ? (
           <Text type="secondary">该申请暂无审批轨迹(草稿状态)</Text>
         ) : (
