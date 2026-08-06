@@ -44,6 +44,14 @@
   height: 100%;
 }
 
+.monitoring-security-page .monitoring-security-metric-row > .ant-col {
+  display: flex;
+}
+
+.monitoring-security-page .monitoring-security-metric-row .ant-card {
+  width: 100%;
+}
+
 .monitoring-dashboard .monitoring-table-scroll {
   width: 100%;
   overflow-x: auto;

@@ -100,7 +100,7 @@ const SecurityV21 = () => {
       <Spin spinning={loading}>
         {securityMetrics.map((metric) => (
           <section key={metric.key} style={{ marginTop: 16 }}>
-            <Row gutter={[16, 16]} align="stretch">
+            <Row gutter={[16, 16]} align="stretch" className="monitoring-security-metric-row">
               <Col xs={24} md={12} xl={5}>
                 <Card className="monitoring-kpi-card" bordered={false} hoverable styles={{ body: { padding: 18, minHeight: 172 } }}>
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -132,7 +132,7 @@ const SecurityV21 = () => {
 
               <Col xs={24} xl={14}>
                 <Card className="monitoring-chart-card" bordered={false} title={metric.trendTitle}
-                  styles={{ body: { padding: '8px 14px 10px', height: 120 } }} style={{ height: 172 }}>
+                  styles={{ body: { padding: '8px 14px 10px', height: 120 } }}>
                   <Line
                     autoFit
                     height={112}
