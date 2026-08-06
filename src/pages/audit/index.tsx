@@ -679,7 +679,7 @@ function ProjectDetail({ project, auditMode, onBack, onFinish }: { project: type
   </div>;
 }
 
-function ProjectAudit() {
+function LegacyProjectAudit() {
   const { message, modal } = App.useApp();
   const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [projects, setProjects] = useState(initialProjects);
@@ -1072,6 +1072,164 @@ function ProjectAudit() {
     </Toolbar>
     <Card bordered={false} className="audit-status-card"><Tabs activeKey={status} onChange={(x) => setStatus(x as typeof status)} items={(['全部', '待申请', '草稿', '待审计', '审计中', '撤销修改', '审计通过', '审计不通过'] as const).map((x) => ({ key: x, label: <span>{x}<span className="tab-count">{x === '全部' ? projects.length : projects.filter((p) => p.status === x).length}</span></span> }))} /></Card>
     <Card bordered={false} className="audit-table-card"><Table columns={columns} dataSource={filtered} scroll={{ x: 1765 }} pagination={{ pageSize: 8, showTotal: (n) => `共 ${n} 条` }} /></Card></div>;
+}
+
+type ProjectAuditRow = typeof initialProjects[number] & {
+  dailyPatients: number;
+  growthRate: number;
+  taskSuccessRate: number;
+  responseP99: number;
+  doctorAdoptionRate: number;
+  faultCount: number;
+  recoveryTime: number;
+  availabilityRate: number;
+  safetyRate: number;
+  investment: number;
+  callCost: number;
+  serviceCost: number;
+  material?: string;
+};
+
+const projectAuditRows: ProjectAuditRow[] = initialProjects.slice(0, 6).map((project, index) => {
+  const dailyPatients = [326, 218, 486, 172, 395, 143][index];
+  const investment = [180, 320, 95, 150, 210, 265][index];
+  const calls = [128420, 92610, 176400, 64380, 118900, 52700][index];
+  return {
+    ...project,
+    dailyPatients,
+    growthRate: [28.6, 21.3, 35.8, 18.2, 31.5, 16.9][index],
+    taskSuccessRate: [98.7, 97.4, 99.1, 96.8, 98.2, 95.9][index],
+    responseP99: [1.26, 2.18, 0.86, 1.72, 1.05, 2.46][index],
+    doctorAdoptionRate: [91.2, 88.6, 94.3, 86.5, 90.8, 84.7][index],
+    faultCount: [3, 5, 1, 6, 2, 7][index],
+    recoveryTime: [18, 26, 12, 31, 16, 38][index],
+    availabilityRate: [99.82, 99.61, 99.94, 99.42, 99.88, 99.13][index],
+    safetyRate: [99.96, 99.91, 99.98, 99.86, 99.94, 99.72][index],
+    investment,
+    callCost: investment * 10000 / calls,
+    serviceCost: investment * 10000 / (dailyPatients * 365),
+    material: index < 3 ? `${project.name}审计材料.pdf` : undefined,
+  };
+});
+
+const downloadTextFile = (name: string, content: string) => {
+  const url = URL.createObjectURL(new Blob([content], { type: 'application/octet-stream' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  URL.revokeObjectURL(url);
+};
+
+function ProjectMaterialUpload({ project, onBack }: { project: ProjectAuditRow; onBack: () => void }) {
+  const { message } = App.useApp();
+  const [files, setFiles] = useState<UploadFile[]>([]);
+  const confirmUpload = () => {
+    if (!files.length) return message.warning('请先选择 PDF 文件');
+    message.success('文件上传成功');
+    onBack();
+  };
+  return <div>
+    <Header title="项目审计材料上传" description="上传项目审计所需的完整说明材料。" />
+    <Card bordered={false} className="audit-section-card">
+      <Descriptions column={3} bordered items={[
+        { key: 'name', label: '项目名称', children: project.name },
+        { key: 'dept', label: '申报科室', children: project.dept },
+        { key: 'track', label: '申报赛道', children: project.track },
+      ]} />
+    </Card>
+    <Card title="上传文件" bordered={false} className="audit-section-card">
+      <Upload.Dragger
+        accept="application/pdf,.pdf"
+        maxCount={1}
+        fileList={files}
+        beforeUpload={(file) => {
+          if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+            message.error('仅支持 PDF 格式文件');
+            return Upload.LIST_IGNORE;
+          }
+          if (file.size > 30 * 1024 * 1024) {
+            message.error('单文件大小不能超过 30M');
+            return Upload.LIST_IGNORE;
+          }
+          setFiles([file]);
+          return false;
+        }}
+        onRemove={() => { setFiles([]); return true; }}
+      >
+        <p className="ant-upload-drag-icon"><CloudUploadOutlined /></p>
+        <p className="ant-upload-text">点击或拖拽 PDF 文件到此区域上传</p>
+        <p className="ant-upload-hint">文档需包含项目基本信息、项目建设内容完成情况、项目投资预算使用情况；单文件不超过 30M</p>
+      </Upload.Dragger>
+    </Card>
+    <div className="sticky-actions"><Button onClick={onBack}>取消</Button><Button type="primary" onClick={confirmUpload}>确认</Button></div>
+  </div>;
+}
+
+const projectInfoItems = (project: ProjectAuditRow) => [
+  { key: 'name', label: '项目名称', children: project.name },
+  { key: 'dept', label: '申报科室', children: project.dept },
+  { key: 'track', label: '申报赛道', children: project.track },
+];
+
+function NewProjectDetail({ project, onBack }: { project: ProjectAuditRow; onBack: () => void }) {
+  const { message } = App.useApp();
+  const [preview, setPreview] = useState(false);
+  const sections = [
+    { title: '① 服务效率', items: [['日均服务患者人数', `${project.dailyPatients} 人`], ['日均服务患者人数增长率', `${project.growthRate}%`]] },
+    { title: '② 服务质量', items: [['任务执行成功率', `${project.taskSuccessRate}%`], ['响应时间 P99', `${project.responseP99} 秒`], ['医生采纳率', `${project.doctorAdoptionRate}%`], ['异常故障次数', `${project.faultCount} 次`], ['平均故障恢复时间', `${project.recoveryTime} 分钟`], ['服务可用率', `${project.availabilityRate}%`]] },
+    { title: '③ 服务安全', items: [['安全可控率', `${project.safetyRate}%`]] },
+    { title: '④ 服务成本', items: [['投资金额', `${project.investment.toFixed(2)} 万元`], ['单次调用成本', `${project.callCost.toFixed(2)} 元`], ['单位服务成本', `${project.serviceCost.toFixed(2)} 元/人`]] },
+  ];
+  return <div>
+    <Header title="项目审计详情" description={project.name} extra={<Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>} />
+    <Card title="项目基本信息" className="audit-section-card"><Descriptions bordered column={3} items={projectInfoItems(project)} /></Card>
+    {sections.map((section) => <Card key={section.title} title={section.title} className="audit-section-card"><Descriptions bordered column={3} items={section.items.map(([label, value]) => ({ key: label, label, children: value }))} /></Card>)}
+    <Card title="⑤ 审计材料" className="audit-section-card">
+      {project.material ? <Space><FilePdfOutlined style={{ color: '#e5484d' }} /><Text>{project.material}</Text><Button type="link" icon={<EyeOutlined />} onClick={() => setPreview(true)}>预览</Button><Button type="link" icon={<DownloadOutlined />} onClick={() => { downloadTextFile(project.material!, '项目审计材料演示文件'); message.success('开始下载审计材料'); }}>下载</Button></Space> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂未上传审计材料" />}
+    </Card>
+    <Modal open={preview} title="审计材料预览" width={760} onCancel={() => setPreview(false)} footer={<Button onClick={() => setPreview(false)}>关闭</Button>}><div className="pdf-preview"><FilePdfOutlined /><Title level={4}>{project.material}</Title><Text type="secondary">PDF 文件在线预览区域</Text></div></Modal>
+  </div>;
+}
+
+function ProjectAudit() {
+  const { message } = App.useApp();
+  const [department, setDepartment] = useState<string>();
+  const [track, setTrack] = useState<string>();
+  const [screen, setScreen] = useState<'list' | 'upload' | 'detail'>('list');
+  const [current, setCurrent] = useState(projectAuditRows[0]);
+  const filtered = projectAuditRows.filter((row) => (!department || row.dept === department) && (!track || row.track === track));
+  if (screen === 'upload') return <ProjectMaterialUpload project={current} onBack={() => setScreen('list')} />;
+  if (screen === 'detail') return <NewProjectDetail project={current} onBack={() => setScreen('list')} />;
+  const open = (row: ProjectAuditRow, target: 'upload' | 'detail') => { setCurrent(row); setScreen(target); };
+  const rate = (value: number) => `${value.toFixed(2).replace(/\.00$/, '')}%`;
+  const sortable = (key: keyof ProjectAuditRow) => (a: ProjectAuditRow, b: ProjectAuditRow) => Number(a[key]) - Number(b[key]);
+  const columns: ColumnsType<ProjectAuditRow> = [
+    { title: '项目名称', dataIndex: 'name', fixed: 'left', width: 220, ellipsis: true },
+    { title: '申报科室', dataIndex: 'dept', width: 105 }, { title: '申报赛道', dataIndex: 'track', width: 105 },
+    { title: '日均服务患者人数', dataIndex: 'dailyPatients', width: 155, sorter: sortable('dailyPatients'), render: (v) => `${v} 人` },
+    { title: '日均服务患者人数增长率', dataIndex: 'growthRate', width: 205, sorter: sortable('growthRate'), render: rate },
+    { title: '任务执行成功率', dataIndex: 'taskSuccessRate', width: 150, sorter: sortable('taskSuccessRate'), render: rate },
+    { title: '响应时间 P99', dataIndex: 'responseP99', width: 135, sorter: sortable('responseP99'), render: (v) => `${v} 秒` },
+    { title: '医生采纳率', dataIndex: 'doctorAdoptionRate', width: 130, sorter: sortable('doctorAdoptionRate'), render: rate },
+    { title: '异常故障次数', dataIndex: 'faultCount', width: 130, sorter: sortable('faultCount'), render: (v) => `${v} 次` },
+    { title: '平均故障恢复时间', dataIndex: 'recoveryTime', width: 165, sorter: sortable('recoveryTime'), render: (v) => `${v} 分钟` },
+    { title: '服务可用率', dataIndex: 'availabilityRate', width: 130, sorter: sortable('availabilityRate'), render: rate },
+    { title: '安全可控率', dataIndex: 'safetyRate', width: 130, sorter: sortable('safetyRate'), render: rate },
+    { title: '投资预算金额', dataIndex: 'investment', width: 145, render: (v) => `${v.toFixed(2)} 万元` },
+    { title: '单次调用成本', dataIndex: 'callCost', width: 145, render: (v) => `${v.toFixed(2)} 元` },
+    { title: '单位服务成本', dataIndex: 'serviceCost', width: 145, render: (v) => `${v.toFixed(2)} 元/人` },
+    { title: '操作', fixed: 'right', width: 255, render: (_, row) => <Space size={0}><Button type="link" onClick={() => { downloadTextFile('项目审计材料模板.doc', '项目基本信息\n项目建设内容完成情况\n项目投资预算使用情况'); message.success('模板已下载'); }}>模板下载</Button><Button type="link" onClick={() => open(row, 'upload')}>上传材料</Button><Button type="link" onClick={() => open(row, 'detail')}>查看详情</Button></Space> },
+  ];
+  const metrics = [
+    ['日均服务患者人数增长率', 25.38, '%'], ['医生采纳率', 89.35, '%'], ['服务可用率', 99.64, '%'], ['安全可控率', 99.9, '%'],
+  ];
+  return <div>
+    <Header title="项目审计" description="从服务效率、服务质量、服务安全和服务成本维度审计项目运行成效。" extra={<Button icon={<ReloadOutlined />} onClick={() => message.success('数据已刷新至最新时间')}>刷新</Button>} />
+    <div className="audit-stat-grid">{metrics.map(([label, value, suffix]) => <Card key={String(label)} bordered={false}><Statistic title={label} value={value} precision={2} suffix={suffix} /></Card>)}</div>
+    <Toolbar><Space wrap><Text strong>筛选项</Text><Select allowClear placeholder="申报科室" value={department} onChange={setDepartment} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.dept))].map((value) => ({ label: value, value }))} /><Select allowClear placeholder="申报赛道" value={track} onChange={setTrack} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.track))].map((value) => ({ label: value, value }))} /><Button onClick={() => { setDepartment(undefined); setTrack(undefined); }}>重置</Button><Text type="secondary">点击指标表头可切换升序或降序</Text></Space></Toolbar>
+    <Card bordered={false} className="audit-table-card"><Table columns={columns} dataSource={filtered} scroll={{ x: 2500 }} pagination={{ pageSize: 8, showTotal: (n) => `共 ${n} 条` }} /></Card>
+  </div>;
 }
 
 function SessionDetail({ session }: { session: AuditSession }) {

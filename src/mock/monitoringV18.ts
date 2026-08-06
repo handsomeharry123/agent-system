@@ -1160,6 +1160,13 @@ export const mockAlertEventsV18: AlertEventV18[] = [
 // 业务监控 KPI（V1.8 新口径）
 // ---------------------------------------------------------------------------
 export const businessKpiV18 = {
+  taskSuccessRate: 96.8,
+  taskInterruptRate: 2.1,
+  avgReasoningSteps: 6.4,
+  toolSelectionAccuracy: 97.6,
+  toolExecutionSuccessRate: 98.9,
+  totalPatients: 286_420,
+  todayPatients: 2_368,
   totalCalls: 1_283_402,        // 累计调用次数
   successRate: 98.7,            // 累计成功率
   todayCalls: 12_834,           // 当日调用次数
@@ -1169,6 +1176,8 @@ export const businessKpiV18 = {
   throughput: { current: 12.4, peak: 28.6, unit: '次/秒' },
   // 平均响应时间
   avgResponseTime: 1.86,
+  responseTimeP95: 3.72,
+  responseTimeP99: 8.64,
   // 响应超时率
   timeoutRate: 2.4,
   // 医生采纳率
@@ -1205,6 +1214,8 @@ export const statusKpiV18 = {
   disabled: 1,
   abnormal: 1,
   total: 13,
+  mttr: '18 分 36 秒',
+  mtbf: '16 天 8 小时',
 };
 
 export const deptDistributionV18 = [

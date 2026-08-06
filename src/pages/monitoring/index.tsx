@@ -15,6 +15,7 @@ import Overview from './Overview';
 import BusinessV18 from './BusinessV18';
 import StatusV18 from './StatusV18';
 import CostV18 from './CostV18';
+import SecurityV21 from './SecurityV21';
 import AlertEventListV18 from './AlertEventListV18';
 import AlertEventAssign from './AlertEventAssign';
 import AlertEventHandle from './AlertEventHandle';
@@ -26,7 +27,7 @@ import RuleDetail from './RuleDetail';
 
 export {
   Overview,
-  BusinessV18, StatusV18, CostV18,
+  BusinessV18, StatusV18, CostV18, SecurityV21,
   AlertEventListV18,
   AlertEventAssign, AlertEventHandle, AlertEventReview, AlertEventDetail,
   RuleManage, RuleForm, RuleDetail,

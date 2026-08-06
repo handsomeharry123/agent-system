@@ -90,6 +90,7 @@ import Monitoring, {
   BusinessV18,
   StatusV18,
   CostV18,
+  SecurityV21,
   AlertEventListV18,
   AlertEventAssign,
   AlertEventHandle,
@@ -325,6 +326,8 @@ const routes: RouteObject[] = [
           { path: 'status', element: <StatusV18 /> },
           // 4. 成本监控
           { path: 'cost', element: <CostV18 /> },
+          // 5. 安全监控
+          { path: 'security', element: <SecurityV21 /> },
           // 运行监控报告详情页
           { path: 'report', element: <MonitoringReport /> },
           // 5. 告警规则管理（仅管理员）

@@ -101,6 +101,13 @@ const adoptionTrendDaily = Array.from({ length: 15 }, (_, i) => ({
   v: Number((89 + Math.sin(i * 0.3) * 1.5).toFixed(2)),
 }));
 
+const patientTrend = {
+  日: ['07-25', '07-26', '07-27', '07-28', '07-29', '07-30', '07-31', '08-01', '08-02', '08-03', '08-04', '08-05']
+    .map((period, i) => ({ period, value: 1900 + i * 38 + Math.round(Math.sin(i) * 120) })),
+  周: Array.from({ length: 12 }, (_, i) => ({ period: `第${i + 22}周`, value: 10800 + i * 320 + Math.round(Math.sin(i) * 700) })),
+  月: Array.from({ length: 12 }, (_, i) => ({ period: `${i + 1}月`, value: 36000 + i * 1800 + Math.round(Math.sin(i) * 2400) })),
+};
+
 // 并发动态波动（每 5 分钟一个点，共 24 个点）
 const concurrencyTrend = Array.from({ length: 24 }, (_, i) => ({
   time: `${(i * 1).toString().padStart(2, '0')}:00`,
@@ -119,6 +126,12 @@ const BusinessV18 = () => {
   const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [loading, setLoading] = useState(false);
   const [autoRefresh] = useState(true);
+  const [patientPeriod, setPatientPeriod] = useState<'日' | '周' | '月'>('日');
+
+  const refresh = () => {
+    setLoading(true);
+    window.setTimeout(() => setLoading(false), 500);
+  };
 
   // 自动刷新 60s
   useEffect(() => {
@@ -163,7 +176,8 @@ const BusinessV18 = () => {
         subTitle="智能体的调用量、成功率、并发/吞吐、响应时间、超时率、采纳率与用户反馈"
         extra={
           <Space size={8}>
-            <Button icon={<ReloadOutlined />} onClick={() => setLoading(true)} loading={loading}>
+            <Tag color="processing">每 60 秒自动刷新</Tag>
+            <Button icon={<ReloadOutlined />} onClick={refresh} loading={loading}>
               刷新
             </Button>
           </Space>
@@ -171,6 +185,52 @@ const BusinessV18 = () => {
       />
 
       <Spin spinning={loading}>
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          {[
+            ['任务执行成功率', `${kpi.taskSuccessRate}%`, '#52C41A', '已完成且无异常终止'],
+            ['任务中断率', `${kpi.taskInterruptRate}%`, '#FAAD14', '超时 / 报错 / 循环卡死'],
+            ['单任务平均推理步数', kpi.avgReasoningSteps, '#1677FF', '推理、决策及工具调用'],
+            ['工具选择准确率', `${kpi.toolSelectionAccuracy}%`, '#52C41A', '正确调用目标工具'],
+            ['工具执行成功率', `${kpi.toolExecutionSuccessRate}%`, '#52C41A', '工具返回成功状态'],
+          ].map(([title, value, color, note]) => (
+            <Col flex="1 1 190px" key={String(title)}>
+              <Link to="/app/audit">
+                <Card hoverable bordered={false} styles={{ body: { padding: 16, minHeight: 126 } }}>
+                  <MetricLabel name={String(title)} variant="kpi" />
+                  <Text strong style={{ display: 'block', fontSize: 30, color: String(color), margin: '6px 0 2px' }}>{value}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{note} · 查看审计日志 →</Text>
+                </Card>
+              </Link>
+            </Col>
+          ))}
+        </Row>
+
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          <Col span={6}>
+            <Card bordered={false} styles={{ body: { padding: 18, height: 170 } }}>
+              <MetricLabel name="智能体累计服务患者人数" variant="kpi" />
+              <Text strong style={{ display: 'block', fontSize: 34, color: '#1677FF', marginTop: 14 }}>{kpi.totalPatients.toLocaleString()}</Text>
+              <Text type="secondary">人 · 患者主索引跨渠道去重</Text>
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card bordered={false} styles={{ body: { padding: 18, height: 170 } }}>
+              <MetricLabel name="智能体当日服务患者人数" variant="kpi" />
+              <Space align="baseline" style={{ marginTop: 14 }}>
+                <Text strong style={{ fontSize: 34, color: '#1677FF' }}>{kpi.todayPatients.toLocaleString()}</Text>
+                <Text type="success"><RiseOutlined /> 8.6%</Text>
+              </Space>
+              <Text type="secondary" style={{ display: 'block' }}>人 · 较昨日同期</Text>
+            </Card>
+          </Col>
+          <Col span={12}>
+            <Card bordered={false} title="服务患者人数趋势" extra={
+              <Space.Compact>{(['日', '周', '月'] as const).map((p) => <Button key={p} size="small" type={patientPeriod === p ? 'primary' : 'default'} onClick={() => setPatientPeriod(p)}>{p}</Button>)}</Space.Compact>
+            } styles={{ body: { padding: 10, height: 122 } }} style={{ height: 170 }}>
+              <Line {...chartBase} height={115} data={patientTrend[patientPeriod]} xField="period" yField="value" smooth color="#13C2C2" />
+            </Card>
+          </Col>
+        </Row>
         {/* 4 KPI 卡片：累计调用 / 累计成功率 / 当日调用 / 当日成功率 */}
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
           <Col span={6}>
@@ -320,6 +380,22 @@ const BusinessV18 = () => {
               </Space>
             </Card>
           </Col>
+        </Row>
+
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          {[
+            ['响应时间 P95', kpi.responseTimeP95, '95% 的请求在该时间内完成'],
+            ['响应时间 P99', kpi.responseTimeP99, '用于捕捉最慢 1% 的长尾请求'],
+          ].map(([title, value, note]) => {
+            const seconds = Number(value);
+            return <Col span={12} key={String(title)}><Card bordered={false}>
+              <Space direction="vertical" size={5}>
+                <MetricLabel name={String(title)} variant="kpi" />
+                <Space align="baseline"><Text strong style={{ fontSize: 34, color: seconds <= 1 ? '#52C41A' : seconds <= 10 ? '#FAAD14' : '#FF4D4F' }}>{seconds.toFixed(2)} s</Text><Tag color={seconds <= 1 ? 'success' : seconds <= 10 ? 'warning' : 'error'}>{seconds <= 1 ? '优秀' : seconds <= 10 ? '正常' : '异常'}</Tag></Space>
+                <Text type="secondary">{note} · 实时刷新</Text>
+              </Space>
+            </Card></Col>;
+          })}
         </Row>
 
         {/* 响应时间 / 超时率 / 采纳率 / 反馈 */}

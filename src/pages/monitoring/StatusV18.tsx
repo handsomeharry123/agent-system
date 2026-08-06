@@ -90,6 +90,10 @@ const StatusV18 = () => {
   const isAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
   const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [loading, setLoading] = useState(false);
+  const refresh = () => {
+    setLoading(true);
+    window.setTimeout(() => setLoading(false), 500);
+  };
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -196,10 +200,11 @@ const StatusV18 = () => {
     <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100vh' }}>
       <PageHeader
         title="状态监控"
-        subTitle="智能体的在线 / 离线 / 禁用 / 异常数量与科室分布"
+        subTitle="智能体运行状态、故障恢复能力与科室分布"
         extra={
           <Space size={8}>
-            <Button icon={<ReloadOutlined />} onClick={() => setLoading(true)} loading={loading}>
+            <Tag color="processing">实时刷新</Tag>
+            <Button icon={<ReloadOutlined />} onClick={refresh} loading={loading}>
               刷新
             </Button>
           </Space>
@@ -237,6 +242,27 @@ const StatusV18 = () => {
               </Link>
             </Col>
           ))}
+        </Row>
+
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          <Col span={12}>
+            <Card bordered={false} styles={{ body: { padding: 20 } }}>
+              <Space direction="vertical" size={6}>
+                <Space><Text>平均故障恢复时间</Text>{liveBadge}</Space>
+                <Text strong style={{ fontSize: 34, color: '#1677FF' }}>{kpi.mttr}</Text>
+                <Text type="secondary">MTTR · 从故障发生到恢复的平均耗时</Text>
+              </Space>
+            </Card>
+          </Col>
+          <Col span={12}>
+            <Card bordered={false} styles={{ body: { padding: 20 } }}>
+              <Space direction="vertical" size={6}>
+                <Space><Text>平均故障间隔</Text>{liveBadge}</Space>
+                <Text strong style={{ fontSize: 34, color: '#52C41A' }}>{kpi.mtbf}</Text>
+                <Text type="secondary">MTBF · 两次故障之间的平均运行时间</Text>
+              </Space>
+            </Card>
+          </Col>
         </Row>
 
         {/* 饼图：各运行状态科室智能体数量比例 */}

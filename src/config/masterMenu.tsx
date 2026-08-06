@@ -194,7 +194,8 @@ export const masterMenu: MasterModule[] = [
       { key: 'monitoring:business', name: '业务监控', path: '/app/monitoring/business', defaultVisible: true, defaultRoleVisible: 'both' },
       { key: 'monitoring:status', name: '状态监控', path: '/app/monitoring/status', defaultVisible: true, defaultRoleVisible: 'both' },
       { key: 'monitoring:cost', name: '成本监控', path: '/app/monitoring/cost', defaultVisible: true, defaultRoleVisible: 'both' },
-      // 5. 告警规则管理（仅信息科管理员；科室管理员不可见）
+      { key: 'monitoring:security', name: '安全监控', path: '/app/monitoring/security', defaultVisible: true, defaultRoleVisible: 'itAdmin' },
+      // 6. 告警规则管理（仅信息科管理员；科室管理员不可见）
       { key: 'monitoring:alert-rules', name: '告警规则管理', path: '/app/monitoring/alert-rules', defaultVisible: true, defaultRoleVisible: 'itAdmin' },
       // 6. 告警事件处置
       { key: 'monitoring:alert-events', name: '告警事件处置', path: '/app/monitoring/alert-events', defaultVisible: true, defaultRoleVisible: 'both' },
