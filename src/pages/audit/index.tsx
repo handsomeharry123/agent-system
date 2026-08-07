@@ -40,7 +40,6 @@ import {
   DeleteOutlined,
   EyeOutlined,
   FilePdfOutlined,
-  CloudServerOutlined,
   LikeOutlined,
   MoreOutlined,
   ReloadOutlined,
@@ -68,10 +67,11 @@ const { RangePicker } = DatePicker;
 type AuditSection = 'economic' | 'project' | 'behavior' | 'logs';
 
 const departments = ['全部科室', '0301 心内科', '0302 影像科', '0303 药剂科', '0304 医务科'];
-const MARKET_TOKEN_PRICE_PER_TOKEN = 1.8 / 1_000_000;
+// 当前市场价：1.8 元 / 百万 Token，金额统一按「消耗量 × Token 单价」计算。
+const TOKEN_UNIT_PRICE_YUAN = 1.8 / 1_000_000;
 const TOTAL_INVESTMENT_BUDGET_IN_TEN_THOUSAND_YUAN = 2780;
 const CURRENT_MONTH_TOKEN_CONSUMPTION = 70_466_667;
-const calculateTokenCost = (tokens: number) => tokens * MARKET_TOKEN_PRICE_PER_TOKEN;
+const calculateTokenCost = (tokens: number) => tokens * TOKEN_UNIT_PRICE_YUAN;
 const calculateInvestmentRatio = (tokenCost: number, budgetInTenThousandYuan: number) => (
   budgetInTenThousandYuan > 0 ? (tokenCost / (budgetInTenThousandYuan * 10_000)) * 100 : 0
 );
@@ -1222,9 +1222,9 @@ function ProjectAudit() {
     { title: <span style={{ whiteSpace: 'nowrap' }}>日均服务患者人数</span>, dataIndex: 'dailyPatients', width: 190, sorter: sortable('dailyPatients'), render: (v) => `${v} 人` },
     { title: '日均服务患者人数增长率', dataIndex: 'growthRate', width: 205, sorter: sortable('growthRate'), render: rate },
     { title: '任务执行成功率', dataIndex: 'taskSuccessRate', width: 150, sorter: sortable('taskSuccessRate'), render: rate },
-    { title: '响应时间 P99', dataIndex: 'responseP99', width: 135, sorter: sortable('responseP99'), render: (v) => `${v} 秒` },
+    { title: '响应时间 P99', dataIndex: 'responseP99', width: 170, sorter: sortable('responseP99'), render: (v) => `${v} 秒` },
     { title: '医生采纳率', dataIndex: 'doctorAdoptionRate', width: 130, sorter: sortable('doctorAdoptionRate'), render: rate },
-    { title: '异常故障次数', dataIndex: 'faultCount', width: 130, sorter: sortable('faultCount'), render: (v) => `${v} 次` },
+    { title: '异常故障次数', dataIndex: 'faultCount', width: 165, sorter: sortable('faultCount'), render: (v) => `${v} 次` },
     { title: '平均故障恢复时间', dataIndex: 'recoveryTime', width: 165, sorter: sortable('recoveryTime'), render: (v) => `${v} 分钟` },
     { title: '服务可用率', dataIndex: 'availabilityRate', width: 130, sorter: sortable('availabilityRate'), render: rate },
     { title: '安全可控率', dataIndex: 'safetyRate', width: 130, sorter: sortable('safetyRate'), render: rate },
@@ -1234,6 +1234,9 @@ function ProjectAudit() {
     { title: '附件材料', dataIndex: 'materials', width: 110, align: 'center', render: (materials: string[]) => `${materials.length} 个` },
     { title: '操作', fixed: 'right', width: 190, render: (_, row) => <Space size={0}><Button type="link" onClick={() => open(row, 'upload')}>{row.materials.length ? '补充材料' : '上传材料'}</Button><Button type="link" onClick={() => open(row, 'detail')}>查看详情</Button></Space> },
   ];
+  const averageServiceCost = rows.length
+    ? rows.reduce((sum, row) => sum + row.serviceCost, 0) / rows.length
+    : 0;
   const metrics = [
     {
       key: 'efficiency', dimension: '服务效率', title: '日均服务患者人数增长率', value: 25.38, suffix: '%',
@@ -1244,8 +1247,8 @@ function ProjectAudit() {
       icon: <LikeOutlined />, bars: [56, 62, 58, 70, 76, 73, 84, 91],
     },
     {
-      key: 'availability', dimension: '运行稳定', title: '服务可用率', value: 99.64, suffix: '%',
-      icon: <CloudServerOutlined />, bars: [82, 86, 84, 90, 88, 94, 92, 97],
+      key: 'cost', dimension: '服务成本', title: '单位平均服务成本', value: averageServiceCost, suffix: '元/人',
+      icon: <WalletOutlined />, bars: [82, 86, 84, 90, 88, 94, 92, 97],
     },
     {
       key: 'safety', dimension: '服务安全', title: '安全可控率', value: 99.9, suffix: '%',
@@ -1253,7 +1256,7 @@ function ProjectAudit() {
     },
   ];
   return <div>
-    <Header title="项目审计" description="从服务效率、服务质量、服务安全和服务成本维度审计项目运行成效。" extra={<Space><Button icon={<DownloadOutlined />} href="/项目审计报告模板(1).docx" download="项目审计报告模板(1).docx" onClick={() => message.success('模板已下载')}>模板下载</Button><Button icon={<ReloadOutlined />} onClick={() => message.success('数据已刷新至最新时间')}>刷新</Button></Space>} />
+    <Header title="项目审计" description="从服务效率、服务质量、服务安全和服务成本维度审计项目运行成效。" extra={<Button icon={<ReloadOutlined />} onClick={() => message.success('数据已刷新至最新时间')}>刷新</Button>} />
     <div className="audit-stat-grid economic-stat-grid project-stat-grid">
       {metrics.map((metric, index) => (
         <Card
@@ -1279,9 +1282,10 @@ function ProjectAudit() {
     <Toolbar>
       <div className="project-audit-toolbar">
         <Space wrap><Text strong>筛选项</Text><Select allowClear placeholder="申报科室" value={department} onChange={setDepartment} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.dept))].map((value) => ({ label: value, value }))} /><Select allowClear placeholder="申报赛道" value={track} onChange={setTrack} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.track))].map((value) => ({ label: value, value }))} /><Button onClick={() => { setDepartment(undefined); setTrack(undefined); }}>重置</Button><Text type="secondary">点击指标表头可切换升序或降序</Text></Space>
+        <Button icon={<DownloadOutlined />} href="/项目审计报告模板(1).docx" download="项目审计报告模板(1).docx" onClick={() => message.success('模板已下载')}>模板下载</Button>
       </div>
     </Toolbar>
-    <Card bordered={false} className="audit-table-card"><Table columns={columns} dataSource={filtered} scroll={{ x: 2500 }} pagination={{ pageSize: 8, showTotal: (n) => `共 ${n} 条` }} /></Card>
+    <Card bordered={false} className="audit-table-card project-audit-table-card"><Table columns={columns} dataSource={filtered} scroll={{ x: 2570 }} pagination={{ pageSize: 8, showTotal: (n) => `共 ${n} 条` }} /></Card>
   </div>;
 }
 

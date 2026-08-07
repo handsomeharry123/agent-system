@@ -11,22 +11,20 @@
  *  - 高频调用智能体 TOP5 + 科室排行
  *  - 并发数（实时数值 + 峰值 + 动态波动图）
  *  - 吞吐量（实时数值 + 峰值 + 动态波动图）
- *  - 平均响应时间（性能等级：≤1s 优秀绿 / 1-10s 正常黄 / >10s 异常红）
  *  - 响应超时率（≤1% 绿 / 1-5% 黄 / >5% 红）
  *  - 医生采纳率（% + 趋势图）
- *  - 用户反馈意见（饼图：满意/一般/不满意）
  *
  * 仅 IT 管理员可见；自动刷新 60s + 手动【刷新】
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Card, Row, Col, Typography, Space, Button, Spin, Tag,
+  Card, Row, Col, Typography, Space, Button, Spin, Tag, Segmented,
 } from 'antd';
 import {
   ReloadOutlined, RiseOutlined, FallOutlined,
 } from '@ant-design/icons';
-import { Line, Column, Pie, Bar } from '@ant-design/charts';
+import { Line } from '@ant-design/charts';
 import PageHeader from '../../components/PageHeader';
 import MetricLabel from '../../components/MetricLabel';
 import './monitoring-dashboard.css';
@@ -40,12 +38,78 @@ import {
 
 const { Text } = Typography;
 
+type TrendRange = '7d' | '1m' | '6m' | '1y';
+
+const trendRangeOptions: Array<{ label: string; value: TrendRange }> = [
+  { label: '最近 7 天', value: '7d' },
+  { label: '1 个月', value: '1m' },
+  { label: '半年', value: '6m' },
+  { label: '1 年', value: '1y' },
+];
+
+const trendRangeDays: Record<TrendRange, number> = {
+  '7d': 7,
+  '1m': 30,
+  '6m': 183,
+  '1y': 365,
+};
+
+type TrendPoint = { date: string; value: number };
+
+const createYearTrend = (
+  baseline: number,
+  seasonalAmplitude: number,
+  growth: number,
+  decimals = 0,
+  phase = 0,
+): TrendPoint[] => Array.from({ length: 365 }, (_, index) => {
+  const date = new Date(2025, 5, 26);
+  date.setDate(date.getDate() - (364 - index));
+  const weekly = Math.sin((index + phase) * 0.9) * seasonalAmplitude * 0.22;
+  const seasonal = Math.sin((index + phase) * 0.12) * seasonalAmplitude;
+  const value = baseline + seasonal + weekly + index * growth;
+  return {
+    date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
+    value: Number(Math.max(0, value).toFixed(decimals)),
+  };
+});
+
+const trendDataByMetric = {
+  calls: createYearTrend(9_800, 1_150, 5.5, 0, 0),
+  patients: createYearTrend(1_650, 170, 1.2, 0, 3),
+  concurrency: createYearTrend(31, 10, 0.018, 0, 6),
+  throughput: createYearTrend(9.5, 4.2, 0.012, 1, 9),
+  timeout: createYearTrend(2.8, 1.1, -0.002, 2, 12),
+  adoption: createYearTrend(87.8, 1.4, 0.006, 2, 15),
+};
+
+const getTrendWindow = (data: TrendPoint[], range: TrendRange) => data.slice(-trendRangeDays[range]);
+
+const topAgentColors = ['#1677FF', '#13C2C2', '#FA8C16', '#B37FEB', '#7265E6'];
+
+const TrendRangeSwitch = ({
+  value,
+  onChange,
+  label,
+}: {
+  value: TrendRange;
+  onChange: (value: TrendRange) => void;
+  label: string;
+}) => (
+  <Segmented<TrendRange>
+    aria-label={label}
+    options={trendRangeOptions}
+    value={value}
+    onChange={onChange}
+  />
+);
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const chartBase: any = {
   autoFit: true,
   pixelRatio: window.devicePixelRatio,
   appendPadding: [8, 8, 24, 8],
-  xAxis: { label: { autoHide: false, autoRotate: false } },
+  xAxis: { label: { autoHide: true, autoRotate: false } },
   legend: { position: 'top', itemName: { style: { fontSize: 11 } } },
 };
 
@@ -62,64 +126,11 @@ const kpiLineConfig: any = {
   point: { size: 4, shape: 'circle' },
   area: { style: { fillOpacity: 0.12 } },
   lineStyle: { lineWidth: 2 },
-  xAxis: { label: { autoHide: false, autoRotate: false, style: { fontSize: 10 } } },
+  xAxis: { label: { autoHide: true, autoRotate: false, style: { fontSize: 10 } } },
   yAxis: { label: { style: { fontSize: 10 } } },
   tooltip: { showMarkers: true, shared: true },
   legend: false,
 };
-
-// KPI 卡片内嵌柱状图统一样式
-const kpiColumnConfig: any = {
-  xAxis: { label: { autoHide: false, autoRotate: false, style: { fontSize: 10 } } },
-  yAxis: { label: { style: { fontSize: 10 } } },
-  tooltip: { showMarkers: true, shared: true },
-  legend: false,
-};
-
-// 调用次数趋势（近 15 天）
-const callTrendDaily = Array.from({ length: 15 }, (_, i) => ({
-  date: `06-${(12 + i).toString().padStart(2, '0')}`,
-  v: Math.round(10000 + Math.sin(i * 0.5) * 1200 + i * 80),
-}));
-const callTrendWeekly = Array.from({ length: 15 }, (_, i) => ({
-  week: `W${(20 + i).toString().padStart(2, '0')}`,
-  v: Math.round(70000 + Math.sin(i * 0.4) * 8000 + i * 400),
-}));
-const callTrendMonthly = Array.from({ length: 12 }, (_, i) => ({
-  month: `${(i + 1).toString().padStart(2, '0')}月`,
-  v: Math.round(280000 + Math.sin(i * 0.6) * 40000 + i * 2000),
-}));
-
-// 成功率趋势
-const successTrendDaily = Array.from({ length: 15 }, (_, i) => ({
-  date: `06-${(12 + i).toString().padStart(2, '0')}`,
-  v: Number((98.2 + Math.sin(i * 0.4) * 0.6 + i * 0.02).toFixed(2)),
-}));
-
-// 采纳率趋势
-const adoptionTrendDaily = Array.from({ length: 15 }, (_, i) => ({
-  date: `06-${(12 + i).toString().padStart(2, '0')}`,
-  v: Number((89 + Math.sin(i * 0.3) * 1.5).toFixed(2)),
-}));
-
-const patientTrend = {
-  日: ['07-25', '07-26', '07-27', '07-28', '07-29', '07-30', '07-31', '08-01', '08-02', '08-03', '08-04', '08-05']
-    .map((period, i) => ({ period, value: 1900 + i * 38 + Math.round(Math.sin(i) * 120) })),
-  周: Array.from({ length: 12 }, (_, i) => ({ period: `第${i + 22}周`, value: 10800 + i * 320 + Math.round(Math.sin(i) * 700) })),
-  月: Array.from({ length: 12 }, (_, i) => ({ period: `${i + 1}月`, value: 36000 + i * 1800 + Math.round(Math.sin(i) * 2400) })),
-};
-
-// 并发动态波动（每 5 分钟一个点，共 24 个点）
-const concurrencyTrend = Array.from({ length: 24 }, (_, i) => ({
-  time: `${(i * 1).toString().padStart(2, '0')}:00`,
-  v: Math.round(30 + Math.sin(i * 0.5) * 12 + Math.random() * 5),
-}));
-
-// 吞吐动态波动
-const throughputTrend = Array.from({ length: 24 }, (_, i) => ({
-  time: `${(i * 1).toString().padStart(2, '0')}:00`,
-  v: Number((10 + Math.sin(i * 0.4) * 5 + Math.random() * 2).toFixed(1)),
-}));
 
 const BusinessV18 = () => {
   const { currentUser } = useAuth();
@@ -127,7 +138,12 @@ const BusinessV18 = () => {
   const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const [loading, setLoading] = useState(false);
   const [autoRefresh] = useState(true);
-  const [patientPeriod, setPatientPeriod] = useState<'日' | '周' | '月'>('日');
+  const [callRange, setCallRange] = useState<TrendRange>('1m');
+  const [patientRange, setPatientRange] = useState<TrendRange>('1m');
+  const [concurrencyRange, setConcurrencyRange] = useState<TrendRange>('1m');
+  const [throughputRange, setThroughputRange] = useState<TrendRange>('1m');
+  const [timeoutRange, setTimeoutRange] = useState<TrendRange>('1m');
+  const [adoptionRange, setAdoptionRange] = useState<TrendRange>('1m');
 
   const refresh = () => {
     setLoading(true);
@@ -226,9 +242,9 @@ const BusinessV18 = () => {
           </Col>
           <Col span={12}>
             <Card bordered={false} title="服务患者人数趋势" extra={
-              <Space.Compact>{(['日', '周', '月'] as const).map((p) => <Button key={p} size="small" type={patientPeriod === p ? 'primary' : 'default'} onClick={() => setPatientPeriod(p)}>{p}</Button>)}</Space.Compact>
+              <TrendRangeSwitch value={patientRange} onChange={setPatientRange} label="服务患者人数趋势时间范围" />
             } styles={{ body: { padding: 10, height: 122 } }} style={{ height: 170 }}>
-              <Line {...chartBase} height={115} data={patientTrend[patientPeriod]} xField="period" yField="value" smooth color="#13C2C2" />
+              <Line {...chartBase} height={115} data={getTrendWindow(trendDataByMetric.patients, patientRange)} xField="date" yField="value" smooth color="#13C2C2" />
             </Card>
           </Col>
         </Row>
@@ -299,24 +315,13 @@ const BusinessV18 = () => {
           </Col>
         </Row>
 
-        {/* 调用次数 日 / 周 / 月 趋势 */}
+        {/* 合并后的调用次数趋势 */}
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-          <Col span={8}>
-            <Card bordered={false} title="调用次数日趋势（近 15 天）"
-              styles={{ body: { padding: 12, height: 220 } }} style={{ height: 280 }}>
-              <Line {...chartBase} height={200} data={callTrendDaily} xField="date" yField="v" smooth color="#1677FF" />
-            </Card>
-          </Col>
-          <Col span={8}>
-            <Card bordered={false} title="调用次数周趋势（近 15 周）"
-              styles={{ body: { padding: 12, height: 220 } }} style={{ height: 280 }}>
-              <Line {...chartBase} height={200} data={callTrendWeekly} xField="week" yField="v" smooth color="#722ED1" />
-            </Card>
-          </Col>
-          <Col span={8}>
-            <Card bordered={false} title="调用次数月趋势（近 12 月）"
-              styles={{ body: { padding: 12, height: 220 } }} style={{ height: 280 }}>
-              <Line {...chartBase} height={200} data={callTrendMonthly} xField="month" yField="v" smooth color="#FA8C16" />
+          <Col span={24}>
+            <Card bordered={false} title="调用次数趋势" extra={
+              <TrendRangeSwitch value={callRange} onChange={setCallRange} label="调用次数趋势时间范围" />
+            } styles={{ body: { padding: '16px 20px 12px', height: 320 } }} style={{ height: 380 }}>
+              <Line {...chartBase} height={300} data={getTrendWindow(trendDataByMetric.calls, callRange)} xField="date" yField="value" smooth color="#1677FF" />
             </Card>
           </Col>
         </Row>
@@ -324,23 +329,49 @@ const BusinessV18 = () => {
         {/* TOP5 + 并发 / 吞吐 */}
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
           <Col span={8}>
-            <Card bordered={false} title="高频调用智能体 TOP5（含所属科室）"
+            <Card bordered={false} title="高频调用智能体 TOP5"
               styles={{ body: { padding: 12, height: 280 } }} style={{ height: 340 }}>
-              <Bar
-                {...chartBase}
-                height={260}
-                data={topCallAgentsV18}
-                xField="calls"
-                yField="name"
-                colorField="department"
-                legend={{ position: 'top' }}
-                color={['#1677FF', '#722ED1', '#52C41A', '#FA8C16', '#EB2F96']}
-                label={{ position: 'right', style: { fill: '#666', fontSize: 11 } }}
-              />
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                {topCallAgentsV18.map((agent, index) => (
+                  <div key={agent.agentId}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                      <Text
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          fontSize: 12,
+                        }}
+                        title={agent.name}
+                      >
+                        {agent.name}
+                      </Text>
+                      <Text type="secondary" style={{ flex: '0 0 auto', fontSize: 11 }}>{agent.department}</Text>
+                      <Text strong style={{ flex: '0 0 48px', textAlign: 'right', fontSize: 12 }}>
+                        {agent.calls.toLocaleString()}
+                      </Text>
+                    </div>
+                    <div style={{ height: 7, overflow: 'hidden', borderRadius: 4, background: '#F0F2F5' }}>
+                      <div
+                        style={{
+                          width: `${(agent.calls / topCallAgentsV18[0].calls) * 100}%`,
+                          height: '100%',
+                          borderRadius: 4,
+                          background: topAgentColors[index],
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </Space>
             </Card>
           </Col>
           <Col span={8}>
-            <Card bordered={false} title="并发数（实时数值 + 峰值 + 波动图）"
+            <Card bordered={false} title="并发数" extra={
+              <TrendRangeSwitch value={concurrencyRange} onChange={setConcurrencyRange} label="并发数趋势时间范围" />
+            }
               styles={{ body: { padding: 12, height: 280 } }} style={{ height: 340 }}>
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
                 <Space size={16} align="baseline">
@@ -355,13 +386,15 @@ const BusinessV18 = () => {
                   </Space>
                 </Space>
                 <div style={{ height: 200 }}>
-                  <Line {...chartBase} height={200} data={concurrencyTrend} xField="time" yField="v" smooth color="#1677FF" />
+                  <Line {...chartBase} height={200} data={getTrendWindow(trendDataByMetric.concurrency, concurrencyRange)} xField="date" yField="value" smooth color="#1677FF" />
                 </div>
               </Space>
             </Card>
           </Col>
           <Col span={8}>
-            <Card bordered={false} title="吞吐量（实时数值 + 峰值 + 波动图）"
+            <Card bordered={false} title="吞吐量" extra={
+              <TrendRangeSwitch value={throughputRange} onChange={setThroughputRange} label="吞吐量趋势时间范围" />
+            }
               styles={{ body: { padding: 12, height: 280 } }} style={{ height: 340 }}>
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
                 <Space size={16} align="baseline">
@@ -376,7 +409,7 @@ const BusinessV18 = () => {
                   </Space>
                 </Space>
                 <div style={{ height: 200 }}>
-                  <Line {...chartBase} height={200} data={throughputTrend} xField="time" yField="v" smooth color="#722ED1" />
+                  <Line {...chartBase} height={200} data={getTrendWindow(trendDataByMetric.throughput, throughputRange)} xField="date" yField="value" smooth color="#722ED1" />
                 </div>
               </Space>
             </Card>
@@ -399,43 +432,11 @@ const BusinessV18 = () => {
           })}
         </Row>
 
-        {/* 响应时间 / 超时率 / 采纳率 / 反馈 */}
+        {/* 超时率 / 采纳率 */}
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-          <Col span={6}>
-            <Card bordered={false} title={<MetricLabel name="平均响应时间" />}
-              styles={{ body: { padding: 16, height: 264 } }} style={{ height: 324 }}>
-              <Row align="middle" style={{ marginBottom: 4 }}>
-                <Col>
-                  <Space size={8} align="baseline">
-                    <Text strong style={{ fontSize: 32, color: kpi.avgResponseTime <= 1 ? '#52C41A' : kpi.avgResponseTime <= 10 ? '#FAAD14' : '#FF4D4F', lineHeight: 1.1 }}>
-                      {kpi.avgResponseTime.toFixed(2)}
-                      <Text type="secondary" style={{ fontSize: 14, marginLeft: 4 }}>s</Text>
-                    </Text>
-                    <Tag color={kpi.avgResponseTime <= 1 ? 'success' : kpi.avgResponseTime <= 10 ? 'warning' : 'error'} style={{ marginRight: 0 }}>
-                      {kpi.avgResponseTime <= 1 ? '优秀' : kpi.avgResponseTime <= 10 ? '正常' : '异常'}
-                    </Tag>
-                  </Space>
-                </Col>
-              </Row>
-              <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>
-                ≤1s 优秀 / 1-10s 正常 / &gt;10s 异常 · 响应时间分布
-              </Text>
-              <div style={{ width: '100%', height: 180 }}>
-                <Column
-                  {...chartBase}
-                  {...kpiColumnConfig}
-                  height={180}
-                  data={responseTimeDistV18}
-                  xField="range"
-                  yField="count"
-                  color={({ range }: { range: string }) => (range === '>10s' ? '#FF4D4F' : range === '3s-10s' ? '#FAAD14' : '#1677FF')}
-                  appendPadding={[4, 4, 4, 4]}
-                />
-              </div>
-            </Card>
-          </Col>
-          <Col span={6}>
+          <Col span={12}>
             <Card bordered={false} title={<MetricLabel name="响应超时率" />}
+              extra={<TrendRangeSwitch value={timeoutRange} onChange={setTimeoutRange} label="响应超时率趋势时间范围" />}
               styles={{ body: { padding: 16, height: 264 } }} style={{ height: 324 }}>
               <Row align="middle" style={{ marginBottom: 4 }}>
                 <Col>
@@ -450,22 +451,23 @@ const BusinessV18 = () => {
                 </Col>
               </Row>
               <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>
-                阈值 10s · ≤1% 绿 / 1-5% 黄 / &gt;5% 红 · 24 小时趋势
+                阈值 10s · ≤1% 绿 / 1-5% 黄 / &gt;5% 红
               </Text>
               <div style={{ width: '100%', height: 180 }}>
                 <Line
                   {...chartBase}
                   {...kpiLineConfig}
                   height={180}
-                  data={Array.from({ length: 24 }, (_, i) => ({ time: `${i}:00`, v: Number((2 + Math.sin(i * 0.3) * 1.5).toFixed(2)) }))}
-                  xField="time" yField="v" color="#FA8C16"
+                  data={getTrendWindow(trendDataByMetric.timeout, timeoutRange)}
+                  xField="date" yField="value" color="#FA8C16"
                   appendPadding={[4, 4, 4, 4]}
                 />
               </div>
             </Card>
           </Col>
-          <Col span={6}>
+          <Col span={12}>
             <Card bordered={false} title={<MetricLabel name="医生采纳率" />}
+              extra={<TrendRangeSwitch value={adoptionRange} onChange={setAdoptionRange} label="医生采纳率趋势时间范围" />}
               styles={{ body: { padding: 16, height: 264 } }} style={{ height: 324 }}>
               <Row align="middle" style={{ marginBottom: 4 }}>
                 <Col>
@@ -477,37 +479,15 @@ const BusinessV18 = () => {
                 </Col>
               </Row>
               <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>
-                被医生采纳输出 / 总输出次数 · 近 15 日趋势
+                被医生采纳输出 / 总输出次数
               </Text>
               <div style={{ width: '100%', height: 180 }}>
                 <Line
                   {...chartBase}
                   {...kpiLineConfig}
                   height={180}
-                  data={adoptionTrendDaily}
-                  xField="date" yField="v" color="#52C41A"
-                  appendPadding={[4, 4, 4, 4]}
-                />
-              </div>
-            </Card>
-          </Col>
-          <Col span={6}>
-            <Card bordered={false} title={<MetricLabel name="用户反馈意见" />}
-              styles={{ body: { padding: 16, height: 264 } }} style={{ height: 324 }}>
-              <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
-                满意 78% / 一般 16% / 不满意 6% · 反馈详情列表 →
-              </Text>
-              <div style={{ width: '100%', height: 210 }}>
-                <Pie
-                  {...chartBase}
-                  height={210}
-                  data={[
-                    { type: '满意', value: kpi.feedback.满意 },
-                    { type: '一般', value: kpi.feedback.一般 },
-                    { type: '不满意', value: kpi.feedback.不满意 },
-                  ]}
-                  angleField="value" colorField="type" radius={0.85} innerRadius={0.55}
-                  color={['#52C41A', '#FAAD14', '#FF4D4F']} legend={{ position: 'bottom' }}
+                  data={getTrendWindow(trendDataByMetric.adoption, adoptionRange)}
+                  xField="date" yField="value" color="#52C41A"
                   appendPadding={[4, 4, 4, 4]}
                 />
               </div>

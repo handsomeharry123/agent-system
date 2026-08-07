@@ -1,12 +1,15 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import {
   CheckCircleOutlined,
   CloseOutlined,
-  CopyOutlined,
+  DownloadOutlined,
+  EyeOutlined,
   ExportOutlined,
+  FilePdfOutlined,
   InfoCircleOutlined,
   SaveOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -21,34 +24,75 @@ import {
   Space,
   Tooltip,
   Typography,
+  Upload,
   message,
 } from 'antd';
+import type { UploadFile } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../../components/PageHeader';
 import { PUJIANG_PLATFORM, PUJIANG_PLATFORM_URL, getPujiangTask, initialPujiangTasks } from './data';
+import { useAccessRecords } from '../../agent-center/store';
 import { useSmartDraft } from '../../agent-center/smart/store';
+import { getTaskById } from '../../../mock/evaluation';
 
 const { Link, Text } = Typography;
-const { TextArea } = Input;
 
-const API_EXAMPLE = `base_url = "https://api.example.com/v1/"
-path = "model-id"
-question = "你好"
+interface ApiDocumentFile {
+  uid: string;
+  name: string;
+  size: string;
+  url: string;
+}
 
-client = OpenAI(api_key=api_key, base_url=base_url)
-completion = client.chat.completions.create(
-    model=path,
-    messages=[{'role': 'user', 'content': question}]
-)
-print(completion.choices[0].message.content)`;
+const isTechnicalDocument = (name: string) => /技术|API|接口|SDK|OTel|spec/i.test(name);
+
+const formatFileSize = (size = 0) => {
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+};
 
 const PujiangTaskForm = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const accessRecords = useAccessRecords();
   const { pushWelcomeGreeting, consumeWelcome } = useSmartDraft();
   const editingTask = useMemo(() => params.get('taskId') ? getPujiangTask(params.get('taskId')!) : undefined, [params]);
+  const sourceSafetyTask = useMemo(
+    () => params.get('sourceTaskId') ? getTaskById(params.get('sourceTaskId')!) : undefined,
+    [params],
+  );
+  const sourceAgent = useMemo(() => sourceSafetyTask ? {
+    id: sourceSafetyTask.agentId,
+    agentId: sourceSafetyTask.agentId,
+    agentCode: sourceSafetyTask.agentCode,
+    agentName: sourceSafetyTask.agentName,
+    version: sourceSafetyTask.version,
+    department: sourceSafetyTask.department,
+    status: '草稿' as const,
+    dimensions: [],
+    scores: [],
+  } : undefined, [sourceSafetyTask]);
+  const selectableAgents = useMemo(
+    () => sourceAgent && !initialPujiangTasks.some((item) => item.agentCode === sourceAgent.agentCode)
+      ? [sourceAgent, ...initialPujiangTasks]
+      : initialPujiangTasks,
+    [sourceAgent],
+  );
+  const selectedAgent = editingTask || sourceAgent || initialPujiangTasks[0];
   const [form] = Form.useForm();
   const back = (notice?: string) => { if (notice) message.success(notice); navigate('/app/evaluation/tasks?module=pujiang'); };
+
+  const getRegisteredDocuments = (agentId: string): ApiDocumentFile[] => {
+    const agent = selectableAgents.find((item) => item.id === agentId);
+    if (!agent) return [];
+    const record = accessRecords.find((item) => item.agentCode === agent.agentCode || item.name === agent.agentName);
+    return (record?.attachments || [])
+      .filter((file) => isTechnicalDocument(file.name))
+      .map((file, index) => ({ uid: `${record?.id || agentId}-tech-${index}`, ...file }));
+  };
+
+  const initialAgentId = selectedAgent.id;
+  const [apiDocuments, setApiDocuments] = useState<ApiDocumentFile[]>(() => getRegisteredDocuments(initialAgentId));
 
   const counts = useMemo(() => ({
     evaluating: initialPujiangTasks.filter((task) => task.status === '评测中').length,
@@ -79,14 +123,63 @@ const PujiangTaskForm = () => {
   }, [consumeWelcome, counts, navigate, pushWelcomeGreeting]);
 
   const fillAgentFields = (agentId: string) => {
-    const agent = initialPujiangTasks.find((item) => item.id === agentId);
+    const agent = selectableAgents.find((item) => item.id === agentId);
     if (!agent) return;
     form.setFieldsValue({
       modelName: agent.agentName.slice(0, 20),
       modelId: agent.agentCode,
       apiEndpoint: `https://api.hospital.example.com/agents/${agent.agentCode.toLowerCase()}/v1`,
-      apiDocument: `https://docs.hospital.example.com/agents/${agent.agentCode.toLowerCase()}`,
     });
+    setApiDocuments(getRegisteredDocuments(agentId));
+  };
+
+  const previewDocument = (file: ApiDocumentFile) => {
+    if (file.url && file.url !== '#') {
+      window.open(file.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    Modal.info({
+      title: `预览：${file.name}`,
+      width: 720,
+      content: (
+        <div style={{ marginTop: 8, padding: '40px 24px', textAlign: 'center', background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6 }}>
+          <FilePdfOutlined style={{ fontSize: 40, color: '#d4380d' }} />
+          <div style={{ marginTop: 10 }}>{file.name}</div>
+          <Text type="secondary">（{file.size}）演示文件仅展示元信息</Text>
+        </div>
+      ),
+    });
+  };
+
+  const downloadDocument = (file: ApiDocumentFile) => {
+    if (file.url && file.url !== '#') {
+      const anchor = document.createElement('a');
+      anchor.href = file.url;
+      anchor.download = file.name;
+      anchor.click();
+    }
+    message.success(`已下载 ${file.name}`);
+  };
+
+  const addApiDocument = (file: UploadFile) => {
+    const rawFile = file as UploadFile & { originFileObj?: File };
+    const source = rawFile.originFileObj || (file as unknown as File);
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+      message.error('仅支持上传 PDF 技术文档');
+      return Upload.LIST_IGNORE;
+    }
+    setApiDocuments((current) => [
+      ...current,
+      {
+        uid: file.uid,
+        name: file.name,
+        size: formatFileSize(file.size),
+        url: source instanceof Blob ? URL.createObjectURL(source) : '#',
+      },
+    ]);
+    message.success(`已补充上传 ${file.name}`);
+    return false;
   };
 
   const handlePublicChange = (value: '公开' | '不公开') => {
@@ -106,18 +199,17 @@ const PujiangTaskForm = () => {
       form={form}
       layout="vertical"
       initialValues={{
-        agentId: editingTask?.id || initialPujiangTasks[0].id,
-        modelName: (editingTask || initialPujiangTasks[0]).agentName.slice(0, 20),
+        agentId: selectedAgent.id,
+        modelName: selectedAgent.agentName.slice(0, 20),
         developerType: '组织团队',
         parameterCount: 7,
         openSource: '否',
         contextLength: 32,
-        apiEndpoint: `https://api.hospital.example.com/agents/${(editingTask || initialPujiangTasks[0]).agentCode.toLowerCase()}/v1`,
+        apiEndpoint: `https://api.hospital.example.com/agents/${selectedAgent.agentCode.toLowerCase()}/v1`,
         temperature: 0.7,
         topP: 0.9,
-        modelId: (editingTask || initialPujiangTasks[0]).agentCode,
+        modelId: selectedAgent.agentCode,
         apiKey: 'sk-medbench-demo-key',
-        apiDocument: `https://docs.hospital.example.com/agents/${(editingTask || initialPujiangTasks[0]).agentCode.toLowerCase()}`,
         concurrency: 32,
         releaseDate: dayjs('2026-07-01'),
         email: 'admin@hospital.example.com',
@@ -126,7 +218,7 @@ const PujiangTaskForm = () => {
     >
       <Card title="评测对象" style={{ marginTop: 16 }}>
         <Form.Item label="选择智能体" name="agentId" rules={[{ required: true, message: '请选择智能体' }]}>
-          <Select style={{ maxWidth: 520 }} showSearch optionFilterProp="label" onChange={fillAgentFields} options={initialPujiangTasks.map((task) => ({ value: task.id, label: `${task.agentName}（${task.agentCode}）` }))} />
+          <Select style={{ maxWidth: 520 }} showSearch optionFilterProp="label" onChange={fillAgentFields} options={selectableAgents.map((task) => ({ value: task.id, label: `${task.agentName}（${task.agentCode}）` }))} />
         </Form.Item>
         <Form.Item label="评测平台">
           <Space direction="vertical" size={4}>
@@ -167,13 +259,31 @@ const PujiangTaskForm = () => {
         <Form.Item label="API Key" name="apiKey">
           <Input.Password placeholder="请输入 API Key" autoComplete="new-password" />
         </Form.Item>
-        <Form.Item label="智能体 API 文档" name="apiDocument" rules={[{ required: true, message: '请输入智能体 API 文档' }, { max: 1024, message: '智能体 API 文档不能超过 1024 个字符' }]}>
-          <TextArea showCount maxLength={1024} autoSize={{ minRows: 3, maxRows: 6 }} placeholder="请输入智能体 API 文档链接或调用说明" />
+        <Form.Item label="智能体 API 文档" required>
+          <div style={{ border: '1px solid #f0f0f0', borderRadius: 6, padding: '8px 16px' }}>
+            {apiDocuments.length === 0 ? (
+              <Text type="secondary">接入注册记录中暂无技术文档，请补充上传</Text>
+            ) : apiDocuments.map((file, index) => (
+              <div key={file.uid} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '6px 0' }}>
+                <Space>
+                  <FilePdfOutlined style={{ color: '#d4380d' }} />
+                  <Text>附件 {index + 1}：{file.name}</Text>
+                  <Text type="secondary">（{file.size}）</Text>
+                </Space>
+                <Space>
+                  <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => previewDocument(file)}>在线预览</Button>
+                  <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => downloadDocument(file)}>下载</Button>
+                </Space>
+              </div>
+            ))}
+            <div style={{ marginTop: apiDocuments.length ? 8 : 12, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+              <Upload accept=".pdf,application/pdf" showUploadList={false} beforeUpload={addApiDocument}>
+                <Button icon={<UploadOutlined />}>补充上传</Button>
+              </Upload>
+              <Text type="secondary" style={{ marginLeft: 12 }}>仅支持 PDF</Text>
+            </div>
+          </div>
         </Form.Item>
-        <div style={{ position: 'relative', padding: '16px 48px 16px 16px', margin: '-8px 0 24px', background: '#F7F8FA', borderRadius: 6, whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 13 }}>
-          {API_EXAMPLE}
-          <Button type="text" icon={<CopyOutlined />} aria-label="复制示例代码" onClick={() => { void navigator.clipboard?.writeText(API_EXAMPLE); message.success('示例代码已复制'); }} style={{ position: 'absolute', right: 8, top: 8 }} />
-        </div>
         <Form.Item label="预计 API 并发量" name="concurrency" rules={[{ type: 'number', min: 1, message: '预计 API 并发量须为正整数' }]}>
           <InputNumber min={1} precision={0} style={{ width: '100%' }} placeholder="比如：32" />
         </Form.Item>
@@ -196,7 +306,7 @@ const PujiangTaskForm = () => {
       <Space>
         <Button icon={<CloseOutlined />} onClick={() => back()}>取消</Button>
         <Button icon={<SaveOutlined />} onClick={() => back('已暂存为草稿')}>暂存</Button>
-        <Button type="primary" icon={<CheckCircleOutlined />} onClick={async () => { await form.validateFields(); message.success('评测已开始，即将打开浦江实验室评测平台'); window.open(PUJIANG_PLATFORM_URL, '_blank', 'noopener,noreferrer'); }}>开始评测</Button>
+        <Button type="primary" icon={<CheckCircleOutlined />} onClick={async () => { await form.validateFields(); if (!apiDocuments.length) { message.error('请上传智能体 API 文档'); return; } message.success('评测已开始，即将打开浦江实验室评测平台'); window.open(PUJIANG_PLATFORM_URL, '_blank', 'noopener,noreferrer'); }}>开始评测</Button>
       </Space>
     </Card>
   </div>;

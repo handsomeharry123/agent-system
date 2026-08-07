@@ -83,8 +83,12 @@
 /* 项目审计沿用经济审计的卡片语言，以连续的蓝青色谱突出运行成效属性。 */
 .project-stat-card-efficiency { --card-accent: #1677ff; --card-accent-rgb: 22, 119, 255; }
 .project-stat-card-quality { --card-accent: #5766d8; --card-accent-rgb: 87, 102, 216; }
-.project-stat-card-availability { --card-accent: #0c9e9a; --card-accent-rgb: 12, 158, 154; }
+.project-stat-card-cost { --card-accent: #0c9e9a; --card-accent-rgb: 12, 158, 154; }
 .project-stat-card-safety { --card-accent: #18a06a; --card-accent-rgb: 24, 160, 106; }
+
+.project-audit-table-card .ant-table-thead > tr > th {
+  white-space: nowrap;
+}
 
 .economic-stat-card .ant-card-body {
   position: relative;

@@ -58,7 +58,6 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { generateReportPdf, downloadReportBlob, safeFilename, buildReportHtml } from './ReportPdf';
 import { useSmartDraft } from '../agent-center/smart/store';
-import { initialPujiangTasks, PUJIANG_DIMENSIONS, type PujiangTask } from './pujiang/data';
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -94,9 +93,8 @@ const EvaluationReport = () => {
 
   const task: EvaluationTask | undefined = getTaskById(id || '');
   const report: ReportModel | undefined = task ? getReportByTaskId(task.id) : undefined;
-  const lifecycleStorageKey = task ? `agent-system.lifecycle-stage:${task.agentCode}` : '';
   const safetyPassed = Boolean(report?.conclusion === '准入' || task?.status === '审核通过');
-  const [lifecycleStage, setLifecycleStage] = useState<AgentLifecycleStage>(() => {
+  const [lifecycleStage] = useState<AgentLifecycleStage>(() => {
     if (!task) return '安全性评测';
     const saved = window.localStorage.getItem(`agent-system.lifecycle-stage:${task.agentCode}`);
     return saved === '浦江实验室评测' || saved === '上线' ? saved : '安全性评测';
@@ -144,24 +142,7 @@ const EvaluationReport = () => {
   useEffect(() => {
     if (!task || !isAdmin || !safetyPassed || lifecycleStage !== '安全性评测') return undefined;
     const onStartPujiang = () => {
-      const stamp = Date.now();
-      const created: PujiangTask = {
-        id: `pj-auto-${task.id}-${stamp}`,
-        agentId: task.agentId,
-        agentCode: task.agentCode,
-        agentName: task.agentName,
-        version: task.version,
-        department: task.department,
-        status: '评测中',
-        dimensions: [...PUJIANG_DIMENSIONS],
-        lastEditTime: new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-'),
-        submitTime: new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-'),
-        scores: [],
-      };
-      initialPujiangTasks.unshift(created);
-      window.localStorage.setItem(lifecycleStorageKey, '浦江实验室评测');
-      setLifecycleStage('浦江实验室评测');
-      message.success('已自动接入浦江实验室，评测任务已创建');
+      navigate(`/app/evaluation/tasks/pujiang/create?sourceTaskId=${encodeURIComponent(task.id)}`);
     };
     const onDeferPujiang = () => message.info('已暂不开展浦江实验室评测');
     window.addEventListener('evaluation-report-start-pujiang', onStartPujiang);
@@ -170,7 +151,7 @@ const EvaluationReport = () => {
       window.removeEventListener('evaluation-report-start-pujiang', onStartPujiang);
       window.removeEventListener('evaluation-report-defer-pujiang', onDeferPujiang);
     };
-  }, [isAdmin, lifecycleStage, lifecycleStorageKey, safetyPassed, task]);
+  }, [isAdmin, lifecycleStage, navigate, safetyPassed, task]);
 
   if (!task) {
     return (

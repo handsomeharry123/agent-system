@@ -1144,33 +1144,8 @@ const SmartRegistrationForm = () => {
                 </AIPrefillWrapper>
               </Col>
               <Col span={12}>
-                <Form.Item label="参数量（单位：十亿）" name="parameterCount" rules={[{ required: true, message: '请输入参数量' }]}>
-                  <InputNumber min={0.1} step={0.1} precision={1} addonAfter="B" placeholder="请输入参数量" style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
                 <Form.Item label="是否开源" name="openSource" rules={[{ required: true, message: '请选择是否开源' }]}>
                   <Radio.Group options={['是', '否']} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item label="上下文长度（单位：token）" name="contextLength" rules={[{ required: true, message: '请输入上下文长度' }]}>
-                  <InputNumber min={1} precision={0} addonAfter="K" placeholder="请输入智能体可支持的上下文长度" style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item label="Temperature" name="temperature" rules={[{ required: true, message: '请输入 Temperature' }, { type: 'number', min: 0, max: 2, message: 'Temperature 须在 0–2 之间' }]}>
-                  <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} placeholder="请输入 Temperature" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item label="Top P" name="topP" rules={[{ type: 'number', min: 0, max: 1, message: 'Top P 须在 0–1 之间' }]}>
-                  <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} placeholder="请输入 Top P" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item label="预计 API 并发量" name="concurrency" rules={[{ type: 'number', min: 1, message: '预计 API 并发量须为正整数' }]}>
-                  <InputNumber min={1} precision={0} style={{ width: '100%' }} placeholder="比如：32" />
                 </Form.Item>
               </Col>
               <Col span={12}>
@@ -1416,6 +1391,33 @@ const SmartRegistrationForm = () => {
 
         {/* ③ 技术信息 */}
         <Card title="③ 技术信息" style={{ marginBottom: 16 }}>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="参数量（单位：十亿）" name="parameterCount" rules={[{ required: true, message: '请输入参数量' }]}>
+                <InputNumber min={0.1} step={0.1} precision={1} addonAfter="B" placeholder="请输入参数量" style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="上下文长度（单位：token）" name="contextLength" rules={[{ required: true, message: '请输入上下文长度' }]}>
+                <InputNumber min={1} precision={0} addonAfter="K" placeholder="请输入智能体可支持的上下文长度" style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="Temperature" name="temperature" rules={[{ required: true, message: '请输入 Temperature' }, { type: 'number', min: 0, max: 2, message: 'Temperature 须在 0–2 之间' }]}>
+                <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} placeholder="请输入 Temperature" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="Top P" name="topP" rules={[{ type: 'number', min: 0, max: 1, message: 'Top P 须在 0–1 之间' }]}>
+                <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} placeholder="请输入 Top P" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="预计 API 并发量" name="concurrency" rules={[{ type: 'number', min: 1, message: '预计 API 并发量须为正整数' }]}>
+                <InputNumber min={1} precision={0} style={{ width: '100%' }} placeholder="比如：32" />
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item
             name="accessMode"
             label="接入方式"

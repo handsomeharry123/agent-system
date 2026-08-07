@@ -42,9 +42,11 @@ const AgentLifecycleProgress = ({ currentStage = '立项' }: AgentLifecycleProgr
         </div>
         <ol className="lifecycle-steps">
           {AGENT_LIFECYCLE_STAGES.map((title, index) => {
-            // 当前阶段表示该节点已经达成，因此当前节点也应展示完成勾选。
-            const completed = index <= current;
             const active = index === current;
+            const completed = index < current;
+            // 流程走到最后的“上线”节点即视为上线完成，当前节点直接展示勾选；
+            // 其他进行中的节点保留数字，只有它们之前的节点展示勾选。
+            const showCheck = completed || (active && title === '上线');
             return (
               <li
                 key={title}
@@ -55,7 +57,7 @@ const AgentLifecycleProgress = ({ currentStage = '立项' }: AgentLifecycleProgr
                 <span className="lifecycle-node" aria-hidden="true">
                   <span className="lifecycle-node-ring" />
                   <span className="lifecycle-node-core">
-                    {completed ? <CheckOutlined /> : index + 1}
+                    {showCheck ? <CheckOutlined /> : index + 1}
                   </span>
                 </span>
                 <span className="lifecycle-label">{title}</span>

@@ -8,7 +8,7 @@
  *   - 当日告警总数 → 点击进入事件管理（默认「全部事件」Tab）
  *   - 未处理告警数 → 点击进入「待处理事件」Tab
  *   - 已处理告警数 → 点击进入「已关闭事件」Tab
- * - 3 个趋势图：日（近 15 天）/ 周（近 15 周）/ 月（近 12 月）
+ * - 1 个告警次数趋势图：支持最近 7 天 / 1 个月 / 半年 / 1 年切换
  * - 新增 告警类型分布饼图（业务 / 状态 / 成本 / 安全）— 图例项可点击进入按告警类型筛选的事件管理页
  * - 新增 智能体告警次数排行 TOP5 条形图 — 下方明细列表可点击进入按关联智能体筛选的事件管理页
  * - 科室管理员 / IT 管理员均可访问；不再使用 PermissionDenied 拦截
@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Card, Row, Col, Typography, Space, Button, Spin, Divider,
+  Card, Row, Col, Typography, Space, Button, Spin, Divider, Segmented,
 } from 'antd';
 import {
   ReloadOutlined, AlertOutlined, WarningOutlined, CheckCircleOutlined,
@@ -27,9 +27,6 @@ import PageHeader from '../../components/PageHeader';
 import { ErrorRetry } from '../../components/PageStates';
 import {
   alertOverviewKpiV18,
-  alertTrendDailyV18,
-  alertTrendWeeklyV18,
-  alertTrendMonthlyV18,
   alertTypeDistributionV18,
   alertAgentRankingV18,
   mockAlertEventsV18,
@@ -39,12 +36,40 @@ import { useSmartDraft } from '../agent-center/smart/store';
 
 const { Text } = Typography;
 
+type TrendRange = '7d' | '1m' | '6m' | '1y';
+
+const trendRangeOptions: Array<{ label: string; value: TrendRange }> = [
+  { label: '最近 7 天', value: '7d' },
+  { label: '1 个月', value: '1m' },
+  { label: '半年', value: '6m' },
+  { label: '1 年', value: '1y' },
+];
+
+const trendRangeDays: Record<TrendRange, number> = {
+  '7d': 7,
+  '1m': 30,
+  '6m': 183,
+  '1y': 365,
+};
+
+// 生成一整年的连续演示数据，切换时间范围时只改变同一条趋势线的数据窗口。
+const alertTrendYear = Array.from({ length: 365 }, (_, index) => {
+  const date = new Date(2025, 5, 26);
+  date.setDate(date.getDate() - (364 - index));
+  const seasonal = Math.sin(index * 0.18) * 7 + Math.cos(index * 0.047) * 5;
+  const weekly = [2, 4, 5, 3, 6, -2, -4][date.getDay()];
+  return {
+    date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
+    count: Math.max(8, Math.round(25 + seasonal + weekly + index * 0.015)),
+  };
+});
+
 // eslint-disable-next-line @typescript-eslint/no-explicitany
 const chartBaseConfig: any = {
   autoFit: true,
   pixelRatio: window.devicePixelRatio,
   appendPadding: [8, 8, 24, 8],
-  xAxis: { label: { autoHide: false, autoRotate: false } },
+  xAxis: { label: { autoHide: true, autoRotate: false } },
   legend: false,
 };
 
@@ -63,6 +88,12 @@ const Overview = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [trendRange, setTrendRange] = useState<TrendRange>('1m');
+
+  const trendData = useMemo(
+    () => alertTrendYear.slice(-trendRangeDays[trendRange]),
+    [trendRange],
+  );
 
   const welcomeMetrics = useMemo(() => {
     if (isAdmin) {
@@ -163,7 +194,7 @@ const Overview = () => {
     <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100vh' }}>
       <PageHeader
         title="监控告警总览"
-        subTitle="累计 / 当日 / 未处理 / 已处理告警数量 + 近 15 日 / 15 周 / 12 月告警次数趋势；告警类型分布与智能体告警次数排行；自动刷新 60s"
+        subTitle="累计 / 当日 / 未处理 / 已处理告警数量 + 告警次数趋势；告警类型分布与智能体告警次数排行；自动刷新 60s"
         extra={
           <Space size={8}>
             <Button
@@ -215,108 +246,87 @@ const Overview = () => {
           ))}
         </Row>
 
-        {/* 3 个趋势图 */}
+        {/* 合并后的告警次数趋势图 */}
         <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-          <Col span={8}>
+          <Col span={24}>
             <Card
               bordered={false}
-              title="告警次数日趋势（近 15 天）"
+              title="告警次数趋势"
               extra={
-                <Space size={4}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>近 15 天</Text>
-                </Space>
+                <Segmented<TrendRange>
+                  aria-label="告警趋势时间范围"
+                  options={trendRangeOptions}
+                  value={trendRange}
+                  onChange={setTrendRange}
+                />
               }
-              styles={{ body: { padding: 12, height: 280 } }}
-              style={{ height: 340 }}
+              styles={{ body: { padding: '16px 20px 12px', height: 320 } }}
+              style={{ height: 380 }}
             >
               <Line
                 {...chartBaseConfig}
-                height={260}
-                data={alertTrendDailyV18}
+                height={300}
+                data={trendData}
                 xField="date"
                 yField="count"
                 smooth
                 color="#1677FF"
-                point={{ size: 4, shape: 'circle' }}
-              />
-            </Card>
-          </Col>
-          <Col span={8}>
-            <Card
-              bordered={false}
-              title="告警次数周趋势（近 15 周）"
-              extra={<Text type="secondary" style={{ fontSize: 12 }}>近 15 周</Text>}
-              styles={{ body: { padding: 12, height: 280 } }}
-              style={{ height: 340 }}
-            >
-              <Line
-                {...chartBaseConfig}
-                height={260}
-                data={alertTrendWeeklyV18}
-                xField="week"
-                yField="count"
-                smooth
-                color="#722ED1"
-                point={{ size: 4, shape: 'circle' }}
-              />
-            </Card>
-          </Col>
-          <Col span={8}>
-            <Card
-              bordered={false}
-              title="告警次数月趋势（近 12 个月）"
-              extra={<Text type="secondary" style={{ fontSize: 12 }}>近 12 月</Text>}
-              styles={{ body: { padding: 12, height: 280 } }}
-              style={{ height: 340 }}
-            >
-              <Line
-                {...chartBaseConfig}
-                height={260}
-                data={alertTrendMonthlyV18}
-                xField="month"
-                yField="count"
-                smooth
-                color="#FA8C16"
-                point={{ size: 4, shape: 'circle' }}
+                point={trendRange === '7d' || trendRange === '1m'
+                  ? { size: 4, shape: 'circle' }
+                  : false}
+                axis={{
+                  x: {
+                    title: false,
+                    labelAutoHide: true,
+                    labelAutoRotate: false,
+                    labelFormatter: (value: string) => (trendRange === '1y'
+                      ? value.slice(0, 7)
+                      : value.slice(5)),
+                  },
+                  y: { title: false },
+                }}
+                tooltip={{ title: (datum: { date: string }) => datum.date }}
               />
             </Card>
           </Col>
         </Row>
 
         {/* 告警类型分布饼图 + 智能体告警次数排行 TOP5（V1.9 新增） */}
-        <Row gutter={[16, 16]}>
-          <Col span={10}>
+        <Row gutter={[16, 16]} align="stretch">
+          <Col span={10} style={{ display: 'flex' }}>
             <Card
               bordered={false}
               title="告警类型分布"
               extra={<Text type="secondary" style={{ fontSize: 12 }}>扇区配比 + 外部注解说明，点击条目进入对应事件管理</Text>}
-              styles={{ body: { padding: 16, height: 440 } }}
-              style={{ height: 500 }}
+              styles={{ body: { padding: 16, height: 420 } }}
+              style={{ width: '100%', height: 480 }}
             >
-              <Row gutter={16}>
+              <Row gutter={16} align="middle" style={{ height: '100%' }}>
                 {/* 左侧饼图：扇区内显示百分比（通过 transform 直接生成 label 字段） */}
                 <Col span={11}>
-                  <Pie
-                    {...chartBaseConfig}
-                    height={400}
-                    appendPadding={[8, 4, 8, 4]}
-                    data={alertTypeDistributionV18.map((d) => ({ ...d, percentText: `${d.percent}%` }))}
-                    angleField="count"
-                    colorField="type"
-                    radius={0.9}
-                    innerRadius={0.55}
-                    color={alertTypeDistributionV18.map((d) => typeColorMap[d.type])}
-                    legend={false}
-                    label={{
-                      text: 'percentText',
-                      style: { fontSize: 12, fill: '#fff', textAlign: 'center', fontWeight: 600 },
-                    }}
-                    interactions={[{ type: 'element-active' }]}
-                  />
+                  <div style={{ height: 300 }}>
+                    <Pie
+                      {...chartBaseConfig}
+                      height={300}
+                      appendPadding={[4, 0, 4, 0]}
+                      data={alertTypeDistributionV18.map((d) => ({ ...d, percentText: `${d.percent}%` }))}
+                      angleField="count"
+                      colorField="type"
+                      radius={0.98}
+                      innerRadius={0.55}
+                      color={alertTypeDistributionV18.map((d) => typeColorMap[d.type])}
+                      legend={false}
+                      label={{
+                        text: 'percentText',
+                        style: { fontSize: 12, fill: '#fff', textAlign: 'center', fontWeight: 600 },
+                      }}
+                      interactions={[{ type: 'element-active' }]}
+                    />
+                  </div>
                 </Col>
                 {/* 右侧外部注解说明 + 引导线视觉卡（带左色条 + 圆点模拟与饼图扇区连线） */}
                 <Col span={13}>
-                  <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       扇区配比对应下表，点击条目进入对应事件管理
                     </Text>
@@ -367,20 +377,20 @@ const Overview = () => {
               </Row>
             </Card>
           </Col>
-          <Col span={14}>
+          <Col span={14} style={{ display: 'flex' }}>
             <Card
               bordered={false}
               title="智能体告警次数排行 TOP5"
               extra={<Text type="secondary" style={{ fontSize: 12 }}>点击下方条目进入按关联智能体筛选的事件管理页</Text>}
-              styles={{ body: { padding: 12, height: 440 } }}
-              style={{ height: 500 }}
+              styles={{ body: { padding: 12, height: 420 } }}
+              style={{ width: '100%', height: 480 }}
             >
               {/* 顶部柱状图（可视化）：Y 轴名称自动换行缩短，避免超出图表区域 */}
-              <div style={{ height: 240, marginBottom: 8, minWidth: 480 }}>
+              <div style={{ height: 172, minWidth: 480 }}>
                 <Bar
                   {...chartBaseConfig}
-                  height={240}
-                  appendPadding={[4, 40, 4, 4]}
+                  height={172}
+                  appendPadding={[4, 24, 4, 4]}
                   data={alertAgentRankingV18}
                   xField="count"
                   yField="name"
@@ -393,6 +403,14 @@ const Overview = () => {
                   legend={false}
                   barWidthRatio={0.6}
                   label={false}
+                  axis={{
+                    x: {
+                      title: false,
+                      labelFormatter: (value: string) => (Number(value) === 0 ? '' : value),
+                    },
+                    // 智能体名称已在下方 TOP5 明细完整展示，隐藏重复轴标签以释放图表空间。
+                    y: { title: false, label: false },
+                  }}
                   xAxis={{
                     label: {
                       style: { fontSize: 10 },
@@ -412,7 +430,7 @@ const Overview = () => {
                   }}
                 />
               </div>
-              <Divider style={{ margin: '4px 0 8px' }} />
+              <Divider style={{ margin: '2px 0 6px' }} />
               {/* 下方可点击明细列表（PRD §1.1：点击某个智能体进入按关联智能体筛选的事件管理页） */}
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
                 {alertAgentRankingV18.map((d) => (
@@ -426,7 +444,7 @@ const Overview = () => {
                         display: 'flex',
                         alignItems: 'center',
                         gap: 12,
-                        padding: '8px 12px',
+                        padding: '7px 12px',
                         borderRadius: 6,
                         background: '#FAFAFA',
                         transition: 'background 0.2s',

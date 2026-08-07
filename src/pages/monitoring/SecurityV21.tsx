@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Row, Space, Spin, Tag, Typography } from 'antd';
+import { Button, Card, Col, Row, Segmented, Space, Spin, Tag, Typography } from 'antd';
 import { ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { Line, Pie } from '@ant-design/charts';
 import PageHeader from '../../components/PageHeader';
@@ -23,8 +23,33 @@ type SecurityMetric = {
   trend: Array<{ date: string; value: number }>;
 };
 
-const dates = ['07-23', '07-24', '07-25', '07-26', '07-27', '07-28', '07-29', '07-30', '07-31', '08-01', '08-02', '08-03', '08-04', '08-05'];
-const makeTrend = (values: number[]) => dates.map((date, index) => ({ date, value: values[index] ?? 0 }));
+type TrendRange = '7d' | '1m' | '6m' | '1y';
+
+const trendRangeOptions: Array<{ label: string; value: TrendRange }> = [
+  { label: '最近 7 天', value: '7d' },
+  { label: '1 个月', value: '1m' },
+  { label: '半年', value: '6m' },
+  { label: '1 年', value: '1y' },
+];
+
+const trendRangeDays: Record<TrendRange, number> = {
+  '7d': 7,
+  '1m': 30,
+  '6m': 183,
+  '1y': 365,
+};
+
+// 基于每项指标的演示基线生成一整年连续数据，周期切换时展示同一趋势的数据窗口。
+const makeTrend = (values: number[]) => Array.from({ length: 365 }, (_, index) => {
+  const date = new Date(2025, 7, 5);
+  date.setDate(date.getDate() - (364 - index));
+  const baseline = values[index % values.length] ?? 0;
+  const seasonal = Math.sin(index * 0.13) * Math.max(1, baseline * 0.08);
+  return {
+    date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
+    value: Math.max(0, Math.round(baseline + seasonal)),
+  };
+});
 
 const securityMetrics: SecurityMetric[] = [
   {
@@ -70,6 +95,9 @@ const issueDistribution = [
 const SecurityV21 = () => {
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
+  const [trendRanges, setTrendRanges] = useState<Record<string, TrendRange>>(() =>
+    Object.fromEntries(securityMetrics.map((metric) => [metric.key, '1m'])),
+  );
   const refresh = () => {
     setLoading(true);
     window.setTimeout(() => {
@@ -132,20 +160,41 @@ const SecurityV21 = () => {
 
               <Col xs={24} xl={14}>
                 <Card className="monitoring-chart-card" bordered={false} title={metric.trendTitle}
+                  extra={
+                    <Segmented<TrendRange>
+                      aria-label={`${metric.trendTitle}时间范围`}
+                      options={trendRangeOptions}
+                      value={trendRanges[metric.key]}
+                      onChange={(range) => setTrendRanges((current) => ({ ...current, [metric.key]: range }))}
+                      size="small"
+                    />
+                  }
                   styles={{ body: { padding: '8px 14px 10px', height: 120 } }}>
                   <Line
                     autoFit
                     height={112}
-                    data={metric.trend}
+                    data={metric.trend.slice(-trendRangeDays[trendRanges[metric.key]])}
                     xField="date"
                     yField="value"
                     smooth
                     color="#1677FF"
                     area={{ style: { fillOpacity: 0.12 } }}
-                    point={{ size: 3, shape: 'circle' }}
-                    xAxis={{ label: { autoHide: true, autoRotate: false, style: { fontSize: 10 } } }}
-                    yAxis={{ label: { style: { fontSize: 10 } } }}
-                    tooltip={{ showMarkers: true, shared: true }}
+                    point={trendRanges[metric.key] === '7d' || trendRanges[metric.key] === '1m'
+                      ? { size: 3, shape: 'circle' }
+                      : false}
+                    axis={{
+                      x: {
+                        title: false,
+                        labelAutoHide: true,
+                        labelAutoRotate: false,
+                        labelFormatter: (value: string) => (trendRanges[metric.key] === '1y'
+                          ? value.slice(0, 7)
+                          : value.slice(5)),
+                        style: { labelFontSize: 10 },
+                      },
+                      y: { title: false, style: { labelFontSize: 10 } },
+                    }}
+                    tooltip={{ showMarkers: true, shared: true, title: (datum: { date: string }) => datum.date }}
                   />
                 </Card>
               </Col>
