@@ -1732,7 +1732,10 @@ exporter = OTLPSpanExporter(
       </Card>
 
       <div style={{ marginBottom: 12 }}>
-        <AgentLifecycleProgress currentStage={lifecycleStage} />
+        <AgentLifecycleProgress
+          currentStage={lifecycleStage}
+          currentStageCompleted={lifecycleStage === '接入' && Boolean(agent.accessTime)}
+        />
       </div>
 
       {/* 360 画像视图(PRD §3.2.2 — 默认展示) */}

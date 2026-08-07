@@ -1183,17 +1183,35 @@ function NewProjectDetail({ project, onBack, onDeleteMaterial }: { project: Proj
   const { message } = App.useApp();
   const [preview, setPreview] = useState(false);
   const sections = [
-    { title: '① 服务效率', items: [['日均服务患者人数', `${project.dailyPatients} 人`], ['日均服务患者人数增长率', `${project.growthRate}%`]] },
-    { title: '② 服务质量', items: [['任务执行成功率', `${project.taskSuccessRate}%`], ['响应时间 P99', `${project.responseP99} 秒`], ['医生采纳率', `${project.doctorAdoptionRate}%`], ['异常故障次数', `${project.faultCount} 次`], ['平均故障恢复时间', `${project.recoveryTime} 分钟`], ['服务可用率', `${project.availabilityRate}%`]] },
-    { title: '③ 服务安全', items: [['安全可控率', `${project.safetyRate}%`]] },
-    { title: '④ 服务成本', items: [['投资金额', `${project.investment.toFixed(2)} 万元`], ['单次调用成本', `${project.callCost.toFixed(2)} 元`], ['单位服务成本', `${project.serviceCost.toFixed(2)} 元/人`]] },
+    { key: 'efficiency', title: '服务效率', subtitle: '患者覆盖与业务增长', icon: <RiseOutlined />, items: [['日均服务患者人数', `${project.dailyPatients} 人`], ['日均服务患者人数增长率', `${project.growthRate}%`]] },
+    { key: 'quality', title: '服务质量', subtitle: '任务效果与系统稳定性', icon: <CheckCircleOutlined />, items: [['任务执行成功率', `${project.taskSuccessRate}%`], ['响应时间 P99', `${project.responseP99} 秒`], ['医生采纳率', `${project.doctorAdoptionRate}%`], ['异常故障次数', `${project.faultCount} 次`], ['平均故障恢复时间', `${project.recoveryTime} 分钟`], ['服务可用率', `${project.availabilityRate}%`]] },
+    { key: 'safety', title: '服务安全', subtitle: '安全风险持续可控', icon: <SafetyCertificateOutlined />, items: [['安全可控率', `${project.safetyRate}%`]] },
+    { key: 'cost', title: '服务成本', subtitle: '项目投入与单位效能', icon: <WalletOutlined />, items: [['投资金额', `${project.investment.toFixed(2)} 万元`], ['单次调用成本', `${project.callCost.toFixed(2)} 元`], ['单位服务成本', `${project.serviceCost.toFixed(2)} 元/人`]] },
   ];
-  return <div>
-    <Header title="项目审计详情" description={project.name} extra={<Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>} />
-    <Card title="项目基本信息" className="audit-section-card"><Descriptions bordered column={3} items={projectInfoItems(project)} /></Card>
-    {sections.map((section) => <Card key={section.title} title={section.title} className="audit-section-card"><Descriptions bordered column={3} items={section.items.map(([label, value]) => ({ key: label, label, children: value }))} /></Card>)}
-    <Card title="⑤ 审计材料" className="audit-section-card">
-      {project.materials.length ? <div className="audit-material-list">{project.materials.map((material) => <div className="audit-material-item" key={material}><Space wrap><FilePdfOutlined style={{ color: '#e5484d' }} /><Text>{material}</Text><Button type="link" icon={<EyeOutlined />} onClick={() => setPreview(true)}>预览</Button><Button type="link" icon={<DownloadOutlined />} onClick={() => { downloadTextFile(material, '项目审计材料演示文件'); message.success('开始下载审计材料'); }}>下载</Button><Popconfirm title="确认删除该附件材料？" description="删除后不可恢复" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => onDeleteMaterial(material)}><Button danger type="link" icon={<DeleteOutlined />}>删除</Button></Popconfirm></Space></div>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂未上传审计材料" />}
+  return <div className="project-detail-page">
+    <div className="project-detail-hero">
+      <div className="project-detail-hero-main">
+        <div className="project-detail-kicker"><span /> 项目审计档案</div>
+        <Title level={2}>{project.name}</Title>
+        <Text>综合审视项目服务效率、质量、安全与成本表现</Text>
+        <div className="project-detail-tags"><Tag color="blue">{project.dept}</Tag><Tag color="cyan">{project.track}</Tag><span>数据已更新</span></div>
+      </div>
+      <Button className="project-detail-back" icon={<ArrowLeftOutlined />} onClick={onBack}>返回项目列表</Button>
+    </div>
+    <div className="project-detail-summary">
+      {projectInfoItems(project).map((item, index) => <div className="project-detail-summary-item" key={item.key}>
+        <span>{String(index + 1).padStart(2, '0')}</span><div><Text type="secondary">{item.label}</Text><strong>{item.children}</strong></div>
+      </div>)}
+    </div>
+    <div className="project-detail-section-heading"><div><Text strong>运行成效</Text><span>四维核心指标概览</span></div><Tag color="success" icon={<CheckCircleOutlined />}>运行正常</Tag></div>
+    <div className="project-detail-metrics">
+      {sections.map((section, index) => <Card key={section.key} className={`project-detail-metric-card metric-${section.key}`} bordered={false}>
+        <div className="project-detail-metric-head"><div className="project-detail-metric-icon">{section.icon}</div><div><Text strong>{section.title}</Text><span>{section.subtitle}</span></div><b>{String(index + 1).padStart(2, '0')}</b></div>
+        <div className="project-detail-metric-grid">{section.items.map(([label, value]) => <div className="project-detail-metric" key={label}><Text type="secondary">{label}</Text><strong>{value}</strong></div>)}</div>
+      </Card>)}
+    </div>
+    <Card className="project-detail-material-card" bordered={false} title={<div className="project-detail-card-title"><span><FilePdfOutlined /></span><div><Text strong>审计材料</Text><small>项目相关原始凭证与附件</small></div></div>} extra={<Tag>{project.materials.length} 份文件</Tag>}>
+      {project.materials.length ? <div className="audit-material-list">{project.materials.map((material) => <div className="audit-material-item" key={material}><div className="audit-material-file"><FilePdfOutlined /><div><Text>{material}</Text><span>PDF 文档 · 审计附件</span></div></div><Space wrap><Button icon={<EyeOutlined />} onClick={() => setPreview(true)}>预览</Button><Button icon={<DownloadOutlined />} onClick={() => { downloadTextFile(material, '项目审计材料演示文件'); message.success('开始下载审计材料'); }}>下载</Button><Popconfirm title="确认删除该附件材料？" description="删除后不可恢复" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => onDeleteMaterial(material)}><Button danger type="text" icon={<DeleteOutlined />}>删除</Button></Popconfirm></Space></div>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂未上传审计材料" />}
     </Card>
     <Modal open={preview} title="审计材料预览" width={760} onCancel={() => setPreview(false)} footer={<Button onClick={() => setPreview(false)}>关闭</Button>}><div className="pdf-preview"><FilePdfOutlined /><Title level={4}>{project.materials[0]}</Title><Text type="secondary">PDF 文件在线预览区域</Text></div></Modal>
   </div>;

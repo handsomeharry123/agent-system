@@ -1354,7 +1354,10 @@ export function ProjectApplicationDetail() {
   if (!record) return <Card><Text type="secondary">未找到该立项申报记录</Text></Card>;
   return <Space direction="vertical" size={16} style={{ width: '100%' }}>
     <PageHeader showBack onBack={() => navigate(-1)} title="立项信息详情" subTitle={`${record.id} · ${record.name}`} />
-    <AgentLifecycleProgress currentStage={lifecycleStage} />
+    <AgentLifecycleProgress
+      currentStage={lifecycleStage}
+      currentStageCompleted={lifecycleStage === '立项' && record.status === '立项通过'}
+    />
     <RecordContent record={record} />
     {record.reviewNote && <Card title="审核结论" bordered={false}><Descriptions><Descriptions.Item label="结论"><Tag color={statusColor[record.status]}>{record.status}</Tag></Descriptions.Item><Descriptions.Item label="具体说明">{record.reviewNote}</Descriptions.Item></Descriptions></Card>}
     <ApprovalTimeline items={getProjectApprovalTimeline(record)} />

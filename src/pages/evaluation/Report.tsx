@@ -464,7 +464,10 @@ const EvaluationReport = () => {
       </Card>
 
       <div style={{ marginBottom: 16 }}>
-        <AgentLifecycleProgress currentStage={lifecycleStage} />
+        <AgentLifecycleProgress
+          currentStage={lifecycleStage}
+          currentStageCompleted={lifecycleStage === '安全性评测' && safetyPassed}
+        />
       </div>
 
       {/* 3.3.1 智能体基本信息 */}

@@ -9,6 +9,7 @@ import {
   FilePdfOutlined,
   InfoCircleOutlined,
   SaveOutlined,
+  UndoOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import {
@@ -161,6 +162,21 @@ const PujiangTaskForm = () => {
     message.success(`已下载 ${file.name}`);
   };
 
+  const removeApiDocument = (file: ApiDocumentFile) => {
+    setApiDocuments((current) => current.filter((item) => item.uid !== file.uid));
+    if (file.url.startsWith('blob:')) URL.revokeObjectURL(file.url);
+    message.success(`已从本次评测中移除 ${file.name}`);
+  };
+
+  const resetApiDocuments = () => {
+    apiDocuments.forEach((file) => {
+      if (file.url.startsWith('blob:')) URL.revokeObjectURL(file.url);
+    });
+    const agentId = form.getFieldValue('agentId') as string;
+    setApiDocuments(getRegisteredDocuments(agentId));
+    message.success('已恢复为接入中心默认技术文档');
+  };
+
   const addApiDocument = (file: UploadFile) => {
     const rawFile = file as UploadFile & { originFileObj?: File };
     const source = rawFile.originFileObj || (file as unknown as File);
@@ -271,16 +287,17 @@ const PujiangTaskForm = () => {
                   <Text type="secondary">（{file.size}）</Text>
                 </Space>
                 <Space>
+                  <Button type="link" danger size="small" onClick={() => removeApiDocument(file)}>移除</Button>
                   <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => previewDocument(file)}>在线预览</Button>
                   <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => downloadDocument(file)}>下载</Button>
                 </Space>
               </div>
             ))}
-            <div style={{ marginTop: apiDocuments.length ? 8 : 12, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: apiDocuments.length ? 8 : 12, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+              <Button icon={<UndoOutlined />} onClick={resetApiDocuments}>重置</Button>
               <Upload accept=".pdf,application/pdf" showUploadList={false} beforeUpload={addApiDocument}>
                 <Button icon={<UploadOutlined />}>补充上传</Button>
               </Upload>
-              <Text type="secondary" style={{ marginLeft: 12 }}>仅支持 PDF</Text>
             </div>
           </div>
         </Form.Item>

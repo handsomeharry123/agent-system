@@ -361,7 +361,10 @@ const Detail = () => {
       />
 
       <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 12 }}>
-        <AgentLifecycleProgress currentStage={evaluationTask ? '安全性评测' : '接入'} />
+        <AgentLifecycleProgress
+          currentStage={evaluationTask ? '安全性评测' : '接入'}
+          currentStageCompleted={evaluationTask ? false : record.status === '审核通过'}
+        />
         <div data-testid="detail-attachments-card">
         <Card title="备案材料" size="small">
           {record.attachments.length === 0 && <Empty description="无备案材料" />}

@@ -17,10 +17,15 @@ export type AgentLifecycleStage = (typeof AGENT_LIFECYCLE_STAGES)[number];
 
 interface AgentLifecycleProgressProps {
   currentStage?: AgentLifecycleStage;
+  /** 当前节点是否已通过审核/完成；未完成时仍展示节点序号。 */
+  currentStageCompleted?: boolean;
 }
 
 /** 从立项到上线的统一流程进度，供各业务详情页复用。 */
-const AgentLifecycleProgress = ({ currentStage = '立项' }: AgentLifecycleProgressProps) => {
+const AgentLifecycleProgress = ({
+  currentStage = '立项',
+  currentStageCompleted = false,
+}: AgentLifecycleProgressProps) => {
   const current = Math.max(0, AGENT_LIFECYCLE_STAGES.indexOf(currentStage));
   const progress = current / (AGENT_LIFECYCLE_STAGES.length - 1) * 100;
 
@@ -44,9 +49,9 @@ const AgentLifecycleProgress = ({ currentStage = '立项' }: AgentLifecycleProgr
           {AGENT_LIFECYCLE_STAGES.map((title, index) => {
             const active = index === current;
             const completed = index < current;
-            // 流程走到最后的“上线”节点即视为上线完成，当前节点直接展示勾选；
-            // 其他进行中的节点保留数字，只有它们之前的节点展示勾选。
-            const showCheck = completed || (active && title === '上线');
+            // 各节点只有通过审核/完成后才展示勾选；进行中始终展示序号。
+            // 浦江评测完成后会直接进入上线，因此上线节点直接视为完成。
+            const showCheck = completed || (active && (currentStageCompleted || title === '上线'));
             return (
               <li
                 key={title}

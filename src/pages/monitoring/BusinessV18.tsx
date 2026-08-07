@@ -85,6 +85,17 @@ const trendDataByMetric = {
 
 const getTrendWindow = (data: TrendPoint[], range: TrendRange) => data.slice(-trendRangeDays[range]);
 
+// 与监控总览保持一致：日期使用紧凑格式，并由图表自动隐藏重叠标签。
+const getTrendAxis = (range: TrendRange) => ({
+  x: {
+    title: false,
+    labelAutoHide: true,
+    labelAutoRotate: false,
+    labelFormatter: (value: string) => (range === '1y' ? value.slice(0, 7) : value.slice(5)),
+  },
+  y: { title: false },
+});
+
 const topAgentColors = ['#1677FF', '#13C2C2', '#FA8C16', '#B37FEB', '#7265E6'];
 
 const TrendRangeSwitch = ({
@@ -109,7 +120,6 @@ const chartBase: any = {
   autoFit: true,
   pixelRatio: window.devicePixelRatio,
   appendPadding: [8, 8, 24, 8],
-  xAxis: { label: { autoHide: true, autoRotate: false } },
   legend: { position: 'top', itemName: { style: { fontSize: 11 } } },
 };
 
@@ -126,8 +136,6 @@ const kpiLineConfig: any = {
   point: { size: 4, shape: 'circle' },
   area: { style: { fillOpacity: 0.12 } },
   lineStyle: { lineWidth: 2 },
-  xAxis: { label: { autoHide: true, autoRotate: false, style: { fontSize: 10 } } },
-  yAxis: { label: { style: { fontSize: 10 } } },
   tooltip: { showMarkers: true, shared: true },
   legend: false,
 };
@@ -244,7 +252,7 @@ const BusinessV18 = () => {
             <Card bordered={false} title="服务患者人数趋势" extra={
               <TrendRangeSwitch value={patientRange} onChange={setPatientRange} label="服务患者人数趋势时间范围" />
             } styles={{ body: { padding: 10, height: 122 } }} style={{ height: 170 }}>
-              <Line {...chartBase} height={115} data={getTrendWindow(trendDataByMetric.patients, patientRange)} xField="date" yField="value" smooth color="#13C2C2" />
+              <Line {...chartBase} height={115} data={getTrendWindow(trendDataByMetric.patients, patientRange)} xField="date" yField="value" smooth color="#13C2C2" axis={getTrendAxis(patientRange)} />
             </Card>
           </Col>
         </Row>
@@ -321,7 +329,7 @@ const BusinessV18 = () => {
             <Card bordered={false} title="调用次数趋势" extra={
               <TrendRangeSwitch value={callRange} onChange={setCallRange} label="调用次数趋势时间范围" />
             } styles={{ body: { padding: '16px 20px 12px', height: 320 } }} style={{ height: 380 }}>
-              <Line {...chartBase} height={300} data={getTrendWindow(trendDataByMetric.calls, callRange)} xField="date" yField="value" smooth color="#1677FF" />
+              <Line {...chartBase} height={300} data={getTrendWindow(trendDataByMetric.calls, callRange)} xField="date" yField="value" smooth color="#1677FF" axis={getTrendAxis(callRange)} />
             </Card>
           </Col>
         </Row>
@@ -386,7 +394,7 @@ const BusinessV18 = () => {
                   </Space>
                 </Space>
                 <div style={{ height: 200 }}>
-                  <Line {...chartBase} height={200} data={getTrendWindow(trendDataByMetric.concurrency, concurrencyRange)} xField="date" yField="value" smooth color="#1677FF" />
+                  <Line {...chartBase} height={200} data={getTrendWindow(trendDataByMetric.concurrency, concurrencyRange)} xField="date" yField="value" smooth color="#1677FF" axis={getTrendAxis(concurrencyRange)} />
                 </div>
               </Space>
             </Card>
@@ -409,7 +417,7 @@ const BusinessV18 = () => {
                   </Space>
                 </Space>
                 <div style={{ height: 200 }}>
-                  <Line {...chartBase} height={200} data={getTrendWindow(trendDataByMetric.throughput, throughputRange)} xField="date" yField="value" smooth color="#722ED1" />
+                  <Line {...chartBase} height={200} data={getTrendWindow(trendDataByMetric.throughput, throughputRange)} xField="date" yField="value" smooth color="#722ED1" axis={getTrendAxis(throughputRange)} />
                 </div>
               </Space>
             </Card>
@@ -460,6 +468,7 @@ const BusinessV18 = () => {
                   height={180}
                   data={getTrendWindow(trendDataByMetric.timeout, timeoutRange)}
                   xField="date" yField="value" color="#FA8C16"
+                  axis={getTrendAxis(timeoutRange)}
                   appendPadding={[4, 4, 4, 4]}
                 />
               </div>
@@ -488,6 +497,7 @@ const BusinessV18 = () => {
                   height={180}
                   data={getTrendWindow(trendDataByMetric.adoption, adoptionRange)}
                   xField="date" yField="value" color="#52C41A"
+                  axis={getTrendAxis(adoptionRange)}
                   appendPadding={[4, 4, 4, 4]}
                 />
               </div>

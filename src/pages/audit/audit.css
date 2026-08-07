@@ -8,6 +8,113 @@
   margin-bottom: 16px;
 }
 
+/* 项目审计详情 */
+.project-detail-page {
+  --detail-blue: #1769e0;
+  --detail-text: #17243c;
+  max-width: 1540px;
+  margin: 0 auto;
+}
+
+.project-detail-hero {
+  position: relative;
+  display: flex;
+  min-height: 190px;
+  align-items: flex-start;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: 32px 36px;
+  border-radius: 18px 18px 0 0;
+  background: linear-gradient(115deg, #0c57c7 0%, #176fe7 58%, #21a6d7 100%);
+  box-shadow: 0 14px 36px rgba(27, 83, 156, .16);
+  color: #fff;
+}
+
+.project-detail-hero::before,
+.project-detail-hero::after {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: 50%;
+  content: '';
+}
+
+.project-detail-hero::before { right: 8%; bottom: -160px; width: 360px; height: 360px; }
+.project-detail-hero::after { right: -70px; top: -160px; width: 310px; height: 310px; box-shadow: 0 0 0 38px rgba(255, 255, 255, .035); }
+.project-detail-hero-main { position: relative; z-index: 1; }
+.project-detail-kicker { margin-bottom: 12px; color: rgba(255,255,255,.78); font-size: 13px; letter-spacing: .12em; }
+.project-detail-kicker span { display: inline-block; width: 18px; height: 3px; margin-right: 8px; border-radius: 2px; background: #6ee7f2; vertical-align: middle; }
+.project-detail-hero .ant-typography { color: #fff; }
+.project-detail-hero h2.ant-typography { margin: 0 0 8px; font-size: 28px; letter-spacing: -.02em; }
+.project-detail-hero-main > .ant-typography { color: rgba(255,255,255,.76); }
+.project-detail-tags { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
+.project-detail-tags .ant-tag { margin: 0; border-color: rgba(255,255,255,.22); background: rgba(255,255,255,.13); color: #fff; }
+.project-detail-tags > span { margin-left: 4px; color: rgba(255,255,255,.64); font-size: 12px; }
+.project-detail-tags > span::before { display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: #65f2c1; content: ''; }
+.project-detail-back.ant-btn { position: relative; z-index: 1; height: 38px; border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.12); color: #fff; box-shadow: none; }
+.project-detail-back.ant-btn:hover { border-color: #fff !important; background: rgba(255,255,255,.2) !important; color: #fff !important; }
+
+.project-detail-summary {
+  display: grid;
+  grid-template-columns: 1.5fr .75fr .75fr;
+  margin-bottom: 22px;
+  padding: 0 14px;
+  border: 1px solid #e7edf5;
+  border-top: 0;
+  border-radius: 0 0 16px 16px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(34, 66, 108, .07);
+}
+
+.project-detail-summary-item { display: flex; min-width: 0; align-items: center; gap: 14px; padding: 22px; }
+.project-detail-summary-item + .project-detail-summary-item { border-left: 1px solid #edf1f6; }
+.project-detail-summary-item > span { color: #b8c5d7; font-size: 12px; font-weight: 700; }
+.project-detail-summary-item > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.project-detail-summary-item strong { overflow: hidden; color: var(--detail-text); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+
+.project-detail-section-heading { display: flex; align-items: center; justify-content: space-between; margin: 28px 2px 14px; }
+.project-detail-section-heading > div { display: flex; align-items: baseline; gap: 12px; }
+.project-detail-section-heading strong { color: var(--detail-text); font-size: 19px; }
+.project-detail-section-heading div > span { color: #8a96a8; font-size: 12px; }
+.project-detail-section-heading .ant-tag { margin: 0; border: 0; border-radius: 999px; }
+
+.project-detail-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.project-detail-metric-card { --metric-color: #1769e0; border: 1px solid #e8edf4; border-radius: 14px; box-shadow: 0 7px 22px rgba(35, 64, 105, .055); }
+.project-detail-metric-card.metric-quality { --metric-color: #6657d9; }
+.project-detail-metric-card.metric-safety { --metric-color: #0b9a77; }
+.project-detail-metric-card.metric-cost { --metric-color: #db8b28; }
+.project-detail-metric-card .ant-card-body { padding: 22px 24px 24px; }
+.project-detail-metric-head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.project-detail-metric-head > div:nth-child(2) { display: flex; flex: 1; flex-direction: column; }
+.project-detail-metric-head strong { color: var(--detail-text); font-size: 16px; }
+.project-detail-metric-head span { color: #98a3b2; font-size: 12px; }
+.project-detail-metric-head > b { align-self: flex-start; color: #e1e7ef; font-size: 22px; font-style: italic; }
+.project-detail-metric-icon { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 11px; background: color-mix(in srgb, var(--metric-color) 10%, white); color: var(--metric-color); font-size: 19px; }
+.project-detail-metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: hidden; border: 1px solid #edf1f6; border-radius: 10px; background: #fafbfd; }
+.project-detail-metric { display: flex; min-width: 0; flex-direction: column; gap: 7px; padding: 16px 18px; }
+.project-detail-metric:not(:nth-child(3n + 1)) { border-left: 1px solid #edf1f6; }
+.project-detail-metric:nth-child(n + 4) { border-top: 1px solid #edf1f6; }
+.project-detail-metric .ant-typography { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.project-detail-metric strong { color: var(--detail-text); font-size: 18px; font-variant-numeric: tabular-nums; }
+.metric-efficiency .project-detail-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.metric-efficiency .project-detail-metric:not(:nth-child(3n + 1)) { border-left: 0; }
+.metric-efficiency .project-detail-metric + .project-detail-metric { border-left: 1px solid #edf1f6; }
+.metric-safety .project-detail-metric-grid { grid-template-columns: 1fr; }
+
+.project-detail-material-card { margin-top: 16px; border: 1px solid #e8edf4; border-radius: 14px; box-shadow: 0 7px 22px rgba(35, 64, 105, .055); }
+.project-detail-material-card .ant-card-head { min-height: 72px; border-bottom-color: #edf1f6; }
+.project-detail-card-title { display: flex; align-items: center; gap: 12px; }
+.project-detail-card-title > span { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 10px; background: #fff0f0; color: #e5484d; font-size: 18px; }
+.project-detail-card-title > div { display: flex; flex-direction: column; }
+.project-detail-card-title strong { color: var(--detail-text); font-size: 16px; }
+.project-detail-card-title small { color: #98a3b2; font-size: 12px; font-weight: 400; }
+.audit-material-item { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 18px; border: 1px solid #edf1f6; border-radius: 10px; background: #fafbfd; }
+.audit-material-item + .audit-material-item { margin-top: 10px; }
+.audit-material-file { display: flex; min-width: 0; align-items: center; gap: 13px; }
+.audit-material-file > .anticon { color: #e5484d; font-size: 25px; }
+.audit-material-file > div { display: flex; min-width: 0; flex-direction: column; }
+.audit-material-file .ant-typography { overflow: hidden; color: var(--detail-text); text-overflow: ellipsis; white-space: nowrap; }
+.audit-material-file span { color: #9aa5b4; font-size: 11px; }
+
 .audit-stat-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -679,6 +786,7 @@
 @media (max-width: 1000px) {
   .audit-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .upload-grid, .filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .project-detail-metrics { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -687,4 +795,14 @@
   .audit-rate-detail { display: none; }
   .session-detail-drawer .ant-drawer-body { padding-inline: 18px; }
   .session-detail-meta { align-items: flex-start; flex-direction: column; }
+  .project-detail-hero { min-height: 220px; padding: 24px; }
+  .project-detail-hero h2.ant-typography { padding-right: 0; font-size: 23px; }
+  .project-detail-back.ant-btn { position: absolute; right: 16px; bottom: 16px; }
+  .project-detail-summary { grid-template-columns: 1fr; }
+  .project-detail-summary-item + .project-detail-summary-item { border-top: 1px solid #edf1f6; border-left: 0; }
+  .project-detail-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .project-detail-metric:not(:nth-child(3n + 1)) { border-left: 0; }
+  .project-detail-metric:nth-child(n + 3) { border-top: 1px solid #edf1f6; }
+  .project-detail-metric:nth-child(even) { border-left: 1px solid #edf1f6; }
+  .audit-material-item { align-items: flex-start; flex-direction: column; }
 }

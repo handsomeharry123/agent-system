@@ -45,15 +45,24 @@ const PujiangTaskDetail = () => {
       () => [task.agentName],
       {
         windowReplacements: [task.agentName],
-        actions: [{
-          key: 'download-pujiang-report',
-          label: '评测结果报告下载',
-          event: 'pujiang-report-download',
-          enabled: reportReady,
-        }],
+        actions: [
+          {
+            key: 'download-pujiang-report',
+            label: '评测结果报告下载',
+            event: 'pujiang-report-download',
+            enabled: reportReady,
+          },
+          {
+            key: 'view-agent-360-profile',
+            label: '查看360画像',
+            path: `/app/ledger/detail/${encodeURIComponent(task.agentId)}?view=360`,
+            enabled: task.status === '评测通过',
+            reason: '仅评测通过的智能体可查看360画像',
+          },
+        ],
       },
     );
-  }, [demoRole, pushWelcomeGreeting, reportReady, task.agentName]);
+  }, [demoRole, pushWelcomeGreeting, reportReady, task.agentId, task.agentName, task.status]);
 
   return <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100%' }}>
     <PageHeader title={<Space>浦江评测结果详情<Tag color={task.status === '评测中' ? 'processing' : task.status === '评测通过' ? 'success' : task.status === '退回修改' ? 'error' : 'default'}>{task.status}</Tag></Space>} subTitle="查看最新评测结果与历次评测趋势" showBack onBack={() => navigate('/app/evaluation/tasks?module=pujiang')} extra={<Space><Button icon={<EyeOutlined />} disabled={!reportReady} onClick={() => setPreview(true)}>查看评测报告</Button><Dropdown disabled={!reportReady} menu={{ items: [{ key: 'pdf', label: '下载 PDF 版', onClick: () => download('pdf') }, { key: 'doc', label: '下载 Word 版', onClick: () => download('doc') }] }}><Button type="primary" icon={<DownloadOutlined />} disabled={!reportReady}>下载评测报告</Button></Dropdown></Space>} />
