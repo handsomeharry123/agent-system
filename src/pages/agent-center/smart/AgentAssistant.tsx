@@ -744,7 +744,9 @@ const AgentAssistant = () => {
       if (isEvaluationTasksPage && m.id.startsWith('__welcome__:')) {
         return m.id.startsWith(
           isPujiangEvaluationTasksPage
-            ? '__welcome__:pujiang-evaluation-tasks:'
+            ? (m.id.startsWith('__welcome__:pujiang-evaluation-created:')
+              ? '__welcome__:pujiang-evaluation-created:'
+              : '__welcome__:pujiang-evaluation-tasks:')
             : '__welcome__:evaluation-tasks:',
         );
       }

@@ -95,18 +95,18 @@ const EvaluationReport = () => {
   const task: EvaluationTask | undefined = getTaskById(id || '');
   const report: ReportModel | undefined = task ? getReportByTaskId(task.id) : undefined;
   const safetyPassed = Boolean(report?.conclusion === '准入' || task?.status === '审核通过');
-  const [lifecycleStage] = useState<AgentLifecycleStage>(() => {
-    if (!task) return '安全性评测';
-    const saved = window.localStorage.getItem(`agent-system.lifecycle-stage:${task.agentCode}`);
-    return saved === '浦江实验室评测' || saved === '上线' ? saved : '安全性评测';
-  });
+  const isApprovedTabEntry = fromTab === '审核通过';
+  // 本页展示的是安全性评测结果。即使安全性评测已审核通过，也只有在用户实际
+  // 发起浦江实验室评测后才应进入下一阶段；不能由可能残留的本地阶段值提前推进。
+  const lifecycleStage: AgentLifecycleStage = '安全性评测';
 
   useEffect(() => {
     if (!task) return undefined;
     const createdFromAgentDetail = Boolean(
       location.state?.evaluationCreated && location.state?.evaluationTaskId === task.id,
     );
-    const shouldGuidePujiang = isAdmin && safetyPassed && lifecycleStage === '安全性评测';
+    const shouldGuidePujiang =
+      isAdmin && isApprovedTabEntry && safetyPassed && lifecycleStage === '安全性评测';
     const role = shouldGuidePujiang ? 'admin' : isAdmin ? 'provider' : 'dept';
     pushWelcomeGreeting(createdFromAgentDetail ? 'agent-center-eval-created' : 'evaluation-report', role, () =>
       createdFromAgentDetail
@@ -156,10 +156,12 @@ const EvaluationReport = () => {
     return () => {
       delete (window as any).__evaluationReportContext;
     };
-  }, [isAdmin, lifecycleStage, location.state, pushWelcomeGreeting, report, safetyPassed, task]);
+  }, [isAdmin, isApprovedTabEntry, lifecycleStage, location.state, pushWelcomeGreeting, report, safetyPassed, task]);
 
   useEffect(() => {
-    if (!task || !isAdmin || !safetyPassed || lifecycleStage !== '安全性评测') return undefined;
+    if (
+      !task || !isAdmin || !isApprovedTabEntry || !safetyPassed || lifecycleStage !== '安全性评测'
+    ) return undefined;
     const onStartPujiang = () => {
       navigate(`/app/evaluation/tasks/pujiang/create?sourceTaskId=${encodeURIComponent(task.id)}`);
     };
@@ -170,7 +172,7 @@ const EvaluationReport = () => {
       window.removeEventListener('evaluation-report-start-pujiang', onStartPujiang);
       window.removeEventListener('evaluation-report-defer-pujiang', onDeferPujiang);
     };
-  }, [isAdmin, lifecycleStage, navigate, safetyPassed, task]);
+  }, [isAdmin, isApprovedTabEntry, lifecycleStage, navigate, safetyPassed, task]);
 
   if (!task) {
     return (
@@ -485,7 +487,7 @@ const EvaluationReport = () => {
       <div style={{ marginBottom: 16 }}>
         <AgentLifecycleProgress
           currentStage={lifecycleStage}
-          currentStageCompleted={lifecycleStage === '安全性评测' && safetyPassed}
+          currentStageCompleted={lifecycleStage === '安全性评测' && task.status === '审核通过'}
         />
       </div>
 

@@ -88,6 +88,7 @@ export type WelcomePageKey =
   | 'evaluation-create'        // 准入评测「新建评测」页
   | 'pujiang-evaluation-tasks' // 浦江实验室评测「评测任务管理」页
   | 'pujiang-evaluation-create' // 浦江实验室评测「新建评测」页
+  | 'pujiang-evaluation-created' // 浦江实验室评测任务创建成功
   | 'evaluation-report'        // 准入评测「评测结果详情」页
   | 'pujiang-evaluation-report' // 浦江实验室「评测结果详情」页
   | 'monitoring-overview'      // 统一运行监控中心「监控总览」页
@@ -424,6 +425,11 @@ const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>
     dept: { bubble: '安全性评测任务创建成功：X。当前进度：X（X）。', window: '安全性评测任务创建成功：X。当前进度：X（X）。' },
     provider: { bubble: '安全性评测任务创建成功：X。当前进度：X（X）。', window: '安全性评测任务创建成功：X。当前进度：X（X）。' },
     admin: { bubble: '安全性评测任务创建成功：X。当前进度：X（X）。', window: '安全性评测任务创建成功：X。当前进度：X（X）。' },
+  },
+  'pujiang-evaluation-created': {
+    dept: { bubble: '评测任务创建成功：X。已于 X 开始评测，我会帮您留意评测进度。', window: '评测任务创建成功：X。已于 X 开始评测，我会帮您留意评测进度。' },
+    provider: { bubble: '评测任务创建成功：X。已于 X 开始评测，我会帮您留意评测进度。', window: '评测任务创建成功：X。已于 X 开始评测，我会帮您留意评测进度。' },
+    admin: { bubble: '评测任务创建成功：X。已于 X 开始评测，我会帮您留意评测进度。', window: '评测任务创建成功：X。已于 X 开始评测，我会帮您留意评测进度。' },
   },
   'monitoring-overview': {
     dept: { bubble: '您好！我是医小管，有什么运行监控信息都可以问我', window: '您好！我是医小管，本科室智能体累计告警X次，今日告警X次，待处理X项，有什么运行监控信息都可以问我' },
@@ -1298,6 +1304,7 @@ export const SmartDraftProvider = ({
           pageKey === 'evaluation-create' ||
           pageKey === 'pujiang-evaluation-tasks' ||
           pageKey === 'pujiang-evaluation-create' ||
+          pageKey === 'pujiang-evaluation-created' ||
           pageKey === 'monitoring-overview' ||
           pageKey === 'monitoring-business' ||
           pageKey === 'monitoring-status' ||

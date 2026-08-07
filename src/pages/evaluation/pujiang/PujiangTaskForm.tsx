@@ -31,7 +31,7 @@ import {
 import type { UploadFile } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../../components/PageHeader';
-import { PUJIANG_PLATFORM, PUJIANG_PLATFORM_URL, getPujiangTask, initialPujiangTasks } from './data';
+import { PUJIANG_DIMENSIONS, PUJIANG_PLATFORM, PUJIANG_PLATFORM_URL, addPujiangTask, getPujiangTask, initialPujiangTasks } from './data';
 import { useAccessRecords } from '../../agent-center/store';
 import { useSmartDraft } from '../../agent-center/smart/store';
 import { getTaskById } from '../../../mock/evaluation';
@@ -209,6 +209,45 @@ const PujiangTaskForm = () => {
     });
   };
 
+  const startEvaluation = async () => {
+    const values = await form.validateFields();
+    if (!apiDocuments.length) {
+      message.error('请上传智能体 API 文档');
+      return;
+    }
+
+    const agent = selectableAgents.find((item) => item.id === values.agentId);
+    if (!agent) {
+      message.error('未找到所选智能体');
+      return;
+    }
+
+    const submitTime = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    const taskId = `pj-task-${Date.now()}`;
+    addPujiangTask({
+      id: taskId,
+      agentId: agent.agentId,
+      agentCode: agent.agentCode,
+      agentName: values.modelName,
+      version: agent.version,
+      department: agent.department,
+      status: '评测中',
+      dimensions: [...PUJIANG_DIMENSIONS],
+      submitTime,
+      scores: [],
+    });
+
+    navigate(`/app/evaluation/tasks?module=pujiang&tab=${encodeURIComponent('评测中')}`, {
+      state: {
+        pujiangTaskCreated: {
+          taskId,
+          agentName: values.modelName,
+          submitTime,
+        },
+      },
+    });
+  };
+
   return <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100%' }}>
     <PageHeader title={editingTask ? '编辑浦江评测任务' : '新建浦江评测任务'} subTitle="填写参评智能体与 API 提交信息，发起浦江实验室评测" showBack onBack={() => back('已自动保存为草稿')} />
     <Form
@@ -323,7 +362,7 @@ const PujiangTaskForm = () => {
       <Space>
         <Button icon={<CloseOutlined />} onClick={() => back()}>取消</Button>
         <Button icon={<SaveOutlined />} onClick={() => back('已暂存为草稿')}>暂存</Button>
-        <Button type="primary" icon={<CheckCircleOutlined />} onClick={async () => { await form.validateFields(); if (!apiDocuments.length) { message.error('请上传智能体 API 文档'); return; } message.success('评测已开始，即将打开浦江实验室评测平台'); window.open(PUJIANG_PLATFORM_URL, '_blank', 'noopener,noreferrer'); }}>开始评测</Button>
+        <Button type="primary" icon={<CheckCircleOutlined />} onClick={startEvaluation}>开始评测</Button>
       </Space>
     </Card>
   </div>;

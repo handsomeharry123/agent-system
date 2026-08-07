@@ -123,12 +123,23 @@ const seedData: ProjectRecord[] = [
   { id: 'PA-2026-004', name: '门诊智能导诊优化项目', department: '急诊科', superiorDepartment: '医务处', track: '便民赛道', leader: '黄海涛', contact: '王璐', phone: '13677665544', supports: ['项目推广'], overview: '优化门诊患者分诊与科室推荐。', painPoints: '患者对科室职责不清晰，错挂号率较高。', technologies: ['自然语言处理'], models: ['豆包模型'], deliverables: '门诊导诊智能体 1 个。', indicators: '错挂号率降低 20%。', totalBudget: 18, fundingDetail: '医院资助 18 万元', spendingDetail: '研发设计 18 万元', status: '草稿', applicant: 'admin', updateTime: '2026-07-27 10:05:00', files: [] },
   { id: 'PA-2026-005', name: '影像随访智能提醒项目', department: '影像科', superiorDepartment: '数智发展处', track: '辅政赛道', leader: '林佳', contact: '林佳', phone: '13566889900', supports: ['技术指导支持'], overview: '对影像报告中的随访建议进行结构化提取和提醒。', painPoints: '随访建议缺少统一闭环管理。', technologies: ['计算机视觉', '自然语言处理'], models: ['Qwen模型'], deliverables: '随访提醒智能体 1 个。', indicators: '重点患者随访触达率达到 95%。', totalBudget: 25, fundingDetail: '医院资助 25 万元', spendingDetail: '软件购置 10 万元；研发设计 15 万元', status: '撤销修改', applicant: '林佳', updateTime: '2026-07-23 15:30:00', revokeTime: '2026-07-23 15:30:00', files: ['影像随访智能提醒项目申报书.pdf'] },
   { id: 'PA-2026-006', name: '慢病健康教育数字人项目', department: '内分泌科', superiorDepartment: '科研处', track: '便民赛道', leader: '孙悦', contact: '赵敏', phone: '13344556677', supports: ['资金支持', '项目推广'], overview: '为慢病患者提供个性化健康教育。', painPoints: '健康教育内容同质化，患者依从性不足。', technologies: ['智能语音', '数字孪生'], models: ['Kimi模型'], deliverables: '健康教育数字人 1 个。', indicators: '患者健康知识知晓率提升 25%。', totalBudget: 42, fundingDetail: '其它渠道资助 42 万元', spendingDetail: '软硬件购置 28 万元；研发设计 14 万元', status: '立项不通过', applicant: '孙悦', updateTime: '2026-07-16 09:40:00', finishTime: '2026-07-16 09:40:00', reviewNote: '现阶段数据来源与运营方案不够清晰，建议完善后重新申报。', files: ['慢病健康教育数字人项目申报书.pdf'] },
+  { id: 'PA-2026-007', name: '急诊危重症智能预警项目', department: '急诊科', superiorDepartment: '医务处', track: '助医赛道', leader: '王建国', contact: '李敏', phone: '13866778899', supports: ['数据要素支持', '算力支持'], overview: '融合生命体征、检验结果和病历信息，建设急诊危重症风险实时预警智能体。', painPoints: '急诊患者病情变化快，多源数据分散，人工识别高风险患者存在滞后。', technologies: ['机器学习', '知识图谱'], models: ['Deepseek模型'], deliverables: '危重症预警智能体 1 个、急诊风险知识库 1 套。', indicators: '高风险患者提前预警时间不少于 30 分钟，预警准确率达到 90%。', totalBudget: 45, fundingDetail: '医院资助 30 万元；其它渠道资助 15 万元', spendingDetail: '算力租赁 12 万元；系统集成 13 万元；研发设计 20 万元', status: '待审核', applicant: 'admin', updateTime: '2026-07-28 09:20:00', submitTime: '2026-07-28 09:20:00', files: ['急诊危重症智能预警项目申报书.pdf'] },
+  { id: 'PA-2026-008', name: '药学处方智能审核项目', department: '药剂科', superiorDepartment: '医务处', track: '助医赛道', leader: '张伟', contact: '吴桐', phone: '13755667788', supports: ['技术指导支持', '数据要素支持'], overview: '基于院内处方与用药规则，建设覆盖门急诊处方的智能审核与风险提示能力。', painPoints: '处方审核规则多、人工复核压力大，潜在用药风险难以及时发现。', technologies: ['自然语言处理', '知识图谱'], models: ['Qwen模型'], deliverables: '处方审核智能体 1 个、合理用药规则库 1 套。', indicators: '高风险处方识别率达到 95%，人工审核耗时降低 35%。', totalBudget: 52, fundingDetail: '医院资助 52 万元', spendingDetail: '软件购置 18 万元；系统集成 14 万元；研发设计 20 万元', status: '审核中', applicant: 'admin', updateTime: '2026-07-28 10:40:00', submitTime: '2026-07-27 16:15:00', reviewStartTime: '2026-07-28 10:40:00', reviewer: '信息科管理员', files: ['药学处方智能审核项目申报书.pdf', '合理用药规则说明.pdf'] },
 ];
 
 const readRecords = (): ProjectRecord[] => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : seedData;
+    if (!saved) return seedData;
+
+    const savedRecords = JSON.parse(saved) as ProjectRecord[];
+    const savedIds = new Set(savedRecords.map((item) => item.id));
+    const newMockRecords = seedData.filter((item) => !savedIds.has(item.id));
+    if (newMockRecords.length === 0) return savedRecords;
+
+    const mergedRecords = [...savedRecords, ...newMockRecords];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedRecords));
+    return mergedRecords;
   } catch {
     return seedData;
   }

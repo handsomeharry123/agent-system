@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button, Card, Dropdown, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd';
 import { DeleteOutlined, EditOutlined, EyeOutlined, MoreOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PUJIANG_PLATFORM, initialPujiangTasks, type PujiangStatus, type PujiangTask } from './data';
 import { useAuth } from '../../../hooks/useAuth';
 import { useSmartDraft } from '../../agent-center/smart/store';
@@ -24,6 +24,7 @@ interface Props { moduleSwitcher: ReactNode; }
 
 const PujiangTaskList = ({ moduleSwitcher }: Props) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
@@ -34,6 +35,9 @@ const PujiangTaskList = ({ moduleSwitcher }: Props) => {
   const [activeTab, setActiveTab] = useState<TabKey>(tabs.some((tab) => tab.key === requestedTab) ? requestedTab! : 'all');
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState<PujiangStatus>();
+  const createdTask = (location.state as {
+    pujiangTaskCreated?: { taskId: string; agentName: string; submitTime: string };
+  } | null)?.pujiangTaskCreated;
 
   useEffect(() => {
     if (!requestedTab || !tabs.some((tab) => tab.key === requestedTab)) return;
@@ -54,6 +58,13 @@ const PujiangTaskList = ({ moduleSwitcher }: Props) => {
   }), [activeTab, keyword, status, tasks]);
 
   useEffect(() => {
+    if (createdTask) {
+      pushWelcomeGreeting('pujiang-evaluation-created', isAdmin ? 'admin' : 'dept', () => [
+        createdTask.agentName,
+        createdTask.submitTime,
+      ]);
+      return () => consumeWelcome();
+    }
     const values = [counts.评测中, counts.评测通过, counts.退回修改];
     pushWelcomeGreeting('pujiang-evaluation-tasks', isAdmin ? 'admin' : 'dept', () => values, {
       windowReplacements: values,
@@ -64,7 +75,7 @@ const PujiangTaskList = ({ moduleSwitcher }: Props) => {
       ],
     });
     return () => consumeWelcome();
-  }, [activeTab, consumeWelcome, counts, isAdmin, pushWelcomeGreeting]);
+  }, [activeTab, consumeWelcome, counts, createdTask, isAdmin, pushWelcomeGreeting]);
 
   useEffect(() => {
     const onJump = (event: Event) => {

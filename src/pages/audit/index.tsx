@@ -59,6 +59,7 @@ import type { UploadFile } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
 import { useSmartDraft } from '../agent-center/smart/store';
+import auditMaterialPdfUrl from '../../../output/pdf/项目审计填报材料-完成度100%-已使用金额136.8万元.pdf?url';
 import './audit.css';
 
 const { Title, Text, Paragraph } = Typography;
@@ -239,7 +240,7 @@ function EconomicAudit() {
     },
     {
       key: 'roi',
-      title: '平均投入产出比',
+      title: '投入产出比',
       value: overallInvestmentRatio,
       suffix: '%',
       precision: 6,
@@ -1181,7 +1182,7 @@ const projectInfoItems = (project: ProjectAuditRow) => [
 
 function NewProjectDetail({ project, onBack, onDeleteMaterial }: { project: ProjectAuditRow; onBack: () => void; onDeleteMaterial: (fileName: string) => void }) {
   const { message } = App.useApp();
-  const [preview, setPreview] = useState(false);
+  const [previewMaterial, setPreviewMaterial] = useState<string>();
   const sections = [
     { key: 'efficiency', title: '服务效率', subtitle: '患者覆盖与业务增长', icon: <RiseOutlined />, items: [['日均服务患者人数', `${project.dailyPatients} 人`], ['日均服务患者人数增长率', `${project.growthRate}%`]] },
     { key: 'quality', title: '服务质量', subtitle: '任务效果与系统稳定性', icon: <CheckCircleOutlined />, items: [['任务执行成功率', `${project.taskSuccessRate}%`], ['响应时间 P99', `${project.responseP99} 秒`], ['医生采纳率', `${project.doctorAdoptionRate}%`], ['异常故障次数', `${project.faultCount} 次`], ['平均故障恢复时间', `${project.recoveryTime} 分钟`], ['服务可用率', `${project.availabilityRate}%`]] },
@@ -1196,7 +1197,10 @@ function NewProjectDetail({ project, onBack, onDeleteMaterial }: { project: Proj
         <Text>综合审视项目服务效率、质量、安全与成本表现</Text>
         <div className="project-detail-tags"><Tag icon={<SafetyCertificateOutlined />}>{project.dept}</Tag><Tag icon={<CheckCircleOutlined />}>{project.track}</Tag><Tag icon={<ClockCircleOutlined />}>数据已更新</Tag><span>{project.time}</span></div>
       </div>
-      <div className="project-detail-hero-visual" aria-hidden="true"><div className="hero-medical-ring"><SafetyCertificateOutlined /><i>+</i></div><span className="hero-pulse">⌁</span></div>
+      <div className="project-detail-hero-visual" aria-hidden="true">
+        <div className="hero-medical-ring"><SafetyCertificateOutlined /><i>+</i></div>
+        <div className="hero-platform-ring" />
+      </div>
       <Button className="project-detail-back" icon={<ArrowLeftOutlined />} onClick={onBack}>返回项目列表</Button>
     </div>
     <div className="project-detail-summary">
@@ -1209,12 +1213,30 @@ function NewProjectDetail({ project, onBack, onDeleteMaterial }: { project: Proj
       {sections.map((section, index) => <Card key={section.key} className={`project-detail-metric-card metric-${section.key}`} bordered={false}>
         <div className="project-detail-metric-head"><div className="project-detail-metric-icon">{section.icon}</div><div><Text strong>{section.title}</Text><span>{section.subtitle}</span></div><b>{String(index + 1).padStart(2, '0')}</b></div>
         <div className="project-detail-metric-grid">{section.items.map(([label, value]) => <div className="project-detail-metric" key={label}><Text type="secondary">{label}</Text><strong>{value}</strong></div>)}</div>
+        {section.key === 'efficiency' && <div className="metric-trend-panel">
+          <div className="metric-visual-title"><span>近 7 日服务趋势</span><b><RiseOutlined /> 较上周 +{project.growthRate}%</b></div>
+          <svg viewBox="0 0 620 116" preserveAspectRatio="none" role="img" aria-label="近七日服务患者人数持续增长">
+            <defs><linearGradient id="efficiencyArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--metric-color)" stopOpacity=".28"/><stop offset="1" stopColor="var(--metric-color)" stopOpacity="0"/></linearGradient></defs>
+            <path className="trend-grid" d="M0 24H620M0 64H620M0 104H620" />
+            <path className="trend-area" d="M0 96 C55 92 65 74 118 78 S205 66 266 61 S355 69 410 46 S510 38 620 15 L620 116 L0 116Z" />
+            <path className="trend-line" d="M0 96 C55 92 65 74 118 78 S205 66 266 61 S355 69 410 46 S510 38 620 15" />
+          </svg>
+          <div className="trend-labels"><span>07/20</span><span>07/22</span><span>07/24</span><span>07/26</span></div>
+        </div>}
+        {section.key === 'safety' && <div className="metric-safety-panel">
+          <div className="safety-score-ring"><SafetyCertificateOutlined /><b>{project.safetyRate}%</b><span>综合防护</span></div>
+          <div className="safety-checks"><span><CheckCircleOutlined /> 数据访问合规</span><span><CheckCircleOutlined /> 敏感信息脱敏</span><span><CheckCircleOutlined /> 风险事件闭环</span></div>
+        </div>}
+        {section.key === 'quality' && <div className="metric-card-decoration quality-heart" aria-hidden="true"><span>⌁</span></div>}
+        {section.key === 'cost' && <div className="metric-card-decoration cost-coins" aria-hidden="true"><i /><i /><i /><RiseOutlined /></div>}
       </Card>)}
     </div>
     <Card className="project-detail-material-card" bordered={false} title={<div className="project-detail-card-title"><span><FilePdfOutlined /></span><div><Text strong>审计材料</Text><small>项目相关原始凭证与附件</small></div></div>} extra={<Tag>{project.materials.length} 份文件</Tag>}>
-      {project.materials.length ? <div className="audit-material-list">{project.materials.map((material) => <div className="audit-material-item" key={material}><div className="audit-material-file"><FilePdfOutlined /><div><Text>{material}</Text><span>PDF 文档 · 审计附件</span></div></div><Space wrap><Button icon={<EyeOutlined />} onClick={() => setPreview(true)}>预览</Button><Button icon={<DownloadOutlined />} onClick={() => { downloadTextFile(material, '项目审计材料演示文件'); message.success('开始下载审计材料'); }}>下载</Button><Popconfirm title="确认删除该附件材料？" description="删除后不可恢复" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => onDeleteMaterial(material)}><Button danger type="text" icon={<DeleteOutlined />}>删除</Button></Popconfirm></Space></div>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂未上传审计材料" />}
+      {project.materials.length ? <div className="audit-material-list">{project.materials.map((material) => <div className="audit-material-item" key={material}><div className="audit-material-file"><FilePdfOutlined /><div><Text>{material}</Text><span>PDF 文档 · 审计附件</span></div></div><Space wrap><Button icon={<EyeOutlined />} onClick={() => setPreviewMaterial(material)}>预览</Button><Button icon={<DownloadOutlined />} onClick={() => { downloadTextFile(material, '项目审计材料演示文件'); message.success('开始下载审计材料'); }}>下载</Button><Popconfirm title="确认删除该附件材料？" description="删除后不可恢复" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => onDeleteMaterial(material)}><Button danger type="text" icon={<DeleteOutlined />}>删除</Button></Popconfirm></Space></div>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂未上传审计材料" />}
     </Card>
-    <Modal open={preview} title="审计材料预览" width={760} onCancel={() => setPreview(false)} footer={<Button onClick={() => setPreview(false)}>关闭</Button>}><div className="pdf-preview"><FilePdfOutlined /><Title level={4}>{project.materials[0]}</Title><Text type="secondary">PDF 文件在线预览区域</Text></div></Modal>
+    <Modal open={Boolean(previewMaterial)} title={previewMaterial ? `审计材料预览 · ${previewMaterial}` : '审计材料预览'} width={960} onCancel={() => setPreviewMaterial(undefined)} footer={<Button onClick={() => setPreviewMaterial(undefined)}>关闭</Button>} destroyOnClose>
+      <iframe className="audit-pdf-viewer" src={auditMaterialPdfUrl} title={previewMaterial ? `${previewMaterial} 预览` : '审计材料预览'} />
+    </Modal>
   </div>;
 }
 

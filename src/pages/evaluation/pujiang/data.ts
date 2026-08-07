@@ -78,4 +78,8 @@ export const initialPujiangTasks: PujiangTask[] = names.map(([agentCode, agentNa
   };
 });
 
+export const addPujiangTask = (task: PujiangTask) => {
+  initialPujiangTasks.unshift(task);
+};
+
 export const getPujiangTask = (id: string) => initialPujiangTasks.find((task) => task.id === id) || initialPujiangTasks[0];
