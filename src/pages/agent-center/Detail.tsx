@@ -213,7 +213,6 @@ const Detail = () => {
       persistChatEvaluationTask(created);
       window.sessionStorage.setItem('agent-system.latestAuditEvaluationTaskId', created.id);
       setEvaluationTask(created);
-      clearNavigationFlag();
       pushWelcomeGreeting(
         'agent-center-eval-created',
         'admin',
@@ -239,7 +238,16 @@ const Detail = () => {
           ],
         },
       );
-      message.success(`评测任务 ${created.taskNo} 已创建`);
+      message.success(`安全性评测任务 ${created.taskNo} 创建成功`);
+      navigate(
+        `/app/evaluation/tasks/${encodeURIComponent(created.id)}/report?fromTab=${encodeURIComponent('评测中')}`,
+        {
+          state: {
+            evaluationCreated: true,
+            evaluationTaskId: created.id,
+          },
+        },
+      );
     };
     window.addEventListener('agent-detail-create-evaluation', onCreate);
     window.addEventListener('agent-detail-skip-evaluation', onSkip);

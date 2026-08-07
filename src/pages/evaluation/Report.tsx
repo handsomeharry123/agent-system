@@ -8,7 +8,7 @@
 //   · 报告 PDF：基于 docx 模板 V1 前端渲染（jspdf + html2canvas）
 // =============================================================================
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Card,
   Button,
@@ -73,6 +73,7 @@ const calcScoreColor = (s: number) => (s >= 80 ? '#52C41A' : s >= 60 ? '#FAAD14'
 const EvaluationReport = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const fromTab = searchParams.get('fromTab') || '';
   const { currentUser } = useAuth();
@@ -102,9 +103,27 @@ const EvaluationReport = () => {
 
   useEffect(() => {
     if (!task) return undefined;
+    const createdFromAgentDetail = Boolean(
+      location.state?.evaluationCreated && location.state?.evaluationTaskId === task.id,
+    );
     const shouldGuidePujiang = isAdmin && safetyPassed && lifecycleStage === '安全性评测';
     const role = shouldGuidePujiang ? 'admin' : isAdmin ? 'provider' : 'dept';
-    pushWelcomeGreeting('evaluation-report', role, () => [task.agentName], shouldGuidePujiang ? {
+    pushWelcomeGreeting(createdFromAgentDetail ? 'agent-center-eval-created' : 'evaluation-report', role, () =>
+      createdFromAgentDetail
+        ? [task.taskNo, task.status, task.progressText || '0 / 300']
+        : [task.agentName],
+    createdFromAgentDetail ? {
+      evaluationSummary: {
+        taskNo: task.taskNo,
+        agentName: task.agentName,
+        dimensions: task.dimensions.map((item) => item.dimension),
+        sampleLevel: task.sampleLevel,
+        samplePercent: task.sampleLevel === '快速评测' ? 30 : task.sampleLevel === '标准评测' ? 60 : 100,
+        progress: task.progress ?? 0,
+        progressText: task.progressText || '0 / 300',
+        estimatedRemaining: '还剩约 1 小时',
+      },
+    } : shouldGuidePujiang ? {
       actions: [
         { key: 'start-pujiang', label: '确认开展', event: 'evaluation-report-start-pujiang', enabled: true },
         { key: 'defer-pujiang', label: '暂不开展', event: 'evaluation-report-defer-pujiang', enabled: true },
@@ -137,7 +156,7 @@ const EvaluationReport = () => {
     return () => {
       delete (window as any).__evaluationReportContext;
     };
-  }, [isAdmin, lifecycleStage, pushWelcomeGreeting, report, safetyPassed, task]);
+  }, [isAdmin, lifecycleStage, location.state, pushWelcomeGreeting, report, safetyPassed, task]);
 
   useEffect(() => {
     if (!task || !isAdmin || !safetyPassed || lifecycleStage !== '安全性评测') return undefined;

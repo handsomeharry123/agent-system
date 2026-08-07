@@ -421,9 +421,9 @@ const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>
     admin: { bubble: '您好，我是医小管。当前为您展示【X】的注册信息详情，有什么该智能体相关问题可以直接问我~该智能体已成功接入，是否需要立即创建安全性评测任务？', window: '您好，我是医小管。当前为您展示【X】的注册信息详情，有什么该智能体相关问题可以直接问我~该智能体已成功接入，是否需要立即创建安全性评测任务？' },
   },
   'agent-center-eval-created': {
-    dept: { bubble: '评测任务已创建：X。当前进度：X（X）。', window: '评测任务已创建：X。当前进度：X（X）。' },
-    provider: { bubble: '评测任务已创建：X。当前进度：X（X）。', window: '评测任务已创建：X。当前进度：X（X）。' },
-    admin: { bubble: '评测任务已创建：X。当前进度：X（X）。', window: '评测任务已创建：X。当前进度：X（X）。' },
+    dept: { bubble: '安全性评测任务创建成功：X。当前进度：X（X）。', window: '安全性评测任务创建成功：X。当前进度：X（X）。' },
+    provider: { bubble: '安全性评测任务创建成功：X。当前进度：X（X）。', window: '安全性评测任务创建成功：X。当前进度：X（X）。' },
+    admin: { bubble: '安全性评测任务创建成功：X。当前进度：X（X）。', window: '安全性评测任务创建成功：X。当前进度：X（X）。' },
   },
   'monitoring-overview': {
     dept: { bubble: '您好！我是医小管，有什么运行监控信息都可以问我', window: '您好！我是医小管，本科室智能体累计告警X次，今日告警X次，待处理X项，有什么运行监控信息都可以问我' },
