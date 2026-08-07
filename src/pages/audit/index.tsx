@@ -1191,11 +1191,12 @@ function NewProjectDetail({ project, onBack, onDeleteMaterial }: { project: Proj
   return <div className="project-detail-page">
     <div className="project-detail-hero">
       <div className="project-detail-hero-main">
-        <div className="project-detail-kicker"><span /> 项目审计档案</div>
+        <div className="project-detail-kicker"><SafetyCertificateOutlined /> 项目审计档案</div>
         <Title level={2}>{project.name}</Title>
         <Text>综合审视项目服务效率、质量、安全与成本表现</Text>
-        <div className="project-detail-tags"><Tag color="blue">{project.dept}</Tag><Tag color="cyan">{project.track}</Tag><span>数据已更新</span></div>
+        <div className="project-detail-tags"><Tag icon={<SafetyCertificateOutlined />}>{project.dept}</Tag><Tag icon={<CheckCircleOutlined />}>{project.track}</Tag><Tag icon={<ClockCircleOutlined />}>数据已更新</Tag><span>{project.time}</span></div>
       </div>
+      <div className="project-detail-hero-visual" aria-hidden="true"><div className="hero-medical-ring"><SafetyCertificateOutlined /><i>+</i></div><span className="hero-pulse">⌁</span></div>
       <Button className="project-detail-back" icon={<ArrowLeftOutlined />} onClick={onBack}>返回项目列表</Button>
     </div>
     <div className="project-detail-summary">

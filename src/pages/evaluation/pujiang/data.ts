@@ -38,13 +38,26 @@ const names = [
   ['JJ-0007', '急诊分诊与病情评估助手', '急诊科'],
 ] as const;
 
+// 浦江评测任务必须持有统一台账中的真实主键，360 画像详情页按该主键查询。
+// 不要再根据列表序号生成 `agent-001` 一类只存在于评测模块的临时 ID。
+const ledgerAgentIds = [
+  'AGT-2026-009',
+  'AGT-2025-005',
+  'AGT-2025-002',
+  'AGT-2024-004',
+  'AGT-2026-008',
+  'AGT-2024-009',
+  'AGT-2025-014',
+  'AGT-2026-002',
+] as const;
+
 const statuses: PujiangStatus[] = ['评测通过', '评测中', '草稿', '退回修改', '评测通过', '评测中', '评测通过', '退回修改'];
 
 export const initialPujiangTasks: PujiangTask[] = names.map(([agentCode, agentName, department], index) => {
   const status = statuses[index];
   return {
     id: `pj-task-${index + 1}`,
-    agentId: `agent-${String(index + 1).padStart(3, '0')}`,
+    agentId: ledgerAgentIds[index],
     agentCode,
     agentName,
     department,

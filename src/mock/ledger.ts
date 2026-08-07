@@ -1659,6 +1659,42 @@ const ledgerAgentsRaw: RawAgent[] = [
       { time: '2026-06-05 09:00', event: '开始试运行（进入台账）', source: '评测沙盒' },
     ],
   },
+  // ---------- 31. 浦江评测通过·超声检查预约 ----------
+  {
+    id: 'AGT-2026-009',
+    idCode: 'US-0001',
+    nameEn: 'UltrasoundAppointment',
+    name: '超声检查预约助手',
+    department: '超声科',
+    departmentCode: 'US',
+    sourceType: '合作开发',
+    vendor: '智医健康科技有限公司',
+    type: '导诊分诊',
+    functionKeywords: ['超声预约', '时段推荐', '检查提醒'],
+    version: '1.0',
+    modelSource: '开源',
+    modelName: 'Qwen 2.1',
+    deploymentType: '本地部署',
+    techArch: '大语言模型',
+    interfaceProtocol: 'RESTful',
+    interfaceUrl: 'https://api.hospital.local/ultrasound/appointment',
+    authMethod: 'API Key',
+    description: '读取检查预约系统、HIS 与 EMR 中的检查医嘱和可预约时段，协助患者完成超声检查预约并发送检查注意事项。',
+    lifecycleStatus: '已上线',
+    runtimeStatus: '在线',
+    accessTime: '2026-07-20',
+    onlineTime: '2026-07-21',
+    evaluationReportId: 'PJ-EVAL-2026-US-0001',
+    relatedFlows: [{ id: 'FLW-US-001', name: '超声检查预约流程' }],
+    attachments: [
+      { id: 'US-F001', name: '超声检查预约助手产品说明书.pdf', size: '1.2MB' },
+      { id: 'US-F002', name: '浦江实验室评测报告.pdf', size: '2.0MB' },
+    ],
+    lifecycleTimeline: [
+      { time: '2026-07-20 14:00', event: '开始试运行（进入台账）', source: '浦江实验室评测' },
+      { time: '2026-07-21 16:00', event: '正式上线', source: '浦江实验室评测' },
+    ],
+  },
 ];
 // ================== 7. 工具函数 ==================
 
