@@ -1105,7 +1105,7 @@ const projectAuditRows: ProjectAuditRow[] = initialProjects.slice(0, 6).map((pro
   const dailyPatients = [326, 218, 486, 172, 395, 143][index];
   const investment = [180, 320, 95, 150, 210, 265][index];
   const calls = [128420, 92610, 176400, 64380, 118900, 52700][index];
-  const tokenConsumption = [3284000, 8926000, 2145000, 4762000, 6380000, 3910000][index];
+  const tokenConsumption = [3284000000, 8926000000, 2145000000, 4762000000, 6380000000, 3910000000][index];
   const tokenCost = calculateTokenCost(tokenConsumption);
   const riskInterceptCount = [128, 91, 176, 64, 118, 52][index];
   return {
@@ -1202,7 +1202,7 @@ function NewProjectDetail({ project, onBack, onDeleteMaterial }: { project: Proj
       </div>
       <Button className="project-detail-back" icon={<ArrowLeftOutlined />} onClick={onBack}>返回项目列表</Button>
     </div>
-    <div className="project-detail-section-heading"><Text strong>运行成效</Text></div>
+    <div className="project-detail-section-heading"><Text strong>审计内容</Text></div>
     <div className="project-detail-metrics">
       {sections.map((section, index) => <Card key={section.key} className={`project-detail-metric-card metric-${section.key}`} bordered={false}>
         <div className="project-detail-metric-head"><div className="project-detail-metric-icon">{section.icon}</div><Text strong>{section.title}</Text><b>{String(index + 1).padStart(2, '0')}</b></div>
