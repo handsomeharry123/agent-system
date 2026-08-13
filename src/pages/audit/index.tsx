@@ -60,19 +60,21 @@ import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
 import { useSmartDraft } from '../agent-center/smart/store';
 import auditMaterialPdfUrl from '../../../output/pdf/项目审计填报材料-完成度100%-已使用金额136.8万元.pdf?url';
+import auditProjectHeroUrl from '../../assets/audit-project-hero-v10.png';
 import './audit.css';
 
 const { Title, Text, Paragraph } = Typography;
 const { RangePicker } = DatePicker;
 
-type AuditSection = 'economic' | 'project' | 'behavior' | 'logs';
+type AuditSection = 'project' | 'behavior' | 'logs';
 
 const departments = ['全部科室', '0301 心内科', '0302 影像科', '0303 药剂科', '0304 医务科'];
-// 当前市场价：1.8 元 / 百万 Token，金额统一按「消耗量 × Token 单价」计算。
-const TOKEN_UNIT_PRICE_YUAN = 1.8 / 1_000_000;
+// 按市场常规的综合估算价格折算：50 元 / 百万 Token。
+// 项目只提供 Token 总量，未区分输入/输出，因此采用统一综合单价。
+const TOKEN_PRICE_PER_MILLION_YUAN = 50;
 const TOTAL_INVESTMENT_BUDGET_IN_TEN_THOUSAND_YUAN = 2780;
 const CURRENT_MONTH_TOKEN_CONSUMPTION = 70_466_667;
-const calculateTokenCost = (tokens: number) => tokens * TOKEN_UNIT_PRICE_YUAN;
+const calculateTokenCost = (tokens: number) => tokens / 1_000_000 * TOKEN_PRICE_PER_MILLION_YUAN;
 const calculateInvestmentRatio = (tokenCost: number, budgetInTenThousandYuan: number) => (
   budgetInTenThousandYuan > 0 ? (tokenCost / (budgetInTenThousandYuan * 10_000)) * 100 : 0
 );
@@ -176,7 +178,7 @@ const sessions: AuditSession[] = [
 ];
 
 const logRows = [
-  { key: 'l1', user: '张明华', role: '信息科管理员', org: '信息中心', module: '审计中心', type: '导出', desc: '用户批量导出经济审计列表中选中的 4 条智能体记录', result: '成功', ip: '10.24.8.16', time: '2026-07-28 09:45:12' },
+  { key: 'l1', user: '张明华', role: '信息科管理员', org: '信息中心', module: '审计中心', type: '导出', desc: '用户批量导出项目审计列表中选中的 4 条项目记录', result: '成功', ip: '10.24.8.16', time: '2026-07-28 09:45:12' },
   { key: 'l2', user: '周明', role: '科室管理员', org: '心内科', module: '立项申报管理中心', type: '审计', desc: '用户提交“AI 辅助心衰患者全程管理平台”项目审计申请', result: '成功', ip: '10.24.31.88', time: '2026-07-28 09:31:26' },
   { key: 'l3', user: '王越', role: '科室管理员', org: '影像科', module: '智能体接入中心', type: '上传', desc: '用户上传胸部 CT 影像智能分析平台 V3.0 备案材料', result: '失败：仅支持 PDF 类型文件', ip: '10.24.42.19', time: '2026-07-28 09:18:43' },
   { key: 'l4', user: '李嘉', role: '医院领导', org: '医务科', module: '统一运行监控中心', type: '查看', desc: '用户查看 2026 年 7 月智能体运行成本监控报告', result: '成功', ip: '10.24.5.107', time: '2026-07-28 08:55:07' },
@@ -1091,9 +1093,11 @@ type ProjectAuditRow = typeof initialProjects[number] & {
   recoveryTime: number;
   availabilityRate: number;
   safetyRate: number;
+  riskInterceptCount: number;
   investment: number;
-  callCost: number;
-  serviceCost: number;
+  tokenConsumption: number;
+  tokenCost: number;
+  investmentRatio: number;
   materials: string[];
 };
 
@@ -1101,6 +1105,9 @@ const projectAuditRows: ProjectAuditRow[] = initialProjects.slice(0, 6).map((pro
   const dailyPatients = [326, 218, 486, 172, 395, 143][index];
   const investment = [180, 320, 95, 150, 210, 265][index];
   const calls = [128420, 92610, 176400, 64380, 118900, 52700][index];
+  const tokenConsumption = [3284000, 8926000, 2145000, 4762000, 6380000, 3910000][index];
+  const tokenCost = calculateTokenCost(tokenConsumption);
+  const riskInterceptCount = [128, 91, 176, 64, 118, 52][index];
   return {
     ...project,
     dailyPatients,
@@ -1111,10 +1118,12 @@ const projectAuditRows: ProjectAuditRow[] = initialProjects.slice(0, 6).map((pro
     faultCount: [3, 5, 1, 6, 2, 7][index],
     recoveryTime: [18, 26, 12, 31, 16, 38][index],
     availabilityRate: [99.82, 99.61, 99.94, 99.42, 99.88, 99.13][index],
-    safetyRate: [99.96, 99.91, 99.98, 99.86, 99.94, 99.72][index],
+    riskInterceptCount,
+    safetyRate: (1 - riskInterceptCount / calls) * 100,
     investment,
-    callCost: investment * 10000 / calls,
-    serviceCost: investment * 10000 / (dailyPatients * 365),
+    tokenConsumption,
+    tokenCost,
+    investmentRatio: calculateInvestmentRatio(tokenCost, investment),
     materials: index < 3 ? [`${project.name}审计材料.pdf`] : [],
   };
 });
@@ -1174,64 +1183,37 @@ function ProjectMaterialUpload({ project, onBack, onUploaded }: { project: Proje
   </div>;
 }
 
-const projectInfoItems = (project: ProjectAuditRow) => [
-  { key: 'name', label: '项目名称', children: project.name },
-  { key: 'dept', label: '申报科室', children: project.dept },
-  { key: 'track', label: '申报赛道', children: project.track },
-];
-
 function NewProjectDetail({ project, onBack, onDeleteMaterial }: { project: ProjectAuditRow; onBack: () => void; onDeleteMaterial: (fileName: string) => void }) {
   const { message } = App.useApp();
   const [previewMaterial, setPreviewMaterial] = useState<string>();
   const sections = [
-    { key: 'efficiency', title: '服务效率', subtitle: '患者覆盖与业务增长', icon: <RiseOutlined />, items: [['日均服务患者人数', `${project.dailyPatients} 人`], ['日均服务患者人数增长率', `${project.growthRate}%`]] },
-    { key: 'quality', title: '服务质量', subtitle: '任务效果与系统稳定性', icon: <CheckCircleOutlined />, items: [['任务执行成功率', `${project.taskSuccessRate}%`], ['响应时间 P99', `${project.responseP99} 秒`], ['医生采纳率', `${project.doctorAdoptionRate}%`], ['异常故障次数', `${project.faultCount} 次`], ['平均故障恢复时间', `${project.recoveryTime} 分钟`], ['服务可用率', `${project.availabilityRate}%`]] },
-    { key: 'safety', title: '服务安全', subtitle: '安全风险持续可控', icon: <SafetyCertificateOutlined />, items: [['安全可控率', `${project.safetyRate}%`]] },
-    { key: 'cost', title: '服务成本', subtitle: '项目投入与单位效能', icon: <WalletOutlined />, items: [['投资金额', `${project.investment.toFixed(2)} 万元`], ['单次调用成本', `${project.callCost.toFixed(2)} 元`], ['单位服务成本', `${project.serviceCost.toFixed(2)} 元/人`]] },
+    { key: 'quality', title: '服务质量', icon: <CheckCircleOutlined />, items: [['任务执行成功率', `${project.taskSuccessRate}%`], ['响应时间 P99', `${project.responseP99} 秒`], ['医生采纳率', `${project.doctorAdoptionRate}%`], ['异常故障次数', `${project.faultCount} 次`], ['平均故障恢复时间', `${project.recoveryTime} 分钟`], ['服务可用率', `${project.availabilityRate}%`]] },
+    { key: 'efficiency', title: '服务效率', icon: <RiseOutlined />, items: [['日均服务患者人数', `${project.dailyPatients} 人`], ['日均服务患者人数增长率', `${project.growthRate}%`]] },
+    { key: 'benefit', title: '服务效益', icon: <WalletOutlined />, items: [['投资金额', `${project.investment.toFixed(2)} 万元`], ['Token 消耗量', project.tokenConsumption.toLocaleString()], ['Token 使用金额', `¥ ${project.tokenCost.toFixed(2)}`], ['投入产出比', `${project.investmentRatio.toFixed(4)}%`]] },
+    { key: 'safety', title: '服务安全', icon: <SafetyCertificateOutlined />, items: [['风险行为拦截次数', `${project.riskInterceptCount.toLocaleString()} 次`], ['安全可控率', `${project.safetyRate.toFixed(4)}%`]] },
   ];
   return <div className="project-detail-page">
     <div className="project-detail-hero">
+      <img className="project-detail-hero-image" src={auditProjectHeroUrl} alt="" aria-hidden="true" />
+      <div className="project-detail-hero-motion" aria-hidden="true"><i /><i /><i /></div>
       <div className="project-detail-hero-main">
-        <div className="project-detail-kicker"><SafetyCertificateOutlined /> 项目审计档案</div>
         <Title level={2}>{project.name}</Title>
-        <Text>综合审视项目服务效率、质量、安全与成本表现</Text>
-        <div className="project-detail-tags"><Tag icon={<SafetyCertificateOutlined />}>{project.dept}</Tag><Tag icon={<CheckCircleOutlined />}>{project.track}</Tag><Tag icon={<ClockCircleOutlined />}>数据已更新</Tag><span>{project.time}</span></div>
-      </div>
-      <div className="project-detail-hero-visual" aria-hidden="true">
-        <div className="hero-medical-ring"><SafetyCertificateOutlined /><i>+</i></div>
-        <div className="hero-platform-ring" />
+        <div className="project-detail-tags"><Tag icon={<SafetyCertificateOutlined />}>{project.dept}</Tag><Tag icon={<CheckCircleOutlined />}>{project.track}</Tag></div>
       </div>
       <Button className="project-detail-back" icon={<ArrowLeftOutlined />} onClick={onBack}>返回项目列表</Button>
     </div>
-    <div className="project-detail-summary">
-      {projectInfoItems(project).map((item, index) => <div className="project-detail-summary-item" key={item.key}>
-        <span>{String(index + 1).padStart(2, '0')}</span><div><Text type="secondary">{item.label}</Text><strong>{item.children}</strong></div>
-      </div>)}
-    </div>
-    <div className="project-detail-section-heading"><div><Text strong>运行成效</Text><span>四维核心指标概览</span></div><Tag color="success" icon={<CheckCircleOutlined />}>运行正常</Tag></div>
+    <div className="project-detail-section-heading"><Text strong>运行成效</Text></div>
     <div className="project-detail-metrics">
       {sections.map((section, index) => <Card key={section.key} className={`project-detail-metric-card metric-${section.key}`} bordered={false}>
-        <div className="project-detail-metric-head"><div className="project-detail-metric-icon">{section.icon}</div><div><Text strong>{section.title}</Text><span>{section.subtitle}</span></div><b>{String(index + 1).padStart(2, '0')}</b></div>
+        <div className="project-detail-metric-head"><div className="project-detail-metric-icon">{section.icon}</div><Text strong>{section.title}</Text><b>{String(index + 1).padStart(2, '0')}</b></div>
         <div className="project-detail-metric-grid">{section.items.map(([label, value]) => <div className="project-detail-metric" key={label}><Text type="secondary">{label}</Text><strong>{value}</strong></div>)}</div>
-        {section.key === 'efficiency' && <div className="metric-trend-panel">
-          <div className="metric-visual-title"><span>近 7 日服务趋势</span><b><RiseOutlined /> 较上周 +{project.growthRate}%</b></div>
-          <svg viewBox="0 0 620 116" preserveAspectRatio="none" role="img" aria-label="近七日服务患者人数持续增长">
-            <defs><linearGradient id="efficiencyArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--metric-color)" stopOpacity=".28"/><stop offset="1" stopColor="var(--metric-color)" stopOpacity="0"/></linearGradient></defs>
-            <path className="trend-grid" d="M0 24H620M0 64H620M0 104H620" />
-            <path className="trend-area" d="M0 96 C55 92 65 74 118 78 S205 66 266 61 S355 69 410 46 S510 38 620 15 L620 116 L0 116Z" />
-            <path className="trend-line" d="M0 96 C55 92 65 74 118 78 S205 66 266 61 S355 69 410 46 S510 38 620 15" />
-          </svg>
-          <div className="trend-labels"><span>07/20</span><span>07/22</span><span>07/24</span><span>07/26</span></div>
-        </div>}
-        {section.key === 'safety' && <div className="metric-safety-panel">
-          <div className="safety-score-ring"><SafetyCertificateOutlined /><b>{project.safetyRate}%</b><span>综合防护</span></div>
-          <div className="safety-checks"><span><CheckCircleOutlined /> 数据访问合规</span><span><CheckCircleOutlined /> 敏感信息脱敏</span><span><CheckCircleOutlined /> 风险事件闭环</span></div>
-        </div>}
-        {section.key === 'quality' && <div className="metric-card-decoration quality-heart" aria-hidden="true"><span>⌁</span></div>}
-        {section.key === 'cost' && <div className="metric-card-decoration cost-coins" aria-hidden="true"><i /><i /><i /><RiseOutlined /></div>}
+        <div className="metric-card-decoration metric-orbit-mark" aria-hidden="true">
+          <i className="metric-orbit-ring" /><i className="metric-orbit-ring" /><i className="metric-orbit-dot" />
+          <span>{section.icon}</span>
+        </div>
       </Card>)}
     </div>
-    <Card className="project-detail-material-card" bordered={false} title={<div className="project-detail-card-title"><span><FilePdfOutlined /></span><div><Text strong>审计材料</Text><small>项目相关原始凭证与附件</small></div></div>} extra={<Tag>{project.materials.length} 份文件</Tag>}>
+    <Card className="project-detail-material-card" bordered={false} title={<div className="project-detail-card-title"><span className="project-detail-card-title-icon"><FilePdfOutlined /></span><Text strong>审计材料</Text></div>} extra={<Tag>{project.materials.length} 份文件</Tag>}>
       {project.materials.length ? <div className="audit-material-list">{project.materials.map((material) => <div className="audit-material-item" key={material}><div className="audit-material-file"><FilePdfOutlined /><div><Text>{material}</Text><span>PDF 文档 · 审计附件</span></div></div><Space wrap><Button icon={<EyeOutlined />} onClick={() => setPreviewMaterial(material)}>预览</Button><Button icon={<DownloadOutlined />} onClick={() => { downloadTextFile(material, '项目审计材料演示文件'); message.success('开始下载审计材料'); }}>下载</Button><Popconfirm title="确认删除该附件材料？" description="删除后不可恢复" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => onDeleteMaterial(material)}><Button danger type="text" icon={<DeleteOutlined />}>删除</Button></Popconfirm></Space></div>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂未上传审计材料" />}
     </Card>
     <Modal open={Boolean(previewMaterial)} title={previewMaterial ? `审计材料预览 · ${previewMaterial}` : '审计材料预览'} width={960} onCancel={() => setPreviewMaterial(undefined)} footer={<Button onClick={() => setPreviewMaterial(undefined)}>关闭</Button>} destroyOnClose>
@@ -1244,6 +1226,7 @@ function ProjectAudit() {
   const { message } = App.useApp();
   const [department, setDepartment] = useState<string>();
   const [track, setTrack] = useState<string>();
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [rows, setRows] = useState(projectAuditRows);
   const [screen, setScreen] = useState<'list' | 'upload' | 'detail'>('list');
   const [current, setCurrent] = useState(projectAuditRows[0]);
@@ -1256,6 +1239,7 @@ function ProjectAudit() {
   if (screen === 'detail') return <NewProjectDetail project={current} onBack={() => setScreen('list')} onDeleteMaterial={(fileName) => { updateMaterials(current.key, current.materials.filter((material) => material !== fileName)); message.success('附件材料已删除'); }} />;
   const open = (row: ProjectAuditRow, target: 'upload' | 'detail') => { setCurrent(row); setScreen(target); };
   const rate = (value: number) => `${value.toFixed(2).replace(/\.00$/, '')}%`;
+  const investmentRatioRate = (value: number) => `${value.toFixed(4)}%`;
   const sortable = (key: keyof ProjectAuditRow) => (a: ProjectAuditRow, b: ProjectAuditRow) => Number(a[key]) - Number(b[key]);
   const columns: ColumnsType<ProjectAuditRow> = [
     { title: '项目名称', dataIndex: 'name', fixed: 'left', width: 220, ellipsis: true },
@@ -1268,16 +1252,32 @@ function ProjectAudit() {
     { title: '异常故障次数', dataIndex: 'faultCount', width: 165, sorter: sortable('faultCount'), render: (v) => `${v} 次` },
     { title: '平均故障恢复时间', dataIndex: 'recoveryTime', width: 165, sorter: sortable('recoveryTime'), render: (v) => `${v} 分钟` },
     { title: '服务可用率', dataIndex: 'availabilityRate', width: 130, sorter: sortable('availabilityRate'), render: rate },
-    { title: '安全可控率', dataIndex: 'safetyRate', width: 130, sorter: sortable('safetyRate'), render: rate },
-    { title: '投资预算金额', dataIndex: 'investment', width: 145, render: (v) => `${v.toFixed(2)} 万元` },
-    { title: '单次调用成本', dataIndex: 'callCost', width: 145, render: (v) => `${v.toFixed(2)} 元` },
-    { title: '单位服务成本', dataIndex: 'serviceCost', width: 145, render: (v) => `${v.toFixed(2)} 元/人` },
+    { title: '投资金额', dataIndex: 'investment', width: 135, render: (v) => `${v.toFixed(2)} 万元` },
+    { title: 'Token 消耗量', dataIndex: 'tokenConsumption', width: 145, sorter: sortable('tokenConsumption'), render: (v) => v.toLocaleString() },
+    { title: 'Token 使用金额', dataIndex: 'tokenCost', width: 150, sorter: sortable('tokenCost'), render: (v) => `¥ ${v.toFixed(2)}` },
+    { title: '投入产出比', dataIndex: 'investmentRatio', width: 140, sorter: sortable('investmentRatio'), render: investmentRatioRate },
+    { title: '风险行为拦截次数', dataIndex: 'riskInterceptCount', width: 180, render: (v) => `${v} 次` },
+    { title: '安全可控率', dataIndex: 'safetyRate', width: 130, sorter: sortable('safetyRate'), render: (v) => `${v.toFixed(4)}%` },
     { title: '附件材料', dataIndex: 'materials', width: 110, align: 'center', render: (materials: string[]) => `${materials.length} 个` },
     { title: '操作', fixed: 'right', width: 190, render: (_, row) => <Space size={0}><Button type="link" onClick={() => open(row, 'upload')}>{row.materials.length ? '补充材料' : '上传材料'}</Button><Button type="link" onClick={() => open(row, 'detail')}>查看详情</Button></Space> },
   ];
-  const averageServiceCost = rows.length
-    ? rows.reduce((sum, row) => sum + row.serviceCost, 0) / rows.length
-    : 0;
+  const totalTokenCost = rows.reduce((sum, row) => sum + row.tokenCost, 0);
+  const totalInvestment = rows.reduce((sum, row) => sum + row.investment, 0);
+  const overallInvestmentRatio = calculateInvestmentRatio(totalTokenCost, totalInvestment);
+  const averageSafetyRate = rows.length ? rows.reduce((sum, row) => sum + row.safetyRate, 0) / rows.length : 0;
+  const exportSelected = (format: 'excel' | 'csv') => {
+    const exportRows = rows.filter((row) => selectedRowKeys.includes(row.key));
+    if (!exportRows.length) {
+      message.warning('请先选择需要导出的项目');
+      return;
+    }
+    const headers = ['项目名称', '申报科室', '申报赛道', '日均服务患者人数', '日均服务患者人数增长率', '医生采纳率', '投资金额(万元)', 'Token消耗量', 'Token使用金额(元)', '投入产出比', '风险行为拦截次数', '安全可控率', '附件材料数量'];
+    const values = exportRows.map((row) => [row.name, row.dept, row.track, row.dailyPatients, `${row.growthRate}%`, `${row.doctorAdoptionRate}%`, row.investment, row.tokenConsumption, row.tokenCost.toFixed(2), `${row.investmentRatio.toFixed(2)}%`, row.riskInterceptCount, `${row.safetyRate.toFixed(4)}%`, row.materials.length]);
+    const csv = [headers, ...values].map((line) => line.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const extension = format === 'excel' ? 'xls' : 'csv';
+    downloadTextFile(`项目审计数据.${extension}`, `\uFEFF${csv}`);
+    message.success(`已导出 ${exportRows.length} 条项目审计数据（${format === 'excel' ? 'Excel' : 'CSV'}）`);
+  };
   const metrics = [
     {
       key: 'efficiency', dimension: '服务效率', title: '日均服务患者人数增长率', value: 25.38, suffix: '%',
@@ -1288,16 +1288,16 @@ function ProjectAudit() {
       icon: <LikeOutlined />, bars: [56, 62, 58, 70, 76, 73, 84, 91],
     },
     {
-      key: 'cost', dimension: '服务成本', title: '单位平均服务成本', value: averageServiceCost, suffix: '元/人',
+      key: 'benefit', dimension: '服务效益', title: '投入产出比', value: overallInvestmentRatio, suffix: '%', precision: 4,
       icon: <WalletOutlined />, bars: [82, 86, 84, 90, 88, 94, 92, 97],
     },
     {
-      key: 'safety', dimension: '服务安全', title: '安全可控率', value: 99.9, suffix: '%',
+      key: 'safety', dimension: '服务安全', title: '安全可控率', value: averageSafetyRate, suffix: '%',
       icon: <SafetyCertificateOutlined />, bars: [76, 82, 87, 85, 91, 94, 96, 100],
     },
   ];
   return <div>
-    <Header title="项目审计" description="从服务效率、服务质量、服务安全和服务成本维度审计项目运行成效。" extra={<Button icon={<ReloadOutlined />} onClick={() => message.success('数据已刷新至最新时间')}>刷新</Button>} />
+    <Header title="项目审计" description="从服务效率、服务质量、服务效益和服务安全维度审计项目运行成效。" extra={<Button icon={<ReloadOutlined />} onClick={() => message.success('各维度数据已更新到最新')}>刷新</Button>} />
     <div className="audit-stat-grid economic-stat-grid project-stat-grid">
       {metrics.map((metric, index) => (
         <Card
@@ -1311,7 +1311,7 @@ function ProjectAudit() {
             <span className="economic-stat-icon">{metric.icon}</span>
             <span className="project-stat-dimension">{metric.dimension}</span>
           </div>
-          <Statistic title={metric.title} value={metric.value} precision={2} suffix={metric.suffix} />
+          <Statistic title={metric.title} value={metric.value} precision={metric.precision ?? 2} suffix={metric.suffix} />
           <div className="economic-stat-foot">
             <span className="economic-mini-chart" aria-hidden="true">
               {metric.bars.map((height, barIndex) => <i key={barIndex} style={{ height: `${height}%` }} />)}
@@ -1323,10 +1323,15 @@ function ProjectAudit() {
     <Toolbar>
       <div className="project-audit-toolbar">
         <Space wrap><Text strong>筛选项</Text><Select allowClear placeholder="申报科室" value={department} onChange={setDepartment} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.dept))].map((value) => ({ label: value, value }))} /><Select allowClear placeholder="申报赛道" value={track} onChange={setTrack} style={{ width: 180 }} options={[...new Set(projectAuditRows.map((x) => x.track))].map((value) => ({ label: value, value }))} /><Button onClick={() => { setDepartment(undefined); setTrack(undefined); }}>重置</Button><Text type="secondary">点击指标表头可切换升序或降序</Text></Space>
-        <Button icon={<DownloadOutlined />} href="/项目审计报告模板(1).docx" download="项目审计报告模板(1).docx" onClick={() => message.success('模板已下载')}>模板下载</Button>
+        <Space>
+          <Dropdown menu={{ items: [{ key: 'excel', label: '导出 Excel' }, { key: 'csv', label: '导出 CSV' }], onClick: ({ key }) => exportSelected(key as 'excel' | 'csv') }}>
+            <Button icon={<DownloadOutlined />}>批量导出 <DownOutlined /></Button>
+          </Dropdown>
+          <Button icon={<DownloadOutlined />} href="/项目审计报告模板(1).docx" download="项目审计报告模板.docx" onClick={() => message.success('项目审计报告模板已下载')}>模板下载</Button>
+        </Space>
       </div>
     </Toolbar>
-    <Card bordered={false} className="audit-table-card project-audit-table-card"><Table columns={columns} dataSource={filtered} scroll={{ x: 2570 }} pagination={{ pageSize: 8, showTotal: (n) => `共 ${n} 条` }} /></Card>
+    <Card bordered={false} className="audit-table-card project-audit-table-card"><Table rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }} columns={columns} dataSource={filtered} scroll={{ x: 2900 }} pagination={{ pageSize: 8, showTotal: (n) => `共 ${n} 条` }} /></Card>
   </div>;
 }
 
@@ -1464,8 +1469,8 @@ function OperationLogs() {
 
 export default function AuditCenter() {
   const location = useLocation();
-  const section = (location.pathname.split('/')[3] || 'economic') as AuditSection;
-  const current = ['economic', 'project', 'behavior', 'logs'].includes(section) ? section : 'economic';
-  const content = current === 'economic' ? <EconomicAudit /> : current === 'project' ? <ProjectAudit /> : current === 'behavior' ? <BehaviorAudit /> : <OperationLogs />;
+  const section = (location.pathname.split('/')[3] || 'project') as AuditSection;
+  const current = ['project', 'behavior', 'logs'].includes(section) ? section : 'project';
+  const content = current === 'project' ? <ProjectAudit /> : current === 'behavior' ? <BehaviorAudit /> : <OperationLogs />;
   return <App><div className="audit-page">{content}</div></App>;
 }

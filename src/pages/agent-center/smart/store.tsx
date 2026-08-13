@@ -87,10 +87,16 @@ export type WelcomePageKey =
   | 'evaluation-tasks'         // 准入评测「评测任务管理」页
   | 'evaluation-create'        // 准入评测「新建评测」页
   | 'pujiang-evaluation-tasks' // 浦江实验室评测「评测任务管理」页
+  | 'cp-env-evaluation-tasks' // CP-Env 评测「评测任务管理」页
+  | 'medagentbench-evaluation-tasks' // MedAgentBench 评测「评测任务管理」页
+  | 'cp-env-evaluation-create'
+  | 'medagentbench-evaluation-create'
   | 'pujiang-evaluation-create' // 浦江实验室评测「新建评测」页
   | 'pujiang-evaluation-created' // 浦江实验室评测任务创建成功
   | 'evaluation-report'        // 准入评测「评测结果详情」页
   | 'pujiang-evaluation-report' // 浦江实验室「评测结果详情」页
+  | 'cp-env-evaluation-report'
+  | 'medagentbench-evaluation-report'
   | 'monitoring-overview'      // 统一运行监控中心「监控总览」页
   | 'monitoring-business'      // 统一运行监控中心「业务监控」页
   | 'monitoring-status'        // 统一运行监控中心「状态监控」页
@@ -517,14 +523,30 @@ const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>
     admin: { bubble: '您好，我是医小管。全院已接入X个智能体，安全性评测中X个、评测完成X个、审核中X个、审核通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。全院已接入X个智能体，安全性评测中X个、评测完成X个、审核中X个、审核通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
   },
   'pujiang-evaluation-tasks': {
-    dept: { bubble: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
-    provider: { bubble: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
-    admin: { bubble: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+    dept: { bubble: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+    provider: { bubble: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+    admin: { bubble: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+  },
+  'cp-env-evaluation-tasks': {
+    dept: { bubble: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+    provider: { bubble: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+    admin: { bubble: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+  },
+  'medagentbench-evaluation-tasks': {
+    dept: { bubble: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+    provider: { bubble: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+    admin: { bubble: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
   },
   'pujiang-evaluation-create': {
-    dept: { bubble: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
-    provider: { bubble: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
-    admin: { bubble: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。浦江实验室评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+    dept: { bubble: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+    provider: { bubble: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+    admin: { bubble: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。medbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+  },
+  'cp-env-evaluation-create': {
+    dept: { bubble: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' }, provider: { bubble: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' }, admin: { bubble: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。CP-Env评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
+  },
+  'medagentbench-evaluation-create': {
+    dept: { bubble: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' }, provider: { bubble: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' }, admin: { bubble: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情', window: '您好，我是医小管。MedAgentbench评测中X个、评测通过X个、退回修改X个，在气泡里点对应状态即可直接分类查看详情' },
   },
   'evaluation-report': {
     dept: { bubble: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么安全性评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么安全性评测结果相关问题可以直接问我~' },
@@ -532,10 +554,10 @@ const WELCOME_GREETINGS: Record<WelcomePageKey, Record<WelcomeRole, WelcomeCopy>
     admin: { bubble: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么安全性评测结果相关问题可以直接问我~该智能体已通过安全性评测，是否需要立即开展浦江实验室评测？', window: '您好，我是医小管。当前为您展示【X】的安全性评测结果详情，有什么安全性评测结果相关问题可以直接问我~该智能体已通过安全性评测，是否需要立即开展浦江实验室评测？' },
   },
   'pujiang-evaluation-report': {
-    dept: { bubble: '您好，我是医小管。当前为您展示【X】的浦江实验室评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的浦江实验室评测结果详情，有什么评测结果相关问题可以直接问我~' },
-    provider: { bubble: '您好，我是医小管。当前为您展示【X】的浦江实验室评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的浦江实验室评测结果详情，有什么评测结果相关问题可以直接问我~' },
-    admin: { bubble: '您好，我是医小管。当前为您展示【X】的浦江实验室评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的浦江实验室评测结果详情，有什么评测结果相关问题可以直接问我~' },
+    dept: { bubble: '您好，我是医小管。当前为您展示【X】的medbench评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的medbench评测结果详情，有什么评测结果相关问题可以直接问我~' }, provider: { bubble: '您好，我是医小管。当前为您展示【X】的medbench评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的medbench评测结果详情，有什么评测结果相关问题可以直接问我~' }, admin: { bubble: '您好，我是医小管。当前为您展示【X】的medbench评测结果详情，有什么评测结果相关问题可以直接问我~', window: '您好，我是医小管。当前为您展示【X】的medbench评测结果详情，有什么评测结果相关问题可以直接问我~' },
   },
+  'cp-env-evaluation-report': { dept:{bubble:'您好，我是医小管。当前为您展示【X】的CP-Env评测结果详情，有什么评测结果相关问题可以直接问我~',window:'您好，我是医小管。当前为您展示【X】的CP-Env评测结果详情，有什么评测结果相关问题可以直接问我~'},provider:{bubble:'您好，我是医小管。当前为您展示【X】的CP-Env评测结果详情，有什么评测结果相关问题可以直接问我~',window:'您好，我是医小管。当前为您展示【X】的CP-Env评测结果详情，有什么评测结果相关问题可以直接问我~'},admin:{bubble:'您好，我是医小管。当前为您展示【X】的CP-Env评测结果详情，有什么评测结果相关问题可以直接问我~',window:'您好，我是医小管。当前为您展示【X】的CP-Env评测结果详情，有什么评测结果相关问题可以直接问我~'} },
+  'medagentbench-evaluation-report': { dept:{bubble:'您好，我是医小管。当前为您展示【X】的MedAgentbench评测结果详情，有什么评测结果相关问题可以直接问我~',window:'您好，我是医小管。当前为您展示【X】的MedAgentbench评测结果详情，有什么评测结果相关问题可以直接问我~'},provider:{bubble:'您好，我是医小管。当前为您展示【X】的MedAgentbench评测结果详情，有什么评测结果相关问题可以直接问我~',window:'您好，我是医小管。当前为您展示【X】的MedAgentbench评测结果详情，有什么评测结果相关问题可以直接问我~'},admin:{bubble:'您好，我是医小管。当前为您展示【X】的MedAgentbench评测结果详情，有什么评测结果相关问题可以直接问我~',window:'您好，我是医小管。当前为您展示【X】的MedAgentbench评测结果详情，有什么评测结果相关问题可以直接问我~'} },
   'resource-approval': {
     dept: { bubble: '您好，我是医小管。我已完成预审：标注了X个疑似问题并跑了访问测试，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。', window: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~' },
     provider: { bubble: '您好，我是医小管。我已完成预审：标注了X个疑似问题并跑了访问测试，预审结论为「XX」，供你二次审核参考，最终以你的决策为准。', window: '您好，我是医小管。当前为您展示【X】的信息详情，有什么资源相关问题可以直接问我~' },
@@ -1303,14 +1325,19 @@ export const SmartDraftProvider = ({
           pageKey === 'evaluation-tasks' ||
           pageKey === 'evaluation-create' ||
           pageKey === 'pujiang-evaluation-tasks' ||
+          pageKey === 'cp-env-evaluation-tasks' ||
+          pageKey === 'medagentbench-evaluation-tasks' ||
           pageKey === 'pujiang-evaluation-create' ||
+          pageKey === 'cp-env-evaluation-create' ||
+          pageKey === 'medagentbench-evaluation-create' ||
           pageKey === 'pujiang-evaluation-created' ||
           pageKey === 'monitoring-overview' ||
           pageKey === 'monitoring-business' ||
           pageKey === 'monitoring-status' ||
           pageKey === 'monitoring-alert-rules' ||
           pageKey === 'monitoring-alert-events' || pageKey === 'monitoring-alert-pending-assign' || pageKey === 'monitoring-alert-detail' || pageKey === 'monitoring-alert-review' || pageKey === 'monitoring-alert-pending' || pageKey === 'monitoring-alert-handling' || pageKey === 'monitoring-alert-pending-review' || pageKey === 'monitoring-alert-reviewing' || pageKey === 'monitoring-alert-closed' || pageKey === 'monitoring-alert-ignored' ||
-          pageKey === 'evaluation-report' || pageKey === 'pujiang-evaluation-report';
+          pageKey === 'evaluation-report' || pageKey === 'pujiang-evaluation-report' ||
+          pageKey === 'cp-env-evaluation-report' || pageKey === 'medagentbench-evaluation-report';
         const base = replaceCurrentPageWelcome
           ? prev.filter((m) => !m.id.startsWith(`__welcome__:${pageKey}:`))
           : prev;

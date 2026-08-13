@@ -111,7 +111,6 @@ const permissionTree: DataNode[] = [
   },
   {
     key: 'audit', title: '审计中心', children: [
-      page('audit:economic', '经济审计'),
       { key: 'audit:project', title: '项目审计（仅立项申报项目的科室具备权限）', children: [
         page('audit:project:all', '全部项目审计列表页', ['批量导出', '项目审计信息填报', '查看详情', '审计', '撤销', '编辑', '删除']),
         page('audit:project:pending', '待申请列表页', ['批量导出', '项目审计信息填报']),
@@ -131,6 +130,7 @@ const permissionTree: DataNode[] = [
     key: 'system', title: '系统配置', children: [
       page('system:dict', '数据字典', ['查看字典项', '编辑', '导出字典']),
       page('system:model', '模型配置', ['模型配置', '测试联通', '编辑', '删除']),
+      page('system:evaluation-platform', '第三方评测平台接入', ['查看详情', '新增', '暂存', '联通测试', '编辑', '删除']),
     ],
   },
 ];
@@ -218,7 +218,6 @@ const deptKeys = combineKeys(
   keysFor('monitor:event:ignored'),
   keysFor('monitor:event:process'),
   keysFor('monitor:event:detail'),
-  keysFor('audit:economic'),
   ['audit:project'],
   keysFor('audit:project:all', ['撤销']),
   keysFor('audit:project:pending'),

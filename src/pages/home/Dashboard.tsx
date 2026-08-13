@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Line, Pie } from "@ant-design/charts";
 import {
   Button,
@@ -369,11 +369,12 @@ function KpiCard({
         },
       }}
     >
-      <div style={{ position: "relative", zIndex: 2, maxWidth: "68%" }}>
+      <div style={{ position: "relative", zIndex: 2, maxWidth: "76%" }}>
         <Text
           type="secondary"
           ellipsis
-          style={{ display: "block", fontSize: 13, whiteSpace: "nowrap" }}
+          className="dashboard-kpi-title"
+          style={{ display: "block", whiteSpace: "nowrap" }}
         >
           {title}
         </Text>
@@ -420,17 +421,41 @@ function CyberPie({
   tone,
   onReady,
   className = "",
+  labelFontSize = 13,
+  radius = 0.76,
+  innerRadius = 0.5,
 }: {
   data: PieDatum[];
   color: string[];
   tone: string;
   onReady?: (plot: any) => void;
   className?: string;
+  labelFontSize?: number;
+  radius?: number;
+  innerRadius?: number;
 }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [chartHeight, setChartHeight] = useState(130);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const syncHeight = () => {
+      const nextHeight = Math.max(130, Math.floor(container.clientHeight));
+      setChartHeight((current) => current === nextHeight ? current : nextHeight);
+    };
+    syncHeight();
+
+    const observer = new ResizeObserver(syncHeight);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div
+      ref={containerRef}
       className={`dashboard-cyber-pie ${className}`}
       style={{ "--pie-tone": tone } as React.CSSProperties}
     >
@@ -439,22 +464,13 @@ function CyberPie({
         colorField="name"
         data={data}
         color={color}
-        innerRadius={0.6}
-        radius={0.9}
-        height={130}
+        innerRadius={innerRadius}
+        radius={radius}
+        padding={[18, 54, 18, 54]}
+        height={chartHeight}
         theme="classicDark"
         legend={false}
-        label={{
-          text: (datum: PieDatum) => `${datum.name} ${datum.value}`,
-          position: "outside",
-          style: {
-            fill: "#b8d8ff",
-            fontSize: 11,
-            fontWeight: 600,
-            textShadowBlur: 5,
-            textShadowColor: "#06152f",
-          },
-        }}
+        label={false}
         tooltip={{ title: "name" }}
         style={{
           stroke: "#071b3b",
@@ -476,6 +492,18 @@ function CyberPie({
         animate={{ enter: { type: "waveIn", duration: 900 } }}
         onReady={onReady}
       />
+      <svg className="dashboard-pie-leaders" viewBox="0 0 330 190" preserveAspectRatio="none" aria-hidden="true">
+        <polyline points="139,37 116,21 42,21" />
+        <polyline points="99,97 62,97 10,97" />
+        <polyline points="224,126 246,141 320,141" />
+      </svg>
+      <div className="dashboard-pie-labels" style={{ fontSize: labelFontSize }} aria-hidden="true">
+        {data.map((item, index) => (
+          <span key={item.name} className={`dashboard-pie-label dashboard-pie-label--${index + 1}`}>
+            {item.name} {item.value}
+          </span>
+        ))}
+      </div>
       <div className="dashboard-pie-core" aria-hidden="true">
         <strong>{total}</strong>
         <span>总计</span>
@@ -711,11 +739,49 @@ export default function Dashboard() {
   const metrics = isAdmin ? adminMetrics : deptMetrics;
   const [range, setRange] = useState("30d");
   const [fullscreen, setFullscreen] = useState(false);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [screenFit, setScreenFit] = useState({ scale: 1, height: 968 });
   const navigate = useNavigate();
+
+  useLayoutEffect(() => {
+    const fitDashboard = () => {
+      const viewport = viewportRef.current;
+      if (!viewport) return;
+      const rect = viewport.getBoundingClientRect();
+      const availableWidth = viewport.clientWidth || window.innerWidth;
+      const availableHeight = fullscreen
+        ? window.innerHeight
+        : Math.max(360, window.innerHeight - rect.top);
+      setScreenFit({
+        scale: Math.min(availableWidth / 1720, availableHeight / 968),
+        height: availableHeight,
+      });
+    };
+
+    fitDashboard();
+    const observer = new ResizeObserver(fitDashboard);
+    if (viewportRef.current) observer.observe(viewportRef.current);
+    window.addEventListener("resize", fitDashboard);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fitDashboard);
+    };
+  }, [fullscreen]);
+
   return (
     <div
-      className={`dashboard-screen${fullscreen ? " dashboard-screen--fullscreen" : ""}`}
+      ref={viewportRef}
+      className={`dashboard-viewport${fullscreen ? " dashboard-viewport--fullscreen" : ""}`}
+      style={{ height: screenFit.height }}
     >
+      <div
+        className="dashboard-stage"
+        style={{ width: 1720 * screenFit.scale, height: 968 * screenFit.scale }}
+      >
+        <div
+          className={`dashboard-screen${isAdmin ? " dashboard-screen--admin" : ""}`}
+          style={{ transform: `scale(${screenFit.scale})` }}
+        >
       <Card
         className="dashboard-header"
         style={{
@@ -788,20 +854,23 @@ export default function Dashboard() {
             <>
               <ChartCard className="dashboard-bar-card" title="智能体科室分布">
                 <SimpleBars
-                  data={departments}
+                  data={departments.slice(0, 4)}
                   onClick={(name) =>
                     navigate(`/app/ledger/list?department=${name}`)
                   }
                 />
               </ChartCard>
               <ChartCard className="dashboard-bar-card" title="高频调用智能体 TOP5">
-                <SimpleBars data={topAgents} color="#13c2c2" />
+                <SimpleBars data={topAgents.slice(0, 4)} color="#13c2c2" />
               </ChartCard>
               <ChartCard className="dashboard-pie-card" title="智能体风险分级">
                 <CyberPie
                   data={risks}
                   color={["#ff416c", "#ffb21c", "#32e59b"]}
                   tone="#32e59b"
+                  labelFontSize={15}
+                  radius={0.78}
+                  innerRadius={0.48}
                   onReady={(p: any) =>
                     p.on("element:click", (e: any) =>
                       navigate(`/app/ledger/list?risk=${e.data.data.name}`),
@@ -934,6 +1003,9 @@ export default function Dashboard() {
               data={alertLevels}
               color={["#ff416c", "#ffb21c", "#36b9ff"]}
               tone="#36b9ff"
+              labelFontSize={15}
+              radius={0.78}
+              innerRadius={0.48}
             />
           </ChartCard>
           <ChartCard className="dashboard-bar-card" title="智能体告警次数排行">
@@ -941,6 +1013,8 @@ export default function Dashboard() {
           </ChartCard>
         </Col>
       </Row>
+        </div>
+      </div>
     </div>
   );
 }

@@ -96,13 +96,15 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { useSmartDraft } from '../agent-center/smart/store';
 import PujiangTaskList from './pujiang/PujiangTaskList';
+import ThirdPartyTaskList from './third-party/ThirdPartyTaskList';
+import { enabledEvaluationPlatforms, evaluationName, specFor, type ThirdPartyPlatformKey } from './third-party/platforms';
 
 const { Text } = Typography;
 
 // 评测标准固定值（V1.7 §一）
 const EVAL_STANDARD = '团体标准《智能体安全评测规范》';
 
-type EvaluationModule = 'safety' | 'pujiang';
+type EvaluationModule = 'safety' | 'pujiang' | ThirdPartyPlatformKey;
 
 // Tab 列表（V1.7：全部 + 7 状态 = 8 个 Tab；「待评测」为排队中间态，统一在全部任务中展示；「待审核」已下线）
 //   · Tab key 与 EvaluationStatus 一一对应（除 'all'），便于 t.status === activeTab 直筛
@@ -166,7 +168,17 @@ const Tasks = () => {
 
   // 本地任务（支持操作后修改）
   const [tasks, setTasks] = useState<EvaluationTask[]>(mockEvaluationTasks);
-  const [evaluationModule, setEvaluationModule] = useState<EvaluationModule>(searchParams.get('module') === 'pujiang' ? 'pujiang' : 'safety');
+  const enabledPlatforms = enabledEvaluationPlatforms();
+  const requestedModule = searchParams.get('module');
+  const availableModuleKeys = new Set(enabledPlatforms.map((platform) => platform.id));
+  const initialModule: EvaluationModule = requestedModule === 'medbench' && availableModuleKeys.has('medbench')
+    ? 'pujiang'
+    : (requestedModule === 'pujiang' && availableModuleKeys.has('medbench'))
+      ? 'pujiang'
+      : (requestedModule === 'cp-env' || requestedModule === 'medagentbench') && availableModuleKeys.has(requestedModule)
+        ? requestedModule
+        : 'safety';
+  const [evaluationModule, setEvaluationModule] = useState<EvaluationModule>(initialModule);
   const updateCurrentTasks = (updater: (previous: EvaluationTask[]) => EvaluationTask[]) => {
     setTasks(updater);
   };
@@ -232,6 +244,25 @@ const Tasks = () => {
     });
     return () => consumeWelcome();
   }, [consumeWelcome, evaluationModule, isAdmin, pushWelcomeGreeting, scopedTasks, tabCount]);
+
+  // 第三方平台沿用浦江实验室的医小管交互：进入平台列表即展示统计欢迎语，
+  // 并通过状态气泡派发 agent-jump-tab 事件切换列表 Tab。
+  useEffect(() => {
+    if (evaluationModule !== 'cp-env' && evaluationModule !== 'medagentbench') return;
+    const pageKey = evaluationModule === 'cp-env'
+      ? 'cp-env-evaluation-tasks'
+      : 'medagentbench-evaluation-tasks';
+    const values = [1, 2, 1];
+    pushWelcomeGreeting(pageKey, isAdmin ? 'admin' : 'dept', () => values, {
+      windowReplacements: values,
+      chips: [
+        { key: `${evaluationModule}-evaluating`, label: '评测中 1', targetTab: '评测中', tone: 'warning' },
+        { key: `${evaluationModule}-passed`, label: '评测通过 2', targetTab: '评测通过', tone: 'success' },
+        { key: `${evaluationModule}-returned`, label: '退回修改 1', targetTab: '退回修改', tone: 'error' },
+      ],
+    });
+    return () => consumeWelcome();
+  }, [consumeWelcome, evaluationModule, isAdmin, pushWelcomeGreeting]);
 
   useEffect(() => {
     const onJump = (event: Event) => {
@@ -856,11 +887,14 @@ const Tasks = () => {
         size="large"
         options={[
           { value: 'safety', label: <Space size={6}><SafetyCertificateOutlined /><span>安全性评测</span></Space> },
-          { value: 'pujiang', label: <Space size={6}><ExperimentOutlined /><span>浦江实验室评测</span></Space> },
+          ...enabledPlatforms.map((platform) => ({
+            value: (platform.id === 'medbench' ? 'pujiang' : platform.id) as EvaluationModule,
+            label: <Space size={6}><ExperimentOutlined /><span>{evaluationName(platform.name)}</span></Space>,
+          })),
         ]}
         onChange={(value) => {
           setEvaluationModule(value);
-          setSearchParams(value === 'pujiang' ? { module: 'pujiang' } : {}, { replace: true });
+          setSearchParams(value === 'safety' ? {} : { module: value }, { replace: true });
           setActiveTab('all');
           setKeyword('');
           setStatusFilter(undefined);
@@ -882,7 +916,7 @@ const Tasks = () => {
               key="create"
               type="primary"
               icon={<PlusOutlined />}
-              onClick={() => navigate(evaluationModule === 'pujiang' ? '/app/evaluation/tasks/pujiang/create' : '/app/evaluation/tasks/create')}
+              onClick={() => navigate(evaluationModule === 'pujiang' ? '/app/evaluation/tasks/pujiang/create' : evaluationModule === 'safety' ? '/app/evaluation/tasks/create' : `/app/evaluation/tasks/platform/${evaluationModule}/create`)}
             >
               新建评测任务
             </Button>
@@ -892,6 +926,8 @@ const Tasks = () => {
 
       {evaluationModule === 'pujiang' ? (
         <PujiangTaskList moduleSwitcher={moduleSwitcher} />
+      ) : evaluationModule === 'cp-env' || evaluationModule === 'medagentbench' ? (
+        <ThirdPartyTaskList platform={specFor(evaluationModule)} moduleSwitcher={moduleSwitcher} />
       ) : (
       <>
       <Card style={{ marginTop: 16 }}>

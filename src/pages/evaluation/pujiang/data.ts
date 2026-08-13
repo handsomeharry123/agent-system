@@ -1,4 +1,4 @@
-export const PUJIANG_PLATFORM = '浦江实验室智能体评测';
+export const PUJIANG_PLATFORM = 'medbench评测';
 export const PUJIANG_PLATFORM_URL = 'https://medbench.opencompass.org.cn/medbench-submission';
 
 export const PUJIANG_DIMENSIONS = [

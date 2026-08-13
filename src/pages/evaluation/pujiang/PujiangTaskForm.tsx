@@ -249,7 +249,7 @@ const PujiangTaskForm = () => {
   };
 
   return <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100%' }}>
-    <PageHeader title={editingTask ? '编辑浦江评测任务' : '新建浦江评测任务'} subTitle="填写参评智能体与 API 提交信息，发起浦江实验室评测" showBack onBack={() => back('已自动保存为草稿')} />
+    <PageHeader title={editingTask ? '编辑 medbench评测任务' : '新建 medbench评测任务'} subTitle="填写参评智能体与 API 提交信息，发起 medbench评测" showBack onBack={() => back('已自动保存为草稿')} />
     <Form
       form={form}
       layout="vertical"

@@ -243,12 +243,11 @@ export const masterMenu: MasterModule[] = [
   {
     key: 'audit',
     name: '审计中心',
-    path: '/app/audit/economic',
+    path: '/app/audit/project',
     icon: <AuditOutlined />,
     defaultVisible: true,
     defaultRoleVisible: 'both',
     children: [
-      { key: 'audit:economic', name: '经济审计', path: '/app/audit/economic', defaultVisible: true },
       { key: 'audit:project', name: '项目审计', path: '/app/audit/project', defaultVisible: true },
       { key: 'audit:behavior', name: '智能体行为审计', path: '/app/audit/behavior', defaultVisible: true },
       { key: 'audit:logs', name: '操作日志', path: '/app/audit/logs', defaultVisible: true },
@@ -278,6 +277,7 @@ export const masterMenu: MasterModule[] = [
     children: [
       { key: 'system-config:dictionaries', name: '数据字典', path: '/app/system-config/dictionaries', defaultVisible: true },
       { key: 'system-config:models', name: '模型配置', path: '/app/system-config/models', defaultVisible: true },
+      { key: 'system-config:evaluation-platforms', name: '第三方评测平台接入', path: '/app/system-config/evaluation-platforms', defaultVisible: true, defaultRoleVisible: 'itAdmin' },
     ],
   },
 ];

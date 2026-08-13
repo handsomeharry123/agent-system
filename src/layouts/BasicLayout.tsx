@@ -162,6 +162,13 @@ const BasicLayout = () => {
       warnedForRef.current = '';
       return;
     }
+    // 第三方评测平台接入由页面自身承载配置与状态控制。其列表、详情、创建和编辑
+    // 共用同一路径前缀，统一在这里放行，避免演示角色或旧版菜单显隐缓存把新增路由
+    // 误判为“系统配置暂不可访问”并重定向回首页。
+    if (path.startsWith('/app/system-config/evaluation-platforms')) {
+      warnedForRef.current = '';
+      return;
+    }
     // 找出当前路径所属的模块（精确路径匹配或前缀匹配）
     const ownerModule = masterMenu.find((m) => {
       if (path === m.path) return true;

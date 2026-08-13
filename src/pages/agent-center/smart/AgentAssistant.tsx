@@ -605,9 +605,12 @@ const AgentAssistant = () => {
     const isEvaluationReportPage = /^\/app\/evaluation\/tasks\/[^/]+\/report$/.test(location.pathname);
     const isPujiangEvaluationReportPage = /^\/app\/evaluation\/tasks\/pujiang\/(?!create$)[^/]+$/.test(location.pathname);
     const isPujiangEvaluationCreatePage = location.pathname === '/app/evaluation/tasks/pujiang/create';
+    const thirdPartyCreateMatch = location.pathname.match(/^\/app\/evaluation\/tasks\/platform\/(cp-env|medagentbench)\/create$/);
+    const thirdPartyReportMatch = location.pathname.match(/^\/app\/evaluation\/tasks\/platform\/(cp-env|medagentbench)\/(?!create$)[^/]+$/);
     const isEvaluationTasksPage = location.pathname === '/app/evaluation/tasks';
     const isPujiangEvaluationTasksPage = isEvaluationTasksPage &&
       new URLSearchParams(location.search).get('module') === 'pujiang';
+    const evaluationTaskModule = isEvaluationTasksPage ? new URLSearchParams(location.search).get('module') : null;
     const isMonitoringOverviewPage = location.pathname === '/app/monitoring';
     const isMonitoringBusinessPage = location.pathname === '/app/monitoring/business';
     const isMonitoringStatusPage = location.pathname === '/app/monitoring/status';
@@ -741,7 +744,15 @@ const AgentAssistant = () => {
       if (isPujiangEvaluationCreatePage && m.id.startsWith('__welcome__:')) {
         return m.id.startsWith('__welcome__:pujiang-evaluation-create:');
       }
+      if (thirdPartyCreateMatch && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith(`__welcome__:${thirdPartyCreateMatch[1]}-evaluation-create:`);
+      }
+      if (thirdPartyReportMatch && m.id.startsWith('__welcome__:')) {
+        return m.id.startsWith(`__welcome__:${thirdPartyReportMatch[1]}-evaluation-report:`);
+      }
       if (isEvaluationTasksPage && m.id.startsWith('__welcome__:')) {
+        if (evaluationTaskModule === 'cp-env') return m.id.startsWith('__welcome__:cp-env-evaluation-tasks:');
+        if (evaluationTaskModule === 'medagentbench') return m.id.startsWith('__welcome__:medagentbench-evaluation-tasks:');
         return m.id.startsWith(
           isPujiangEvaluationTasksPage
             ? (m.id.startsWith('__welcome__:pujiang-evaluation-created:')

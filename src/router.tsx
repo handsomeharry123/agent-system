@@ -77,6 +77,8 @@ import EvaluationDatasetDetail from './pages/evaluation/EvaluationDatasetDetail'
 import TaskReview from './pages/evaluation/TaskReview';
 import PujiangTaskForm from './pages/evaluation/pujiang/PujiangTaskForm';
 import PujiangTaskDetail from './pages/evaluation/pujiang/PujiangTaskDetail';
+import ThirdPartyTaskForm from './pages/evaluation/third-party/ThirdPartyTaskForm';
+import ThirdPartyTaskDetail from './pages/evaluation/third-party/ThirdPartyTaskDetail';
 
 // Pages - Orchestration
 import Orchestration from './pages/orchestration/index';
@@ -141,6 +143,9 @@ import SystemDictionaryItems from './pages/system-config/DictionaryItems';
 import SystemDictionaryForm from './pages/system-config/DictionaryForm';
 import SystemModelList from './pages/system-config/ModelList';
 import SystemModelForm from './pages/system-config/ModelForm';
+import EvaluationPlatformList from './pages/system-config/EvaluationPlatformList';
+import EvaluationPlatformForm from './pages/system-config/EvaluationPlatformForm';
+import EvaluationPlatformDetail from './pages/system-config/EvaluationPlatformDetail';
 
 // Pages - Environment (V1.1 需求说明书：沙盒/正式两个独立页面)
 import SandboxPage from './pages/environment/SandboxPage';
@@ -286,6 +291,8 @@ const routes: RouteObject[] = [
           // 浦江实验室评测：新建/编辑与结果详情
           { path: 'tasks/pujiang/create', element: <PujiangTaskForm /> },
           { path: 'tasks/pujiang/:id', element: <PujiangTaskDetail /> },
+          { path: 'tasks/platform/:platformKey/create', element: <ThirdPartyTaskForm /> },
+          { path: 'tasks/platform/:platformKey/:id', element: <ThirdPartyTaskDetail /> },
           // 3.3 评测结果详情
           { path: 'tasks/:id/report', element: <EvaluationReport /> },
           // 3.4 评测结果审核（仅管理员）
@@ -399,8 +406,8 @@ const routes: RouteObject[] = [
       {
         path: 'audit',
         children: [
-          { index: true, element: <Navigate to="/app/audit/economic" replace /> },
-          { path: 'economic', element: <Audit /> },
+          { index: true, element: <Navigate to="/app/audit/project" replace /> },
+          { path: 'economic', element: <Navigate to="/app/audit/project" replace /> },
           { path: 'project', element: <Audit /> },
           { path: 'behavior', element: <Audit /> },
           { path: 'logs', element: <Audit /> },
@@ -439,6 +446,10 @@ const routes: RouteObject[] = [
           { path: 'models', element: <SystemModelList /> },
           { path: 'models/create', element: <SystemModelForm /> },
           { path: 'models/:id/edit', element: <SystemModelForm /> },
+          { path: 'evaluation-platforms', element: <EvaluationPlatformList /> },
+          { path: 'evaluation-platforms/create', element: <EvaluationPlatformForm /> },
+          { path: 'evaluation-platforms/:id/edit', element: <EvaluationPlatformForm /> },
+          { path: 'evaluation-platforms/:id', element: <EvaluationPlatformDetail /> },
         ],
       },
     ],
