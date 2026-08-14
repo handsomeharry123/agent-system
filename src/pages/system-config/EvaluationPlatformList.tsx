@@ -4,11 +4,14 @@ import {
   DeleteOutlined,
   EditOutlined,
   EyeOutlined,
+  ExperimentOutlined,
+  MoreOutlined,
   PlusOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
 import {
   Button,
+  Dropdown,
   Input,
   Modal,
   Select,
@@ -17,13 +20,14 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
-import { EvalPlatform, loadPlatforms, savePlatforms } from './evaluationPlatforms';
+import { EvalPlatform, evaluationCreatePath, loadPlatforms, savePlatforms } from './evaluationPlatforms';
 
 const { Text } = Typography;
 
@@ -50,7 +54,11 @@ export default function EvaluationPlatformList() {
     [rows, q, enabled, tab],
   );
 
-  const remove = (row: EvalPlatform) =>
+  const remove = (row: EvalPlatform) => {
+    if (row.preset) {
+      message.warning('预置评测平台不可删除');
+      return;
+    }
     Modal.confirm({
       title: '确认是否删除？',
       content: `删除后将无法恢复「${row.name}」的配置。`,
@@ -59,6 +67,7 @@ export default function EvaluationPlatformList() {
       cancelText: '取消',
       onOk: () => update(rows.filter((item) => item.id !== row.id)),
     });
+  };
 
   const test = (row: EvalPlatform) => {
     message.loading({ content: '正在验证部署服务与鉴权信息…', key: 'connect', duration: 0.7 });
@@ -110,16 +119,6 @@ export default function EvaluationPlatformList() {
       ),
     },
     { title: '平台简介', dataIndex: 'description', width: 220, ellipsis: { showTitle: true } },
-    {
-      title: '评测维度',
-      dataIndex: 'dimensions',
-      width: 230,
-      ellipsis: { showTitle: false },
-      render: (values: string[]) => {
-        const content = values.join(' / ');
-        return <Text title={content} ellipsis style={{ display: 'block', maxWidth: '100%' }}>{content}</Text>;
-      },
-    },
     { title: '提供方', dataIndex: 'provider', width: 150, ellipsis: { showTitle: true } },
     {
       title: '联通状态',
@@ -144,7 +143,7 @@ export default function EvaluationPlatformList() {
         render: (_, row) => (
           <Space size={4} wrap={false}>
             <Button type="link" style={{ paddingInline: 4 }} onClick={() => nav(`/app/system-config/evaluation-platforms/${row.id}/edit`)}>编辑</Button>
-            <Button danger type="link" style={{ paddingInline: 4 }} onClick={() => remove(row)}>删除</Button>
+            <Button danger type="link" disabled={row.preset} style={{ paddingInline: 4 }} onClick={() => remove(row)}>删除</Button>
           </Space>
         ),
       },
@@ -152,14 +151,21 @@ export default function EvaluationPlatformList() {
   } else {
     columns.push({
       title: '操作',
-      width: 310,
+      width: 250,
       fixed: 'right',
       render: (_, row) => (
         <Space size={0} wrap={false} style={{ width: '100%', whiteSpace: 'nowrap' }}>
           <Button type="link" style={{ paddingInline: 6 }} icon={<EyeOutlined />} onClick={() => nav(`/app/system-config/evaluation-platforms/${row.id}`)}>详情</Button>
-          <Button type="link" style={{ paddingInline: 6 }} icon={<EditOutlined />} onClick={() => nav(`/app/system-config/evaluation-platforms/${row.id}/edit`)}>编辑</Button>
-          <Button type="link" style={{ paddingInline: 6 }} icon={<ApiOutlined />} onClick={() => test(row)}>联通测试</Button>
-          <Button danger type="link" style={{ paddingInline: 6 }} icon={<DeleteOutlined />} onClick={() => remove(row)}>删除</Button>
+          <Tooltip title={row.connected === 'success' ? '' : '请先完成联通测试'}>
+            <span><Button type="link" style={{ paddingInline: 6 }} icon={<ExperimentOutlined />} disabled={row.connected !== 'success'} onClick={() => nav(evaluationCreatePath(row.id))}>去评测</Button></span>
+          </Tooltip>
+          <Dropdown trigger={['click']} menu={{ items: [
+            { key: 'edit', label: '编辑', icon: <EditOutlined />, onClick: () => nav(`/app/system-config/evaluation-platforms/${row.id}/edit`) },
+            { key: 'test', label: '联通测试', icon: <ApiOutlined />, onClick: () => test(row) },
+            { key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true, disabled: Boolean(row.preset), onClick: () => remove(row) },
+          ] }}>
+            <Button type="link" style={{ paddingInline: 6 }} icon={<MoreOutlined />}>更多</Button>
+          </Dropdown>
         </Space>
       ),
     });
@@ -191,7 +197,7 @@ export default function EvaluationPlatformList() {
           columns={columns}
           dataSource={data}
           tableLayout="fixed"
-          scroll={{ x: tab === 'draft' ? 1275 : 1300 }}
+          scroll={{ x: tab === 'draft' ? 1045 : 1010 }}
           onRow={() => ({ style: { height: 64 } })}
           pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (total) => `共 ${total} 个平台` }}
         />

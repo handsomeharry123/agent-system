@@ -15,12 +15,17 @@ const globalParameterOptions = [
   ['#temperature', 'Temperature'], ['#topP', 'Top P'], ['#concurrency', '预计 API 并发量'],
   ['#accessMode', '接入方式'], ['#apiEndpoint', '接口地址'], ['#apiKey', 'API key'],
   ['#platformUrl', '平台 URL 地址'], ['#platformKey', '平台密钥 key'],
+  ['#evaluationScoringRule', '评测评分规则'], ['#totalEvaluationScore', '评测总分'],
+  ['#overallConclusion', '总体结论'], ['#evaluationDimension', '评测维度'],
+  ['#dimensionScoreMap', '各维度得分'], ['#evaluationPassStatus', '评测通过状态'],
+  ['#evaluationPassThreshold', '评测通过阈值'], ['#parentDimension', '父级评测维度'],
 ].map(([value, label]) => ({ value, label: `${label}（${value}）` }));
 
 const GlobalValueInput = ({ value, onChange }: { value?: string; onChange?: (value: string) => void }) => {
-  const keyword = value?.startsWith('#') ? value.toLowerCase() : '';
+  const hashIndex = value?.lastIndexOf('#') ?? -1;
+  const keyword = hashIndex >= 0 ? value!.slice(hashIndex).toLowerCase() : '';
   const options = keyword ? globalParameterOptions.filter(option => option.value.toLowerCase().includes(keyword) || String(option.label).toLowerCase().includes(keyword.slice(1))) : [];
-  return <AutoComplete value={value} onChange={onChange} options={options} placeholder="输入 # 可应用全局参数" style={{ width: '100%' }} filterOption={false} />;
+  return <AutoComplete value={value} onChange={onChange} onSelect={selected => onChange?.(`${hashIndex > 0 ? value!.slice(0, hashIndex) : ''}${selected}`)} options={options} placeholder="输入 # 可应用全局参数" style={{ width: '100%' }} filterOption={false} />;
 };
 
 const ParameterSection = ({ name, title }: { name: 'queryParameters' | 'responseParameters'; title: string }) => <Card size="small" title={title} extra={null} styles={{ header: { background: '#f5f7fa' } }}>
@@ -46,7 +51,7 @@ export default function EvaluationPlatformForm() {
   return <div style={{ padding: 24, background: '#f5f7fa', minHeight: '100%' }}>
     <PageHeader title={model ? '编辑评测平台' : '新增评测平台'} subTitle="配置第三方评测平台 API 及请求、响应参数映射" showBack onBack={() => nav('/app/system-config/evaluation-platforms')} />
     <Form form={form} layout="vertical" initialValues={initialValues} onValuesChange={() => setConnected(false)}>
-      <Card title="基本信息" style={{ marginTop: 16 }}><Row gutter={24}><Col span={12}><Form.Item name="name" label="平台名称" rules={[{ required: true, message: '请输入平台名称' }]}><Input maxLength={50} showCount placeholder="请输入平台名称" /></Form.Item></Col><Col span={12}><Form.Item name="provider" label="提供方" rules={[{ required: true, message: '请输入团队名称' }]}><Input placeholder="请输入团队名称" /></Form.Item></Col><Col span={24}><Form.Item name="description" label="平台简介"><Input.TextArea rows={3} maxLength={200} showCount placeholder="请输入平台简介" /></Form.Item></Col><Col span={12}><Form.Item name="phone" label="电话号码"><Input placeholder="请输入电话号码" /></Form.Item></Col><Col span={12}><Form.Item name="email" label="邮箱" rules={[{ required: true }, { type: 'email', message: '请输入正确的邮箱' }]}><Input placeholder="请输入邮箱" /></Form.Item></Col></Row></Card>
+      <Card title="基本信息" style={{ marginTop: 16 }}><Row gutter={24}><Col span={12}><Form.Item name="name" label="平台名称" rules={[{ required: true, message: '请输入平台名称' }]}><Input maxLength={50} showCount placeholder="请输入平台名称" /></Form.Item></Col><Col span={12}><Form.Item name="provider" label="提供方" rules={[{ required: true, message: '请输入团队名称' }]}><Input placeholder="请输入团队名称" /></Form.Item></Col><Col span={12}><Form.Item name="phone" label="电话号码"><Input placeholder="请输入电话号码" /></Form.Item></Col><Col span={12}><Form.Item name="email" label="邮箱" rules={[{ required: true }, { type: 'email', message: '请输入正确的邮箱' }]}><Input placeholder="请输入邮箱" /></Form.Item></Col><Col span={24}><Form.Item name="description" label="平台简介"><Input.TextArea rows={3} maxLength={200} showCount placeholder="请输入平台简介" /></Form.Item></Col></Row></Card>
       <Card title="技术信息" style={{ marginTop: 16 }}><Row gutter={24}><Col span={24}><Form.Item name="url" label="URL地址" rules={[{ required: true, message: '请输入 URL 地址' }, { type: 'url', message: '请输入合法 URL' }]}><Input placeholder="https://example.com/api" /></Form.Item></Col><Col span={12}><Form.Item name="apiKey" label="API key" rules={[{ required: true, message: '请输入 API key' }]}><Input.Password placeholder="请输入 API 鉴权凭证" /></Form.Item></Col><Col span={12}><Form.Item name="timeout" label="超时时间" rules={[{ required: true }]}><InputNumber min={1} max={3600} addonAfter="秒" style={{ width: '100%' }} /></Form.Item></Col><Col span={24}><Form.Item name="requestMethod" label="请求方式" rules={[{ required: true }]}><Radio.Group><Radio value="GET">GET</Radio><Radio value="POST">POST</Radio></Radio.Group></Form.Item></Col></Row></Card>
       <Card title="参数配置" style={{ marginTop: 16 }}><Space direction="vertical" size={16} style={{ width: '100%' }}><ParameterSection name="queryParameters" title="Query Parameters" /><ParameterSection name="responseParameters" title="Response Parameters" /></Space></Card>
       <Card style={{ marginTop: 16 }}><Space style={{ width: '100%', justifyContent: 'flex-end' }}><Button onClick={() => nav('/app/system-config/evaluation-platforms')}>取消</Button><Button icon={<SaveOutlined />} onClick={() => persist(true)}>暂存</Button><Button icon={<ApiOutlined />} loading={testing} onClick={test}>联通测试</Button><Button type="primary" disabled={!connected} onClick={() => Modal.confirm({ title: '确认提交评测平台？', onOk: () => persist(false) })}>提交</Button></Space></Card>
