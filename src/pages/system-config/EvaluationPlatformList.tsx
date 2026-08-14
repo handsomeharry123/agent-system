@@ -31,7 +31,6 @@ export default function EvaluationPlatformList() {
   const nav = useNavigate();
   const [rows, setRows] = useState(loadPlatforms);
   const [q, setQ] = useState('');
-  const [protocol, setProtocol] = useState<string>();
   const [enabled, setEnabled] = useState<string>();
   const [tab, setTab] = useState('all');
 
@@ -46,10 +45,9 @@ export default function EvaluationPlatformList() {
         (row) =>
           (tab === 'draft' ? row.draft : !row.draft) &&
           (!q || `${row.name}${row.description}${row.provider}`.toLowerCase().includes(q.toLowerCase())) &&
-          (!protocol || row.protocol === protocol) &&
           (!enabled || String(row.enabled) === enabled),
       ),
-    [rows, q, protocol, enabled, tab],
+    [rows, q, enabled, tab],
   );
 
   const remove = (row: EvalPlatform) =>
@@ -123,7 +121,6 @@ export default function EvaluationPlatformList() {
       },
     },
     { title: '提供方', dataIndex: 'provider', width: 150, ellipsis: { showTitle: true } },
-    { title: '对接协议', dataIndex: 'protocol', width: 110, render: (value) => <Text style={{ whiteSpace: 'nowrap' }}>{value}</Text> },
     {
       title: '联通状态',
       dataIndex: 'connected',
@@ -187,7 +184,6 @@ export default function EvaluationPlatformList() {
         />
         <Space wrap style={{ marginBottom: 16 }}>
           <Input allowClear prefix={<SearchOutlined />} placeholder="搜索平台名称 / 简介 / 提供方" value={q} onChange={(event) => setQ(event.target.value)} style={{ width: 300 }} />
-          <Select allowClear placeholder="对接协议" value={protocol} onChange={setProtocol} style={{ width: 150 }} options={[...new Set(rows.map((row) => row.protocol))].map((value) => ({ value, label: value }))} />
           <Select allowClear placeholder="启用状态" value={enabled} onChange={setEnabled} style={{ width: 130 }} options={[{ value: 'true', label: '启用' }, { value: 'false', label: '停用' }]} />
         </Space>
         <Table
@@ -195,7 +191,7 @@ export default function EvaluationPlatformList() {
           columns={columns}
           dataSource={data}
           tableLayout="fixed"
-          scroll={{ x: tab === 'draft' ? 1385 : 1410 }}
+          scroll={{ x: tab === 'draft' ? 1275 : 1300 }}
           onRow={() => ({ style: { height: 64 } })}
           pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (total) => `共 ${total} 个平台` }}
         />
