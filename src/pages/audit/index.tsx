@@ -1186,11 +1186,12 @@ function ProjectMaterialUpload({ project, onBack, onUploaded }: { project: Proje
 function NewProjectDetail({ project, onBack, onDeleteMaterial }: { project: ProjectAuditRow; onBack: () => void; onDeleteMaterial: (fileName: string) => void }) {
   const { message } = App.useApp();
   const [previewMaterial, setPreviewMaterial] = useState<string>();
+  const percentage = (value: number) => `${value.toFixed(2)}%`;
   const sections = [
-    { key: 'quality', title: '服务质量', icon: <CheckCircleOutlined />, items: [['任务执行成功率', `${project.taskSuccessRate}%`], ['响应时间 P99', `${project.responseP99} 秒`], ['医生采纳率', `${project.doctorAdoptionRate}%`], ['异常故障次数', `${project.faultCount} 次`], ['平均故障恢复时间', `${project.recoveryTime} 分钟`], ['服务可用率', `${project.availabilityRate}%`]] },
-    { key: 'efficiency', title: '服务效率', icon: <RiseOutlined />, items: [['日均服务患者人数', `${project.dailyPatients} 人`], ['日均服务患者人数增长率', `${project.growthRate}%`]] },
-    { key: 'benefit', title: '服务效益', icon: <WalletOutlined />, items: [['投资金额', `${project.investment.toFixed(2)} 万元`], ['Token 消耗量', project.tokenConsumption.toLocaleString()], ['Token 使用金额', `¥ ${project.tokenCost.toFixed(2)}`], ['投入产出比', `${project.investmentRatio.toFixed(4)}%`]] },
-    { key: 'safety', title: '服务安全', icon: <SafetyCertificateOutlined />, items: [['风险行为拦截次数', `${project.riskInterceptCount.toLocaleString()} 次`], ['安全可控率', `${project.safetyRate.toFixed(4)}%`]] },
+    { key: 'quality', title: '服务质量', icon: <CheckCircleOutlined />, items: [['任务执行成功率', percentage(project.taskSuccessRate)], ['响应时间 P99', `${project.responseP99} 秒`], ['医生采纳率', percentage(project.doctorAdoptionRate)], ['异常故障次数', `${project.faultCount} 次`], ['平均故障恢复时间', `${project.recoveryTime} 分钟`], ['服务可用率', percentage(project.availabilityRate)]] },
+    { key: 'efficiency', title: '服务效率', icon: <RiseOutlined />, items: [['日均服务患者人数', `${project.dailyPatients} 人`], ['日均服务患者人数增长率', percentage(project.growthRate)]] },
+    { key: 'benefit', title: '服务效益', icon: <WalletOutlined />, items: [['投资金额', `${project.investment.toFixed(2)} 万元`], ['Token 消耗量', project.tokenConsumption.toLocaleString()], ['Token 使用金额', `¥ ${project.tokenCost.toFixed(2)}`], ['投入产出比', percentage(project.investmentRatio)]] },
+    { key: 'safety', title: '服务安全', icon: <SafetyCertificateOutlined />, items: [['风险行为拦截次数', `${project.riskInterceptCount.toLocaleString()} 次`], ['安全可控率', percentage(project.safetyRate)]] },
   ];
   return <div className="project-detail-page">
     <div className="project-detail-hero">
@@ -1238,8 +1239,8 @@ function ProjectAudit() {
   if (screen === 'upload') return <ProjectMaterialUpload project={current} onBack={() => setScreen('list')} onUploaded={(fileNames) => updateMaterials(current.key, [...current.materials, ...fileNames])} />;
   if (screen === 'detail') return <NewProjectDetail project={current} onBack={() => setScreen('list')} onDeleteMaterial={(fileName) => { updateMaterials(current.key, current.materials.filter((material) => material !== fileName)); message.success('附件材料已删除'); }} />;
   const open = (row: ProjectAuditRow, target: 'upload' | 'detail') => { setCurrent(row); setScreen(target); };
-  const rate = (value: number) => `${value.toFixed(2).replace(/\.00$/, '')}%`;
-  const investmentRatioRate = (value: number) => `${value.toFixed(4)}%`;
+  const rate = (value: number) => `${value.toFixed(2)}%`;
+  const investmentRatioRate = rate;
   const sortable = (key: keyof ProjectAuditRow) => (a: ProjectAuditRow, b: ProjectAuditRow) => Number(a[key]) - Number(b[key]);
   const columns: ColumnsType<ProjectAuditRow> = [
     { title: '项目名称', dataIndex: 'name', fixed: 'left', width: 220, ellipsis: true },
@@ -1257,7 +1258,7 @@ function ProjectAudit() {
     { title: 'Token 使用金额', dataIndex: 'tokenCost', width: 150, sorter: sortable('tokenCost'), render: (v) => `¥ ${v.toFixed(2)}` },
     { title: '投入产出比', dataIndex: 'investmentRatio', width: 140, sorter: sortable('investmentRatio'), render: investmentRatioRate },
     { title: '风险行为拦截次数', dataIndex: 'riskInterceptCount', width: 180, render: (v) => `${v} 次` },
-    { title: '安全可控率', dataIndex: 'safetyRate', width: 130, sorter: sortable('safetyRate'), render: (v) => `${v.toFixed(4)}%` },
+    { title: '安全可控率', dataIndex: 'safetyRate', width: 130, sorter: sortable('safetyRate'), render: rate },
     { title: '附件材料', dataIndex: 'materials', width: 110, align: 'center', render: (materials: string[]) => `${materials.length} 个` },
     { title: '操作', fixed: 'right', width: 190, render: (_, row) => <Space size={0}><Button type="link" onClick={() => open(row, 'upload')}>{row.materials.length ? '补充材料' : '上传材料'}</Button><Button type="link" onClick={() => open(row, 'detail')}>查看详情</Button></Space> },
   ];
@@ -1272,7 +1273,7 @@ function ProjectAudit() {
       return;
     }
     const headers = ['项目名称', '申报科室', '申报赛道', '日均服务患者人数', '日均服务患者人数增长率', '医生采纳率', '投资金额(万元)', 'Token消耗量', 'Token使用金额(元)', '投入产出比', '风险行为拦截次数', '安全可控率', '附件材料数量'];
-    const values = exportRows.map((row) => [row.name, row.dept, row.track, row.dailyPatients, `${row.growthRate}%`, `${row.doctorAdoptionRate}%`, row.investment, row.tokenConsumption, row.tokenCost.toFixed(2), `${row.investmentRatio.toFixed(2)}%`, row.riskInterceptCount, `${row.safetyRate.toFixed(4)}%`, row.materials.length]);
+    const values = exportRows.map((row) => [row.name, row.dept, row.track, row.dailyPatients, rate(row.growthRate), rate(row.doctorAdoptionRate), row.investment, row.tokenConsumption, row.tokenCost.toFixed(2), rate(row.investmentRatio), row.riskInterceptCount, rate(row.safetyRate), row.materials.length]);
     const csv = [headers, ...values].map((line) => line.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
     const extension = format === 'excel' ? 'xls' : 'csv';
     downloadTextFile(`项目审计数据.${extension}`, `\uFEFF${csv}`);
@@ -1288,7 +1289,7 @@ function ProjectAudit() {
       icon: <LikeOutlined />, bars: [56, 62, 58, 70, 76, 73, 84, 91],
     },
     {
-      key: 'benefit', dimension: '服务效益', title: '投入产出比', value: overallInvestmentRatio, suffix: '%', precision: 4,
+      key: 'benefit', dimension: '服务效益', title: '投入产出比', value: overallInvestmentRatio, suffix: '%', precision: 2,
       icon: <WalletOutlined />, bars: [82, 86, 84, 90, 88, 94, 92, 97],
     },
     {

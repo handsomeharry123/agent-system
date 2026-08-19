@@ -84,6 +84,10 @@ import {
   type LedgerAgent,
   type FilingAttachment,
 } from '../../mock/ledger';
+import { mockEvaluationTasks } from '../../mock/evaluation';
+import { useAccessRecords } from '../agent-center/store';
+import { initialPujiangTasks } from '../evaluation/pujiang/data';
+import { findProjectApplicationId } from '../project-application';
 
 const { Title, Text, Paragraph, Link } = Typography;
 
@@ -498,6 +502,7 @@ const LedgerDetail = () => {
   const auth = useAuth();
   const isPlatformAdmin = auth?.currentUser?.roles.includes('信息科管理员') ?? false;
   const isHospitalLeader = auth?.currentUser?.roles.includes('医院领导') ?? false;
+  const accessRecords = useAccessRecords();
 
   const agent: LedgerAgent | undefined = useMemo(
     () => ledgerAgents.find((a) => a.id === id),
@@ -779,6 +784,17 @@ const LedgerDetail = () => {
       : agent.accessTime
         ? '接入'
         : '立项';
+  const projectApplicationId = findProjectApplicationId(agent.name, agent.department);
+  const accessRecord = accessRecords.find((item) =>
+    item.agentCode === agent.idCode || item.name === agent.name,
+  );
+  const safetyTask = mockEvaluationTasks.find((item) =>
+    item.agentId === agent.id || item.agentCode === agent.idCode || item.agentName === agent.name,
+  );
+  const pujiangTask = initialPujiangTasks.find((item) =>
+    item.agentId === agent.id || item.agentCode === agent.idCode || item.agentName === agent.name,
+  );
+  const safetyReportId = safetyTask?.id ?? agent.evaluationReport?.reportId;
 
   // ============== Tab: 基本信息（V1.8 §2.2.1）==============
   const BasicInfoBlock = (
@@ -1735,6 +1751,13 @@ exporter = OTLPSpanExporter(
         <AgentLifecycleProgress
           currentStage={lifecycleStage}
           currentStageCompleted={lifecycleStage === '接入' && Boolean(agent.accessTime)}
+          stagePaths={{
+            ...(projectApplicationId ? { '立项': `/app/project-application/detail/${encodeURIComponent(projectApplicationId)}` } : {}),
+            ...(accessRecord ? { '接入': `/app/agent-center/detail/${encodeURIComponent(accessRecord.id)}` } : {}),
+            ...(safetyReportId ? { '安全性评测': `/app/evaluation/tasks/${encodeURIComponent(safetyReportId)}/report` } : {}),
+            ...(pujiangTask ? { '浦江实验室评测': `/app/evaluation/tasks/pujiang/${encodeURIComponent(pujiangTask.id)}` } : {}),
+            '上线': `/app/ledger/detail/${encodeURIComponent(agent.id)}?view=360`,
+          }}
         />
       </div>
 

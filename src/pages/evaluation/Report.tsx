@@ -58,6 +58,10 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { generateReportPdf, downloadReportBlob, safeFilename, buildReportHtml } from './ReportPdf';
 import { useSmartDraft } from '../agent-center/smart/store';
+import { useAccessRecords } from '../agent-center/store';
+import { findProjectApplicationId } from '../project-application';
+import { ledgerAgents } from '../../mock/ledger';
+import { initialPujiangTasks } from './pujiang/data';
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -79,6 +83,7 @@ const EvaluationReport = () => {
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
   const { pushWelcomeGreeting } = useSmartDraft();
+  const accessRecords = useAccessRecords();
 
   // 返回上一级：若来自某个 Tab（Tasks 列表传入 fromTab），返回时切回该 Tab；
   // 否则默认跳到「全部任务」。
@@ -96,9 +101,24 @@ const EvaluationReport = () => {
   const report: ReportModel | undefined = task ? getReportByTaskId(task.id) : undefined;
   const safetyPassed = Boolean(report?.conclusion === '准入' || task?.status === '审核通过');
   const isApprovedTabEntry = fromTab === '审核通过';
-  // 本页展示的是安全性评测结果。即使安全性评测已审核通过，也只有在用户实际
-  // 发起浦江实验室评测后才应进入下一阶段；不能由可能残留的本地阶段值提前推进。
-  const lifecycleStage: AgentLifecycleStage = '安全性评测';
+  const accessRecord = task
+    ? accessRecords.find((item) => item.id === task.agentId || item.agentCode === task.agentCode || item.name === task.agentName) ||
+      (task.id === 'task-004' ? accessRecords.find((item) => item.id === 'acc-003') : undefined)
+    : undefined;
+  const projectApplicationId = task ? findProjectApplicationId(task.agentName, task.department) : undefined;
+  const thirdPartyTask = task
+    ? initialPujiangTasks.find((item) => item.agentId === task.agentId || item.agentCode === task.agentCode || item.agentName === task.agentName)
+    : undefined;
+  const ledgerAgent = task
+    ? ledgerAgents.find((item) => item.id === task.agentId || item.idCode === task.agentCode || item.name === task.agentName)
+    : undefined;
+  const safetyCompleted = task?.status === '审核通过';
+  // 安全评测未审核通过时必须停留在当前节点；不能因同名演示数据提前进入后续阶段。
+  const lifecycleStage: AgentLifecycleStage = safetyCompleted && ledgerAgent?.onlineTime
+    ? '上线'
+    : safetyCompleted && thirdPartyTask
+      ? '浦江实验室评测'
+      : '安全性评测';
 
   useEffect(() => {
     if (!task) return undefined;
@@ -487,7 +507,18 @@ const EvaluationReport = () => {
       <div style={{ marginBottom: 16 }}>
         <AgentLifecycleProgress
           currentStage={lifecycleStage}
-          currentStageCompleted={lifecycleStage === '安全性评测' && task.status === '审核通过'}
+          currentStageCompleted={Boolean(
+            (safetyCompleted && ledgerAgent?.onlineTime) ||
+            (safetyCompleted && thirdPartyTask?.status === '评测通过') ||
+            (lifecycleStage === '安全性评测' && task.status === '审核通过')
+          )}
+          stagePaths={{
+            ...(projectApplicationId ? { '立项': `/app/project-application/detail/${encodeURIComponent(projectApplicationId)}` } : {}),
+            ...(accessRecord ? { '接入': `/app/agent-center/detail/${encodeURIComponent(accessRecord.id)}` } : {}),
+            '安全性评测': `/app/evaluation/tasks/${encodeURIComponent(task.id)}/report`,
+            ...(safetyCompleted && thirdPartyTask ? { '浦江实验室评测': `/app/evaluation/tasks/pujiang/${encodeURIComponent(thirdPartyTask.id)}` } : {}),
+            ...(safetyCompleted && ledgerAgent?.onlineTime ? { '上线': `/app/ledger/detail/${encodeURIComponent(ledgerAgent.id)}?view=360` } : {}),
+          }}
         />
       </div>
 

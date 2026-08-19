@@ -117,6 +117,7 @@ type IndicatorDimensionKey = Exclude<keyof AssessmentIndicators, 'other'>;
 const STORAGE_KEY = 'project-application-demo-v1';
 const now = () => new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-');
 const seedData: ProjectRecord[] = [
+  { id: 'PA-2024-001', name: '互联网医院智能问诊助手建设项目', department: '信息中心', superiorDepartment: '信息中心', track: '便民赛道', leader: '陈明', contact: '陈明', phone: '13800138000', supports: ['算力支持', '数据要素支持'], overview: '建设互联网医院智能问诊助手，为患者提供多轮预问诊和智能分诊服务。', painPoints: '线上问诊前信息采集依赖人工，患者就诊科室选择困难。', technologies: ['自然语言处理', '知识图谱', '大模型'], models: ['AskMed-7B'], deliverables: '互联网医院智能问诊助手 1 套及配套知识库。', indicators: '预问诊信息完整率达到 95%，分诊推荐准确率达到 90%。', totalBudget: 80, fundingDetail: '医院资助 80 万元', spendingDetail: '软件购置 40 万元；系统集成 20 万元；研发设计 20 万元', status: '立项通过', applicant: 'admin', updateTime: '2024-05-20 16:00:00', submitTime: '2024-05-10 09:00:00', finishTime: '2024-05-20 16:00:00', reviewer: '信息科管理员', reviewNote: '建设方案完整，同意立项。', files: ['互联网医院智能问诊助手项目申报书.pdf'], lifecycleStage: '上线' },
   { id: 'PA-2026-001', name: '超声检查智能预约与检前指导项目', department: '超声科', superiorDepartment: '数智发展处', track: '助医赛道', leader: '周明远', contact: '林佳', phone: '13800138001', supports: ['算力支持', '技术指导支持'], overview: '建设面向患者的超声检查智能预约与检前指导智能体，联动院内预约系统，提升检查准备质量与就诊效率。', painPoints: '预约规则复杂、患者准备不充分，重复咨询量高，现场改约影响检查效率。', technologies: ['自然语言处理', '知识图谱'], models: ['Qwen模型'], deliverables: '形成 1 个预约指导智能体、1 套专科知识库及院内预约接口。', indicators: '预约咨询人工工作量降低 40%，检查准备合格率提升至 95%。', totalBudget: 36, fundingDetail: '医院资助 20 万元；其它渠道资助 16 万元', spendingDetail: '软件购置 12 万元；系统集成 4 万元；研发设计 20 万元', status: '待审核', applicant: '钱文博', updateTime: '2026-07-25 14:30:00', submitTime: '2026-07-25 14:30:00', files: ['超声检查智能预约项目申报书.pdf'] },
   { id: 'PA-2026-002', name: '住院病历智能生成项目', department: '医务处', superiorDepartment: '医务处', track: '助医赛道', leader: '郑雅婷', contact: '陈晨', phone: '13912345678', supports: ['数据要素支持', '算力支持'], overview: '面向住院医生提供结构化病历辅助生成与质量校验。', painPoints: '病历书写耗时长，质量一致性有待提升。', technologies: ['自然语言处理', '大模型'], models: ['Deepseek模型'], deliverables: '1 个病历生成智能体与 2 个专科知识库。', indicators: '病历书写时间降低 30%。', totalBudget: 58, fundingDetail: '医院资助 58 万元', spendingDetail: '算力租赁 20 万元；研发设计 38 万元', status: '审核中', applicant: '钱文博', updateTime: '2026-07-24 11:20:00', submitTime: '2026-07-24 11:20:00', files: ['住院病历智能生成项目申报书.pdf', '数据安全评估说明.pdf'] },
   { id: 'PA-2026-003', name: '手术麻醉风险智能评估项目', department: '麻醉科', superiorDepartment: '临床研究中心', track: '促研赛道', leader: '刘晓燕', contact: '周一帆', phone: '13788990012', supports: ['资金支持', '数据要素支持'], overview: '基于多模态数据构建围术期麻醉风险预测模型。', painPoints: '风险评估依赖人工经验，跨系统信息整合难。', technologies: ['多模态', '机器学习'], models: ['LLaMa模型'], deliverables: '风险评估模型 1 套、临床决策支持智能体 1 个。', indicators: '高风险识别召回率不低于 90%。', totalBudget: 80, fundingDetail: '市卫健委资助 50 万元；医院资助 30 万元', spendingDetail: '硬件设备 30 万元；研发设计 50 万元', status: '立项通过', applicant: '钱文博', updateTime: '2026-07-18 16:10:00', submitTime: '2026-07-10 09:15:00', finishTime: '2026-07-18 16:10:00', reviewNote: '项目方案完整，临床价值明确，同意立项。', files: ['手术麻醉风险智能评估项目申报书.pdf'] },
@@ -124,7 +125,7 @@ const seedData: ProjectRecord[] = [
   { id: 'PA-2026-005', name: '影像随访智能提醒项目', department: '影像科', superiorDepartment: '数智发展处', track: '辅政赛道', leader: '林佳', contact: '林佳', phone: '13566889900', supports: ['技术指导支持'], overview: '对影像报告中的随访建议进行结构化提取和提醒。', painPoints: '随访建议缺少统一闭环管理。', technologies: ['计算机视觉', '自然语言处理'], models: ['Qwen模型'], deliverables: '随访提醒智能体 1 个。', indicators: '重点患者随访触达率达到 95%。', totalBudget: 25, fundingDetail: '医院资助 25 万元', spendingDetail: '软件购置 10 万元；研发设计 15 万元', status: '撤销修改', applicant: '林佳', updateTime: '2026-07-23 15:30:00', revokeTime: '2026-07-23 15:30:00', files: ['影像随访智能提醒项目申报书.pdf'] },
   { id: 'PA-2026-006', name: '慢病健康教育数字人项目', department: '内分泌科', superiorDepartment: '科研处', track: '便民赛道', leader: '孙悦', contact: '赵敏', phone: '13344556677', supports: ['资金支持', '项目推广'], overview: '为慢病患者提供个性化健康教育。', painPoints: '健康教育内容同质化，患者依从性不足。', technologies: ['智能语音', '数字孪生'], models: ['Kimi模型'], deliverables: '健康教育数字人 1 个。', indicators: '患者健康知识知晓率提升 25%。', totalBudget: 42, fundingDetail: '其它渠道资助 42 万元', spendingDetail: '软硬件购置 28 万元；研发设计 14 万元', status: '立项不通过', applicant: '孙悦', updateTime: '2026-07-16 09:40:00', finishTime: '2026-07-16 09:40:00', reviewNote: '现阶段数据来源与运营方案不够清晰，建议完善后重新申报。', files: ['慢病健康教育数字人项目申报书.pdf'] },
   { id: 'PA-2026-007', name: '急诊危重症智能预警项目', department: '急诊科', superiorDepartment: '医务处', track: '助医赛道', leader: '王建国', contact: '李敏', phone: '13866778899', supports: ['数据要素支持', '算力支持'], overview: '融合生命体征、检验结果和病历信息，建设急诊危重症风险实时预警智能体。', painPoints: '急诊患者病情变化快，多源数据分散，人工识别高风险患者存在滞后。', technologies: ['机器学习', '知识图谱'], models: ['Deepseek模型'], deliverables: '危重症预警智能体 1 个、急诊风险知识库 1 套。', indicators: '高风险患者提前预警时间不少于 30 分钟，预警准确率达到 90%。', totalBudget: 45, fundingDetail: '医院资助 30 万元；其它渠道资助 15 万元', spendingDetail: '算力租赁 12 万元；系统集成 13 万元；研发设计 20 万元', status: '待审核', applicant: 'admin', updateTime: '2026-07-28 09:20:00', submitTime: '2026-07-28 09:20:00', files: ['急诊危重症智能预警项目申报书.pdf'] },
-  { id: 'PA-2026-008', name: '药学处方智能审核项目', department: '药剂科', superiorDepartment: '医务处', track: '助医赛道', leader: '张伟', contact: '吴桐', phone: '13755667788', supports: ['技术指导支持', '数据要素支持'], overview: '基于院内处方与用药规则，建设覆盖门急诊处方的智能审核与风险提示能力。', painPoints: '处方审核规则多、人工复核压力大，潜在用药风险难以及时发现。', technologies: ['自然语言处理', '知识图谱'], models: ['Qwen模型'], deliverables: '处方审核智能体 1 个、合理用药规则库 1 套。', indicators: '高风险处方识别率达到 95%，人工审核耗时降低 35%。', totalBudget: 52, fundingDetail: '医院资助 52 万元', spendingDetail: '软件购置 18 万元；系统集成 14 万元；研发设计 20 万元', status: '审核中', applicant: 'admin', updateTime: '2026-07-28 10:40:00', submitTime: '2026-07-27 16:15:00', reviewStartTime: '2026-07-28 10:40:00', reviewer: '信息科管理员', files: ['药学处方智能审核项目申报书.pdf', '合理用药规则说明.pdf'] },
+  { id: 'PA-2026-008', name: '药学处方智能审核项目', department: '药剂科', superiorDepartment: '医务处', track: '助医赛道', leader: '张伟', contact: '吴桐', phone: '13755667788', supports: ['技术指导支持', '数据要素支持'], overview: '基于院内处方与用药规则，建设覆盖门急诊处方的智能审核与风险提示能力。', painPoints: '处方审核规则多、人工复核压力大，潜在用药风险难以及时发现。', technologies: ['自然语言处理', '知识图谱'], models: ['Qwen模型'], deliverables: '处方审核智能体 1 个、合理用药规则库 1 套。', indicators: '高风险处方识别率达到 95%，人工审核耗时降低 35%。', totalBudget: 52, fundingDetail: '医院资助 52 万元', spendingDetail: '软件购置 18 万元；系统集成 14 万元；研发设计 20 万元', status: '立项通过', applicant: 'admin', updateTime: '2026-07-28 10:40:00', submitTime: '2026-07-27 16:15:00', reviewStartTime: '2026-07-28 10:40:00', reviewer: '信息科管理员', files: ['药学处方智能审核项目申报书.pdf', '合理用药规则说明.pdf'], lifecycleStage: '安全性评测' },
 ];
 
 const readRecords = (): ProjectRecord[] => {
@@ -146,6 +147,27 @@ const readRecords = (): ProjectRecord[] => {
 };
 const writeRecords = (rows: ProjectRecord[]) => localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
 const getRecord = (id?: string) => readRecords().find((item) => item.id === id);
+
+const normalizeBusinessName = (value: string) =>
+  value.replace(/智能体|智能|助手|系统|平台|示范|项目|工程|建设|与|及/g, '');
+
+/** 根据智能体名称定位其来源立项；供后续流程详情页回跳已完成的立项节点。 */
+export const findProjectApplicationId = (agentName: string, department?: string) => {
+  const explicitLinks: Record<string, string> = {
+    '处方智能审核与用药安全系统': 'PA-2026-008',
+    '互联网医院智能问诊助手': 'PA-2024-001',
+  };
+  if (explicitLinks[agentName]) return explicitLinks[agentName];
+  const normalizedAgentName = normalizeBusinessName(agentName);
+  const candidates = readRecords().filter((item) => {
+    const normalizedProjectName = normalizeBusinessName(item.name);
+    return normalizedProjectName.includes(normalizedAgentName) || normalizedAgentName.includes(normalizedProjectName);
+  });
+  const sameDepartment = candidates.find((item) =>
+    !department || item.department === department || item.department.includes(department) || department.includes(item.department),
+  );
+  return (sameDepartment ?? candidates[0])?.id;
+};
 const saveRecord = (record: ProjectRecord) => {
   const rows = readRecords();
   const index = rows.findIndex((item) => item.id === record.id);
@@ -1330,7 +1352,9 @@ export function ProjectApplicationDetail() {
   const isInformationAdmin = currentUser?.roles.includes('信息科管理员') ?? false;
   const isDepartmentAdmin = currentUser?.roles.includes('科室管理员') ?? false;
   const isProjectDepartmentAdmin = isDepartmentAdmin && currentUser?.department === record?.department;
-  const lifecycleStage = record?.lifecycleStage ?? '立项';
+  const lifecycleStage = record?.id === 'PA-2026-008'
+    ? '安全性评测'
+    : record?.lifecycleStage ?? '立项';
   const shouldGuideRegistration = Boolean(
     record &&
     record.status === '立项通过' &&
@@ -1368,6 +1392,7 @@ export function ProjectApplicationDetail() {
     <AgentLifecycleProgress
       currentStage={lifecycleStage}
       currentStageCompleted={lifecycleStage === '立项' && record.status === '立项通过'}
+      stagePaths={{ '立项': `/app/project-application/detail/${encodeURIComponent(record.id)}` }}
     />
     <RecordContent record={record} />
     {record.reviewNote && <Card title="审核结论" bordered={false}><Descriptions><Descriptions.Item label="结论"><Tag color={statusColor[record.status]}>{record.status}</Tag></Descriptions.Item><Descriptions.Item label="具体说明">{record.reviewNote}</Descriptions.Item></Descriptions></Card>}

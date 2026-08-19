@@ -8,6 +8,9 @@ import AgentLifecycleProgress from '../../../components/AgentLifecycleProgress';
 import { useDemoSettings } from '../../../hooks/useDemoSettings';
 import { useSmartDraft } from '../../agent-center/smart/store';
 import { PUJIANG_DIMENSIONS, getPujiangTask } from './data';
+import { mockEvaluationTasks } from '../../../mock/evaluation';
+import { useAccessRecords } from '../../agent-center/store';
+import { findProjectApplicationId } from '../../project-application';
 
 const { Text, Title } = Typography;
 
@@ -17,8 +20,12 @@ const PujiangTaskDetail = () => {
   const task = useMemo(() => getPujiangTask(id), [id]);
   const { demoRole } = useDemoSettings();
   const { pushWelcomeGreeting } = useSmartDraft();
+  const accessRecords = useAccessRecords();
   const [preview, setPreview] = useState(false);
   const reportReady = task.status === '评测通过' || task.status === '退回修改';
+  const accessRecord = accessRecords.find((item) => item.agentCode === task.agentCode || item.name === task.agentName);
+  const safetyTask = mockEvaluationTasks.find((item) => item.agentCode === task.agentCode || item.agentName === task.agentName);
+  const projectApplicationId = findProjectApplicationId(task.agentName, task.department);
   const latest = reportReady ? PUJIANG_DIMENSIONS.map((dimension, index) => ({ key: dimension, dimension, score: task.scores[index], completeTime: task.completeTime || '-' })) : [];
   const history = reportReady ? [
     { time: '2026-05-18', scores: task.scores.map((score) => score - 9), conclusion: '退回修改' },
@@ -67,7 +74,16 @@ const PujiangTaskDetail = () => {
   return <div style={{ padding: 24, background: '#F5F5F5', minHeight: '100%' }}>
     <PageHeader title={<Space>medbench评测结果详情<Tag color={task.status === '评测中' ? 'processing' : task.status === '评测通过' ? 'success' : task.status === '退回修改' ? 'error' : 'default'}>{task.status}</Tag></Space>} subTitle="查看最新评测结果与历次评测趋势" showBack onBack={() => navigate('/app/evaluation/tasks?module=pujiang')} extra={<Space><Button icon={<EyeOutlined />} disabled={!reportReady} onClick={() => setPreview(true)}>查看评测报告</Button><Dropdown disabled={!reportReady} menu={{ items: [{ key: 'pdf', label: '下载 PDF 版', onClick: () => download('pdf') }, { key: 'doc', label: '下载 Word 版', onClick: () => download('doc') }] }}><Button type="primary" icon={<DownloadOutlined />} disabled={!reportReady}>下载评测报告</Button></Dropdown></Space>} />
     <div style={{ marginTop: 16 }}>
-      <AgentLifecycleProgress currentStage={task.status === '评测通过' ? '上线' : '浦江实验室评测'} />
+      <AgentLifecycleProgress
+        currentStage={task.status === '评测通过' ? '上线' : '浦江实验室评测'}
+        stagePaths={{
+          ...(projectApplicationId ? { '立项': `/app/project-application/detail/${encodeURIComponent(projectApplicationId)}` } : {}),
+          ...(accessRecord ? { '接入': `/app/agent-center/detail/${encodeURIComponent(accessRecord.id)}` } : {}),
+          ...(safetyTask ? { '安全性评测': `/app/evaluation/tasks/${encodeURIComponent(safetyTask.id)}/report` } : {}),
+          '浦江实验室评测': `/app/evaluation/tasks/pujiang/${encodeURIComponent(task.id)}`,
+          ...(task.status === '评测通过' ? { '上线': `/app/ledger/detail/${encodeURIComponent(task.agentId)}?view=360` } : {}),
+        }}
+      />
     </div>
     <Card title="智能体基本信息" style={{ marginTop: 16 }}><Descriptions bordered column={3}><Descriptions.Item label="智能体编号">{task.agentCode}</Descriptions.Item><Descriptions.Item label="智能体名称">{task.agentName}</Descriptions.Item><Descriptions.Item label="智能体版本">{task.version}</Descriptions.Item><Descriptions.Item label="评测状态"><Tag color={task.status === '评测中' ? 'processing' : task.status === '评测通过' ? 'success' : task.status === '退回修改' ? 'error' : 'default'}>{task.status}</Tag></Descriptions.Item><Descriptions.Item label="提交评测时间">{task.submitTime || '-'}</Descriptions.Item><Descriptions.Item label="评测完成时间">{task.completeTime || '-'}</Descriptions.Item></Descriptions></Card>
     <Card title="最新评测结果总览" style={{ marginTop: 16 }}>{reportReady ? <Space direction="vertical"><Space><Text strong>核心结论</Text><Tag color={task.status === '评测通过' ? 'success' : 'error'}>{task.status}</Tag></Space><Text type="secondary">{task.resultDesc}</Text></Space> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无评测结果" />}</Card>

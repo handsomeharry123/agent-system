@@ -293,6 +293,37 @@ export interface EvaluationDataset {
 // -----------------------------------------------------------------------------
 export const mockEvaluationTasks: EvaluationTask[] = [
   {
+    id: 'task-askmed-001',
+    taskNo: 'EVL-20240810-0001',
+    agentCode: 'AskMed-INFO-3.0',
+    agentId: 'AGT-2024-001',
+    agentName: '互联网医院智能问诊助手',
+    version: '3.0',
+    riskLevel: '中等风险',
+    department: '信息中心',
+    status: '审核通过',
+    createTime: '2024-08-01 09:00:00',
+    submitTime: '2024-08-01 09:10:00',
+    evalCompleteTime: '2024-08-08 16:00:00',
+    reviewStartTime: '2024-08-09 09:00:00',
+    reviewCompleteTime: '2024-08-10 10:00:00',
+    creator: 'admin',
+    reviewer: '信息科管理员',
+    totalScore: 87.6,
+    systemRiskLevel: '低风险',
+    evalResult: '准入',
+    evalResultDesc: '五维安全评测达到准入要求。',
+    reviewComment: '评测材料完整，各项指标符合准入标准。',
+    sampleLevel: '标准评测',
+    dimensions: [
+      { dimension: '输入安全', sampleLevel: '标准评测' },
+      { dimension: '输出安全', sampleLevel: '标准评测' },
+      { dimension: '行为安全', sampleLevel: '标准评测' },
+      { dimension: '数据安全', sampleLevel: '标准评测' },
+      { dimension: '工具安全', sampleLevel: '标准评测' },
+    ],
+  },
+  {
     id: 'task-001',
     taskNo: 'EVL-20260510-0001',
     agentCode: '心内科-0001',
@@ -721,6 +752,19 @@ const buildReport = (
 });
 
 export const mockEvaluationReports: Record<string, EvaluationReport> = {
+  'task-askmed-001': buildReport(
+    'task-askmed-001',
+    '准入',
+    '低风险',
+    [
+      { dimension: '输入安全', indicator: 'ASR', rawValue: 4.8, score: 95.2, riskLevel: '低风险' },
+      { dimension: '输出安全', indicator: 'GCR', rawValue: 92.0, score: 92.0, riskLevel: '低风险' },
+      { dimension: '行为安全', indicator: 'RR', rawValue: 93.0, score: 93.0, riskLevel: '低风险' },
+      { dimension: '数据安全', indicator: 'PLR', rawValue: 3.2, score: 96.8, riskLevel: '低风险' },
+      { dimension: '工具安全', indicator: 'RR', rawValue: 94.0, score: 94.0, riskLevel: '低风险' },
+    ],
+    '互联网医院智能问诊助手五维安全评测均达到准入标准，建议准入。',
+  ),
   // task-001：低风险 / 准入
   'task-001': buildReport(
     'task-001',

@@ -32,6 +32,9 @@ import ApprovalTimeline, { type ApprovalTimelineItem } from '../../components/Ap
 import { useAccessRecords } from './store';
 import { useSmartDraft } from './smart/store.tsx';
 import { useAuth } from '../../hooks/useAuth';
+import { findProjectApplicationId } from '../project-application';
+import { ledgerAgents } from '../../mock/ledger';
+import { initialPujiangTasks } from '../evaluation/pujiang/data';
 import { ROLE_ADMIN, ROLE_DEPT } from './types';
 import type { InsightProgress, ProgressPhase } from './smart/types';
 import {
@@ -49,6 +52,24 @@ const Detail = () => {
   const { id } = useParams<{ id: string }>();
   const records = useAccessRecords();
   const record = records.find((r) => r.id === id);
+  const projectApplicationId = record
+    ? findProjectApplicationId(record.name, record.department)
+    : undefined;
+  const relatedSafetyTask = record
+    ? mockEvaluationTasks.find((item) =>
+        item.agentCode === record.agentCode || item.agentName === record.name,
+      )
+    : undefined;
+  const relatedThirdPartyTask = record
+    ? initialPujiangTasks.find((item) =>
+        item.agentCode === record.agentCode || item.agentName === record.name,
+      )
+    : undefined;
+  const relatedLedgerAgent = record
+    ? ledgerAgents.find((item) =>
+        item.idCode === record.agentCode || item.name === record.name,
+      )
+    : undefined;
 
   const [showSecret, setShowSecret] = useState(false);
 
@@ -370,8 +391,33 @@ const Detail = () => {
 
       <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 12 }}>
         <AgentLifecycleProgress
-          currentStage={evaluationTask ? '安全性评测' : '接入'}
-          currentStageCompleted={evaluationTask ? false : record.status === '审核通过'}
+          currentStage={record.status !== '审核通过'
+            ? '接入'
+            : relatedLedgerAgent?.onlineTime
+            ? '上线'
+            : relatedThirdPartyTask
+              ? '浦江实验室评测'
+              : relatedSafetyTask || evaluationTask
+                ? '安全性评测'
+                : '接入'}
+          currentStageCompleted={Boolean(
+            record.status !== '审核通过'
+              ? false
+              : relatedLedgerAgent?.onlineTime
+              ? true
+              : relatedThirdPartyTask
+                ? relatedThirdPartyTask.status === '评测通过'
+                : relatedSafetyTask || evaluationTask
+                  ? (relatedSafetyTask || evaluationTask)?.status === '审核通过'
+                  : record.status === '审核通过'
+          )}
+          stagePaths={{
+            ...(projectApplicationId ? { '立项': `/app/project-application/detail/${encodeURIComponent(projectApplicationId)}` } : {}),
+            '接入': `/app/agent-center/detail/${encodeURIComponent(record.id)}`,
+            ...(record.status === '审核通过' && (relatedSafetyTask || evaluationTask) ? { '安全性评测': `/app/evaluation/tasks/${encodeURIComponent((relatedSafetyTask || evaluationTask)!.id)}/report` } : {}),
+            ...(record.status === '审核通过' && relatedThirdPartyTask ? { '浦江实验室评测': `/app/evaluation/tasks/pujiang/${encodeURIComponent(relatedThirdPartyTask.id)}` } : {}),
+            ...(record.status === '审核通过' && relatedLedgerAgent ? { '上线': `/app/ledger/detail/${encodeURIComponent(relatedLedgerAgent.id)}?view=360` } : {}),
+          }}
         />
         <div data-testid="detail-attachments-card">
         <Card title="备案材料" size="small">

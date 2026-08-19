@@ -102,6 +102,35 @@
   transform: translateY(8px) scale(.92);
   animation: lifecycle-step-in 520ms cubic-bezier(.22, 1.35, .36, 1) calc(100ms + var(--step-index) * 105ms) forwards;
 }
+.lifecycle-step-button {
+  position: relative;
+  display: flex;
+  width: 30px;
+  min-width: 30px;
+  height: 54px;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.lifecycle-step-button:disabled { cursor: default; }
+.lifecycle-step-button:disabled:hover .lifecycle-node-core {
+  transform: none;
+  box-shadow: 0 1px 5px rgba(31, 56, 88, .08);
+}
+.lifecycle-step-button:disabled:hover .lifecycle-label { color: inherit; }
+.lifecycle-step-button:focus-visible .lifecycle-node-ring {
+  border: 2px solid #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, .18);
+}
+.lifecycle-step-button:hover .lifecycle-node-core {
+  transform: translateY(-2px) scale(1.08);
+  box-shadow: 0 4px 12px rgba(22, 119, 255, .24);
+}
+.lifecycle-step-button:hover .lifecycle-label { color: #1677ff; }
 .lifecycle-node { position: relative; display: grid; width: 30px; height: 30px; place-items: center; }
 .lifecycle-node-ring { position: absolute; inset: 0; border-radius: 50%; }
 .lifecycle-node-core {
@@ -136,7 +165,7 @@
   background: rgba(82, 196, 26, .13);
   animation: lifecycle-pulse 1.45s ease-out 300ms infinite;
 }
-.lifecycle-label { position: absolute; top: 34px; left: 50%; font-size: 13px; font-weight: 500; white-space: nowrap; transform: translateX(-50%); }
+.lifecycle-label { position: absolute; top: 34px; left: 50%; font-size: 13px; font-weight: 500; white-space: nowrap; transform: translateX(-50%); transition: color .2s ease; }
 .lifecycle-step:first-child .lifecycle-label { left: 0; transform: none; }
 .lifecycle-step:last-child .lifecycle-label { right: 0; left: auto; transform: none; }
 .lifecycle-step.is-active .lifecycle-label { color: #389e0d; font-weight: 600; }

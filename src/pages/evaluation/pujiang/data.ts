@@ -78,6 +78,22 @@ export const initialPujiangTasks: PujiangTask[] = names.map(([agentCode, agentNa
   };
 });
 
+initialPujiangTasks.unshift({
+  id: 'pj-task-askmed-001',
+  agentId: 'AGT-2024-001',
+  agentCode: 'AskMed-INFO-3.0',
+  agentName: '互联网医院智能问诊助手',
+  version: '3.0',
+  department: '信息中心',
+  status: '评测通过',
+  dimensions: [...PUJIANG_DIMENSIONS],
+  lastEditTime: '2024-08-20 10:00:00',
+  submitTime: '2024-08-20 14:00:00',
+  completeTime: '2024-08-28 16:00:00',
+  resultDesc: '五项医疗智能体能力评测均达到第三方评测准入要求。',
+  scores: [88, 86, 90, 87, 85],
+});
+
 export const addPujiangTask = (task: PujiangTask) => {
   initialPujiangTasks.unshift(task);
 };

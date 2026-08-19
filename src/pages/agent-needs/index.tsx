@@ -271,11 +271,33 @@ const AgentNeedsContent = () => {
         dataIndex: 'title',
         key: 'title',
         width: 180,
-        render: (t: string, r) => (
-          <Button type="link" style={{ padding: 0, height: 'auto', textAlign: 'left' }} onClick={() => goDetail(r)}>
-            {t || '未命名草稿'}
-          </Button>
-        ),
+        render: (t: string, r) => {
+          const title = t || '未命名草稿';
+          const titleChars = Array.from(title);
+          const displayTitle = titleChars.length > 10 ? `${titleChars.slice(0, 10).join('')}…` : title;
+
+          return (
+            <Tooltip title={titleChars.length > 10 ? title : undefined}>
+              <Button
+                type="link"
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  maxWidth: '100%',
+                  padding: 0,
+                  height: 'auto',
+                  overflow: 'hidden',
+                  textAlign: 'left',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                onClick={() => goDetail(r)}
+              >
+                {displayTitle}
+              </Button>
+            </Tooltip>
+          );
+        },
       },
       { title: '提出科室', dataIndex: 'department', key: 'department', width: 110 },
       {

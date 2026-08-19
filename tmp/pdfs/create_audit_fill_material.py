@@ -20,8 +20,10 @@ from reportlab.platypus import (
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "output" / "pdf" / "项目审计填报材料-完成度100%-已使用金额136.8万元.pdf"
 FONT = "/System/Library/Fonts/STHeiti Medium.ttc"
+HANDWRITING_FONT = "/System/Library/AssetsV2/PreinstalledAssetsV2/InstallWithOs/com_apple_MobileAsset_Font7/ef9c121249635b32dd48da4e2e7030efd3e48327.asset/AssetData/Xingkai.ttc"
 
 pdfmetrics.registerFont(TTFont("STHeiti", FONT, subfontIndex=0))
+pdfmetrics.registerFont(TTFont("Xingkai", HANDWRITING_FONT, subfontIndex=0))
 
 styles = getSampleStyleSheet()
 title_style = ParagraphStyle(
@@ -70,6 +72,19 @@ def add_page_number(canvas, doc):
     canvas.setFont("STHeiti", 8)
     canvas.setFillColor(colors.HexColor("#64748B"))
     canvas.drawRightString(A4[0] - 18 * mm, 12 * mm, f"第 {doc.page} 页")
+
+    # 演示签署信息：姓名和日期值使用中文行楷模拟手写效果。
+    signature_right = A4[0] - 18 * mm
+    canvas.setFillColor(colors.HexColor("#334155"))
+    canvas.setFont("STHeiti", 9)
+    label_right = signature_right - 34 * mm
+    canvas.drawRightString(label_right, 31 * mm, "签署人名称：")
+    canvas.drawRightString(label_right, 24 * mm, "签署日期：")
+    canvas.setFillColor(colors.HexColor("#1E4F91"))
+    canvas.setFont("Xingkai", 14)
+    canvas.drawString(label_right + 1 * mm, 30.3 * mm, "郑涛")
+    canvas.setFont("Xingkai", 12)
+    canvas.drawString(label_right + 1 * mm, 23.4 * mm, "2026 年 7 月 30 日")
     canvas.restoreState()
 
 
@@ -157,8 +172,6 @@ story.extend([
         "本材料所列项目建设、考核指标与资金使用信息真实、完整，相关证明材料可供审计复核。"
         "本文件用于演示环境的上传识别与表单预填。"
     ),
-    Spacer(1, 8 * mm),
-    p("填报日期：2026 年 7 月 30 日", note_style),
 ])
 
 doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
